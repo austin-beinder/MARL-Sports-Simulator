@@ -9,11 +9,7 @@ A github repo for our Wash U. CSE 5106 Multi Agent Systems project.
 https://visualstudio.microsoft.com/visual-cpp-build-tools/
 ```
 
-3. Install the required python dependencies with the below command.
-
-```shell
-pip install -r requirements.txt
-```
+3. Install the required python dependencies by navigating through Update_Requirements.md
 
 4. An example GUI pybullet script can be run with the following command.
 

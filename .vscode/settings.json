@@ -1,0 +1,13 @@
+{
+    "python.testing.unittestEnabled": true,
+    "python.testing.pytestEnabled": false,
+    "python.testing.unittestArgs": [
+        "-v",
+        "-s",
+        "pybullet/tests",
+        "-p",
+        "*_test.py",
+        "-t",
+        "pybullet"
+    ]
+}
