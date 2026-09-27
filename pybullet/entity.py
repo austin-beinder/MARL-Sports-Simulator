@@ -67,6 +67,8 @@ class Entity:
 
         self.collided_entities: List[Entity] = []
 
+        self.MAX_FORCE = 10.0
+
         ### AI GENERATED
         collision_shape = p.createCollisionShape(p.GEOM_CYLINDER, radius=radius, height=height)
         visual_shape = p.createVisualShape(p.GEOM_CYLINDER, radius=radius, length=height, rgbaColor=rgbaColor)
@@ -173,7 +175,13 @@ class Entity:
     def apply_force(self, x: float = 0.0, y: float = 0.0, z: float = 0.0):
         """
         This function applies a force vector to the entity.
+
+        Bounds by self.MAX_FORCE which is set to 10.
         """
+
+        x = max(-self.MAX_FORCE, min(x, self.MAX_FORCE))
+        y = max(-self.MAX_FORCE, min(y, self.MAX_FORCE))
+
         self.sync_from_pybullet()
         p.applyExternalForce(self.body_id, 2, forceObj=[x, y, z], posObj=[0,0,0], flags=p.LINK_FRAME)
 
