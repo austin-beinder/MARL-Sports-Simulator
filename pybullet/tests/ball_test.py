@@ -185,6 +185,7 @@ class TestAdd(unittest.TestCase):
 
         observables = ball.get_observables()
         self.assertEqual(observables['possession_team'], Team.RED)
+        self.assertEqual(observables['possession_player'], player.body_id)
 
     # The tests below call on_new_collision directly instead of stepping physics,
     # so each possession rule can be checked deterministically in isolation.
@@ -194,7 +195,6 @@ class TestAdd(unittest.TestCase):
         ball = Ball(initial_position=np.array([5.0, 5.0, 0.0]))  # away from the players
         ball.possession_flip_percentage = 100  # steals always succeed unless a test says otherwise
         ball.on_new_collision(player)
-        player.ball = ball  # the player's own collision handler normally sets this
         return ball
 
     def test_player_takes_possession_from_no_one(self):
@@ -206,6 +206,7 @@ class TestAdd(unittest.TestCase):
         self.assertTrue(changed)
         self.assertEqual(ball.possession, Team.RED)
         self.assertIs(ball.possession_player, red)
+        self.assertIs(red.ball, ball)
         self.assertIsNotNone(ball.carry_constraint)
 
     def test_player_takes_possession_after_kick(self):
@@ -225,6 +226,7 @@ class TestAdd(unittest.TestCase):
         self.assertTrue(changed)
         self.assertEqual(ball.possession, Team.BLUE)
         self.assertIs(ball.possession_player, blue)
+        self.assertIs(blue.ball, ball)
 
     def test_player_takes_possession_from_opponent(self):
         red = Player(team=Team.RED, initial_position=np.array([0.0, 0.0, 0.0]))
@@ -262,6 +264,7 @@ class TestAdd(unittest.TestCase):
         red = Player(team=Team.RED, initial_position=np.array([0.0, 0.0, 0.0]))
         red2 = Player(team=Team.RED, initial_position=np.array([2.0, 0.0, 0.0]))
         ball = self._ball_held_by(red)
+        old_constraint = ball.carry_constraint
 
         changed = ball.on_new_collision(red2)
 
@@ -269,6 +272,14 @@ class TestAdd(unittest.TestCase):
         self.assertFalse(changed)
         self.assertEqual(ball.possession, Team.RED)
         self.assertIs(ball.possession_player, red2)
+        self.assertIs(red2.ball, ball)
+        self.assertIsNone(red.ball)
+        # The ball is physically re-pinned to the teammate, not left on the old player
+        self.assertIsNotNone(ball.carry_constraint)
+        self.assertNotEqual(ball.carry_constraint, old_constraint)
+        self.assertEqual(p.getConstraintInfo(ball.carry_constraint)[0], red2.body_id)
+        # A pass is not a steal, so it doesn't start the steal cooldown
+        self.assertEqual(ball.last_steal_time, -float("inf"))
 
     def test_steal_back_blocked_during_cooldown(self):
         red = Player(team=Team.RED, initial_position=np.array([0.0, 0.0, 0.0]))
@@ -330,6 +341,77 @@ class TestAdd(unittest.TestCase):
             ball.sync_from_pybullet()
 
         self.assertAlmostEqual(ball.sim_time, 10 * time_step)
+
+    def test_kick_moves_ball_clear_of_kicker(self):
+        red = Player(team=Team.RED, initial_position=np.array([0.0, 0.0, 0.0]))
+        ball = self._ball_held_by(red)
+
+        ball.kick_ball(2.0, 0.0)
+
+        # Ball sits just outside the kicker's edge, in the kick direction, on the ground
+        expected_x = red.radius + ball.radius + ball.KICK_GAP
+        self.assertAlmostEqual(ball.position[0], expected_x)
+        self.assertAlmostEqual(ball.position[1], 0.0)
+        self.assertAlmostEqual(ball.position[2], 0.0)
+        self.assertAlmostEqual(ball.velocity[0], 2.0)
+        self.assertAlmostEqual(ball.velocity[1], 0.0)
+
+    def test_kick_offset_follows_kick_direction(self):
+        red = Player(team=Team.RED, initial_position=np.array([1.0, -1.0, 0.0]))
+        ball = self._ball_held_by(red)
+
+        ball.kick_ball(-1.0, 1.0)  # diagonally up and to the left
+
+        distance = red.radius + ball.radius + ball.KICK_GAP
+        self.assertAlmostEqual(ball.position[0], 1.0 - distance / np.sqrt(2))
+        self.assertAlmostEqual(ball.position[1], -1.0 + distance / np.sqrt(2))
+
+    def test_kicker_does_not_regain_ball_after_kick(self):
+        # End to end through physics: before the fix, the released ball landed on the
+        # kicker and was picked straight back up on the next step.
+        red = Player(team=Team.RED)
+        ball = Ball()  # overlaps red, so red picks it up on the first step
+
+        p.stepSimulation()
+        ball.sync_from_pybullet()
+        red.sync_from_pybullet()
+        self.assertIs(ball.possession_player, red)
+
+        ball.kick_ball(2.0, 0.0)
+        for _ in range(10):
+            p.stepSimulation()
+            ball.sync_from_pybullet()
+            red.sync_from_pybullet()
+
+        self.assertEqual(ball.possession, Team.NONE)
+        self.assertIsNone(ball.possession_player)
+        self.assertIsNone(red.ball)
+        self.assertNotIn(red, ball.collided_entities)
+        self.assertGreater(ball.position[0], red.position[0] + red.radius + ball.radius)
+
+    def test_kick_loose_ball_does_not_teleport(self):
+        ball = Ball(initial_position=np.array([5.0, 5.0, 0.0]))
+        ball.sync_from_pybullet()
+        start = ball.position.copy()
+
+        ball.kick_ball(2.0, 0.0)
+
+        # Nobody was holding it, so there's no one to move it away from
+        self.assertTrue(np.allclose(ball.position, start))
+        self.assertAlmostEqual(ball.velocity[0], 2.0)
+
+    def test_zero_kick_drops_ball_in_place(self):
+        red = Player(team=Team.RED, initial_position=np.array([0.0, 0.0, 0.0]))
+        ball = self._ball_held_by(red)
+
+        ball.kick_ball(0.0, 0.0)
+        ball.sync_from_pybullet()
+
+        # No direction to kick in, so the ball is released where it was held: above the player
+        self.assertEqual(ball.possession, Team.NONE)
+        self.assertIsNone(red.ball)
+        self.assertAlmostEqual(ball.position[0], 0.0)
+        self.assertAlmostEqual(ball.position[1], 0.0)
     ### END AI GENERATED
 
 

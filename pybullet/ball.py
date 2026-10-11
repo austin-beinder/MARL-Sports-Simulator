@@ -44,6 +44,9 @@ class Ball(Entity):
         self.STEAL_COOLDOWN = 0.1  # seconds
         self.sim_time = 0.0
         self.last_steal_time = -float("inf")
+
+        # Space left between the kicker's edge and the ball's edge when the ball is kicked
+        self.KICK_GAP = 0.02
         ### END AI GENERATED
 
         super().__init__(
@@ -95,18 +98,19 @@ class Ball(Entity):
         print(f"Entity: {self.body_id} collided with Entity: {collided_entity.body_id}")
 
         changed_possession = False
-        # TODO include logic for if we have collided with a member or another team
 
         if self.possession_player == None or self.possession == Team.NONE:
             self._player_takes_possession(collided_entity)
-            self.possession = collided_entity.team
-            self.possession_player = collided_entity
             changed_possession = True
         # if self.possession_player.body_id == collided_entity.body_id:
         #     pass # Nothing to do, they're in possession anyways
         elif self.possession == collided_entity.team:
             # A pass has occured mysteriously
-            self.possession_player = collided_entity
+            ### AI GENERATED
+            # Physically hand the ball to the teammate. The team keeps possession,
+            # so changed_possession stays False.
+            self._player_takes_possession(collided_entity)
+            ### END AI GENERATED
         elif self.possession != Team.NONE and self.possession != collided_entity.team:
             # We must have collided with a player of an opposing team
 
@@ -122,10 +126,7 @@ class Ball(Entity):
             # 50% chance of possession flip on collision with another team
             if num > (100 - self.possession_flip_percentage):
                 self._player_takes_possession(collided_entity)
-                self.possession = collided_entity.team
-                self.possession_player = collided_entity
                 changed_possession = True
-                collided_entity.ball = self
                 self.last_steal_time = self.sim_time  # AI GENERATED
 
         return changed_possession
@@ -137,7 +138,10 @@ class Ball(Entity):
 
         observables = super().get_observables()
         observables['possession_team'] = self.possession
-        observables['possession_player'] = self.possession_player
+        ### AI GENERATED
+        # Report the player's id (like collided_entities) rather than the Player object
+        observables['possession_player'] = self.possession_player.body_id if self.possession_player is not None else None
+        ### END AI GENERATED
         return observables
 
     def _player_takes_possession(self, player):
@@ -159,6 +163,11 @@ class Ball(Entity):
             player.body_id, 2, self.body_id, 2, p.JOINT_POINT2POINT, [0, 0, 0],
             parentFramePosition=[0, 0, self.CARRY_HEIGHT], childFramePosition=[0, 0, 0])
         # self.carry_steps_left = 240  # "for a while": 1 s at 240 Hz
+
+        # Record possession on both the ball and the player, for every way a player can get the ball
+        self.possession = player.team
+        self.possession_player = player
+        player.ball = self
         ### END AI GENERATED
 
     ### AI GENERATED
@@ -176,10 +185,33 @@ class Ball(Entity):
         self.possession = Team.NONE
 
     def kick_ball(self, x: float, y: float):
+        ### AI GENERATED
         """
+        Release the ball and send it off with velocity (x, y).
+
+        If a player was holding the ball, it is first moved to the edge of that player
+        in the kick direction, so it doesn't land on top of them and get picked straight back up.
+        A zero (x, y) kick has no direction, so the ball is just dropped where it is.
         """
+        kicker = self.possession_player
+        ### END AI GENERATED
         self._release()
+
         # Teleport to side of player
+        ### AI GENERATED
+        speed = np.hypot(x, y)
+        if kicker is not None and speed > 0:
+            direction = np.array([x, y]) / speed
+            # Read the kicker's live position; kicker.position is only as fresh as its last sync
+            kicker_xy = np.array(p.getLinkState(kicker.body_id, 2)[0][:2])
+            target_x, target_y = kicker_xy + direction * (kicker.radius + self.radius + self.KICK_GAP)
+
+            # Joint positions are relative to the base, which is why bx/by are subtracted
+            bx, by, _ = p.getBasePositionAndOrientation(self.body_id)[0]
+            p.resetJointState(self.body_id, 0, targetValue=target_x - bx, targetVelocity=0)
+            p.resetJointState(self.body_id, 1, targetValue=target_y - by, targetVelocity=0)
+        ### END AI GENERATED
+
         self.apply_velocity(x, y)
 
 
@@ -202,11 +234,22 @@ if __name__ == "__main__":
         team=Team.BLUE,
         initial_position=np.array([0.0, 0.8, 0.0])
     )
+    player4 = Player(
+        team=Team.RED,
+        initial_position=np.array([0.8, 0.8, 0.0])
+    )
+    player5 = Player(
+        team=Team.BLUE,
+        initial_position=np.array([0.0, -0.8, 0.0])
+    )
 
     for i in range (10000):
         p.stepSimulation()
         player.sync_from_pybullet()
         player2.sync_from_pybullet()
         player3.sync_from_pybullet()
+        player4.sync_from_pybullet()
+        player5.sync_from_pybullet()
         time.sleep(1./240.)
+
 

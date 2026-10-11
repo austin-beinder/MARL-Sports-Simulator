@@ -65,6 +65,7 @@ class Entity:
         self.velocity = np.array([0.0, 0.0, 0.0])
         self.is_ball = False
         self.team = Team.NONE
+        self.radius = radius  # AI GENERATED (kick_ball needs it to place the ball clear of the kicker)
 
         # Orientation?
 
