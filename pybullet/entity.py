@@ -45,6 +45,7 @@ import numpy as np
 import pybullet as p
 from typing import Dict, List
 import time
+from teams import Team
 
 class Entity:
 
@@ -62,6 +63,8 @@ class Entity:
 
         self.position = initial_position
         self.velocity = np.array([0.0, 0.0, 0.0])
+        self.is_ball = False
+        self.team = Team.NONE
 
         # Orientation?
 
