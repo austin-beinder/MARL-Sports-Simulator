@@ -10,6 +10,7 @@ from typing import Dict, List
 import time
 from entity import Entity
 from teams import Team
+from ball import Ball
 
 class Player(Entity):
 
@@ -23,8 +24,9 @@ class Player(Entity):
                  initial_position=np.array([0.0, 0.0, 0.0]),
                  maxJointVelocity=3.0):
 
-        self.team: Team = team
+        self.ball = None  # If you are in possession of the ball, you get a self.ball
 
+        self.team: Team = team
         if self.team == Team.RED:
             rgbaColor=[1, 0, 0, 1]
         else:
@@ -39,6 +41,9 @@ class Player(Entity):
             rgbaColor=rgbaColor,
             maxJointVelocity=maxJointVelocity,
         )
+        
+        self.team: Team = team
+
 
         # This creates some friction so it doesn't slide or spin forever or accelerate super quickly
         # Found by googling how to add drag in pybullet.
@@ -67,6 +72,16 @@ class Player(Entity):
         """
         print(f"Entity: {self.body_id} collided with Entity: {collided_entity.body_id}")
 
+        if collided_entity.is_ball:
+            self.ball = collided_entity
+
+        if not collided_entity.is_ball:
+            if collided_entity.team != self.team:
+
+                if self.ball is not None:
+                    if self.ball.on_new_collision(collided_entity):
+                        self.ball = None
+
     def get_observables(self) -> dict:
         """
         Returns: A dict with entity observerables 
@@ -74,6 +89,7 @@ class Player(Entity):
 
         observables = super().get_observables()
         observables['team'] = self.team
+        observables['has_ball'] = self.ball is not None
         return observables
 
 
