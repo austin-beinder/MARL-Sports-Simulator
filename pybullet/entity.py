@@ -64,6 +64,7 @@ class Entity:
         self.position = initial_position
         self.velocity = np.array([0.0, 0.0, 0.0])
         self.is_ball = False
+        self.is_wall = False  # AI GENERATED (field.Wall sets this to True; collision code uses it to tell walls apart)
         self.team = Team.NONE
         self.radius = radius  # AI GENERATED (kick_ball needs it to place the ball clear of the kicker)
 
@@ -140,6 +141,20 @@ class Entity:
         This function will get called when a new collision occurs.
         """
         print(f"Entity: {self.body_id} collided with Entity: {collided_entity.body_id}")
+
+        ### AI GENERATED
+        if collided_entity.is_wall:
+            self.on_wall_collision(collided_entity)
+
+    def on_wall_collision(self, wall):
+        """
+        Called when this entity starts touching a field wall. wall is a field.Wall, so wall.name
+        says which one ("east", "west", "north" or "south") and wall.normal is the way it faces.
+
+        Override or extend this to react to walls (for example a reward penalty).
+        """
+        print("Entity collided with wall")
+    ### END AI GENERATED
 
     def get_observables(self) -> dict:
         """

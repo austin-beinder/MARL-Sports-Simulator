@@ -72,6 +72,13 @@ class Player(Entity):
         """
         print(f"Entity: {self.body_id} collided with Entity: {collided_entity.body_id}")
 
+        ### AI GENERATED
+        # Walls have team NONE, so without this check they'd be treated as an opponent below
+        if collided_entity.is_wall:
+            self.on_wall_collision(collided_entity)
+            return
+        ### END AI GENERATED
+
         if collided_entity.is_ball:
             self.ball = collided_entity
 
