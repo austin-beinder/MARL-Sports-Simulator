@@ -99,6 +99,13 @@ class Ball(Entity):
 
         changed_possession = False
 
+        ### AI GENERATED
+        # The ball bounces off walls physically, but a wall can never take possession
+        if collided_entity.is_wall:
+            self.on_wall_collision(collided_entity)
+            return changed_possession
+        ### END AI GENERATED
+
         if self.possession_player == None or self.possession == Team.NONE:
             self._player_takes_possession(collided_entity)
             changed_possession = True
