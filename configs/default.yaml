@@ -1,0 +1,94 @@
+# Default infrastructure configuration.
+#
+# This file is intended for fast/headless runs. For a visual demo, use
+# configs/debug.yaml or override with --gui.
+
+project:
+  name: "marl-sports-simulator"
+
+  # Used for reproducibility. main.py seeds common RNGs, and runner.py passes a
+  # deterministic seed into KeepAwayEnv.reset().
+  seed: 42
+
+run:
+  # demo = use the current environment with a simple non-learning policy.
+  # rl   = call training.entrypoint through rl_bridge.py.
+  mode: "demo"
+
+simulation:
+  # false -> KeepAwayEnv(render_mode=None) -> p.DIRECT
+  # true  -> KeepAwayEnv(render_mode="human") -> p.GUI
+  gui: false
+
+  # Only affects demo mode. Leave false for fast execution.
+  real_time: false
+
+game:
+  # The current repository only implements KeepAwayEnv.
+  name: "keep_away"
+
+  # IMPORTANT:
+  # These keys intentionally match KeepAwayConfig in keep_away_env.py.
+  config:
+    blue_max_speed: 3.0
+    red_max_speed: 2.0
+    red_gain: 2.0
+    possession_speed_multiplier: 0.75
+
+    red_win_time: 0.3
+    blue_win_time: 20.0
+    max_game_time: 60.0
+
+    spawn_separation: 2.0
+    ball_spawn_fraction: 0.3
+
+    field_length: 21.0
+    field_width: 13.6
+
+    # Current environment performs this many 1/240 s physics ticks per action.
+    action_repeat: 8
+
+demo:
+  # Demo mode is only an infrastructure smoke/demo path; it is not RL.
+  episodes: 5
+
+  # random sends random desired velocity actions.
+  # stationary always sends [0, 0].
+  policy: "random"
+
+training:
+  # Metadata / future trainer selection.
+  algorithm: "ippo"
+
+  # Intentionally null until the RL issue exposes a callable.
+  #
+  # Future example:
+  # entrypoint: "train:run"
+  entrypoint: null
+
+  # Common experiment parameters reserved for the future trainer.
+  total_episodes: 10000
+  learning_rate: 0.0003
+  gamma: 0.99
+  hidden_sizes: [128, 128]
+
+model:
+  # Optional future checkpoint path.
+  resume_from: null
+
+  # Trainer may use this to decide checkpoint frequency.
+  checkpoint_every_episodes: 500
+
+logging:
+  # Relative paths are resolved from repository root by runtime.py.
+  output_dir: "outputs"
+
+debug:
+  camera:
+    # null means derive camera distance from field dimensions.
+    distance: null
+    yaw: 0.0
+    pitch: -89.9
+    target: [0.0, 0.0, 0.0]
+
+  draw_labels: true
