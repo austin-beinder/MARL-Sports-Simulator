@@ -1,2 +1,10 @@
+# Environment modules
 pybullet==3.2.7
-numpy==1.24.3
+
+# RL modules
+numpy
+torch
+pytest
+matplotlib
+
+# Other modules

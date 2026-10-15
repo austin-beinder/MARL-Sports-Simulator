@@ -1,0 +1,5 @@
+# AI CITATION: Claude Code (Claude Opus 5.5) | 2026-09-26 | JC Stinson III (LifeHackerIII)
+# Usage: Force correct line endings for the setup scripts on every OS.
+*.sh  text eol=lf
+*.bat text eol=crlf
+*.ps1 text eol=crlf

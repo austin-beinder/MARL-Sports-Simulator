@@ -216,3 +216,26 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Teammate individual work folders
+#   Areas for individual work, data, and material to keep from polluting the
+#   repository
+.JC/
+
+# Agentic coding tool files where each user will likely want their own specifics
+#   We can add a common file if we want Claude or similar agents to use a common
+#   standard if we want
+CLAUDE.md
+
+# Project virtual environment (created by _DevEnvSetup / _SetupAndRunDemo)
+.venv-CSE-5106-Project-Beinder-Stinson-Wang/
+
+# VSCode venv environment handling folders. We may or may not want to make it
+#   common, but for now let's skip it
+.vscode/
+
+# Personal Claude Code configuration (output styles, local settings)
+.claude/
+
+# Training outputs (CSV logs, checkpoints) written by scripts/train.py
+runs/
