@@ -1,0 +1,70 @@
+# ==============================================================================
+# AI CITATION
+# Tool:    Claude Code (Claude Opus 5.5)
+# Date:    2026-10-10
+# Author:  JC Stinson III (LifeHackerIII)
+# Usage:
+#   - 2026-10-10: Created this file: the milestone-1 keep-away config (1v1,
+#     movement only), listing every key with its default for reference.
+#   - 2026-10-11: Set red_max_speed to the calibrated 1.8 (scripts/calibrate.py).
+# Prompt summary: Implement Phase 3 of the issue #7 plan (RL layer + mock env).
+# Human review:   Pending review
+# ==============================================================================
+# Milestone 1: keep-away, 1 blue vs 1 scripted red, movement only.
+# Every key below equals the default in marl/common/config.py; it is listed so
+# the file documents the experiment. Omitted keys take their defaults.
+
+[shared]                      # must match the env side (ICD §10)
+scenario = "keepaway"
+n_blue = 1
+n_red = 1
+physics_dt = 0.004166666666666667   # 1/240 s
+control_k = 12                      # -> 20 Hz control
+max_episode_steps = 300             # 15 s at 20 Hz
+field_size = [16.0, 10.0]           # FULL extents [Lx, Ly], meters
+max_speed = 2.0                     # m/s
+red_max_speed = 1.8                 # calibrated (scripts/calibrate.py, 2026-10-11): scripted
+                                    # flee survives 50.1% of max steps; random/still ~28% (#22)
+carry_speed_factor = 0.75
+max_kick_speed = 6.0                # unused at milestone 1
+possession_radius = 0.5
+player_radius = 0.25
+
+[shared.start]                # also the reset() options (ICD §9)
+start_mix = 0.5
+require_blue_closer = true
+min_clearance = 1.0
+min_red_ball_dist = 3.0
+
+[rl]
+horizon_seconds = 5.0               # gamma = 1 - (control_k * physics_dt) / horizon = 0.99
+critic_input = "global"             # "local" = IPPO-style critic
+horizon_mode = "infinite"
+obs_ordering = "distance"
+obs_mode = "full"
+kick_enabled = false
+beta_eps = 1e-6
+
+[rl.reward]
+base = "survival"
+# shaping = [{ name = "pbrs_red_distance", enabled = false, coef = 0.0 }]   # interface only (#15)
+
+[rl.ppo]
+rollout_steps = 2048
+num_minibatches = 32
+update_epochs = 10
+clip_eps = 0.2
+gae_lambda = 0.95
+lr = 3e-4
+adam_eps = 1e-5
+ent_coef = 0.001
+max_grad_norm = 0.5
+hidden_sizes = [64, 64]
+
+[run]
+seed = 0
+total_steps = 1_000_000
+eval_every = 10
+eval_episodes = 50
+eval_seed = 20261019
+out_dir = "runs"

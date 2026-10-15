@@ -1,0 +1,25 @@
+# ==============================================================================
+# AI CITATION
+# Tool:    Claude Code (Claude Opus 5.5)
+# Date:    2026-10-10
+# Author:  JC Stinson III (LifeHackerIII)
+# Usage:
+#   - 2026-10-10: Created this file: the goto_target sanity-check config
+#     (design #8, ICD §9).
+# Prompt summary: Implement Phase 3 of the issue #7 plan (RL layer + mock env).
+# Human review:   Pending review
+# ==============================================================================
+# Sanity check: 1 blue, no red, the ball is an immobile target, truncation
+# only, reward = -distance. It should learn quickly; rerun it after any RL
+# architecture change. Omitted keys take the defaults in marl/common/config.py.
+
+[shared]
+scenario = "goto_target"
+n_blue = 1
+n_red = 0
+
+[rl.reward]
+base = "goto_target"
+
+[run]
+total_steps = 100_000
