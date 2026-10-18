@@ -4,6 +4,8 @@
 # Date:    2026-10-10
 # Author:  JC Stinson III (LifeHackerIII)
 # Usage:
+#   - 2026-10-18: Moved action validation into module-level parse_actions()
+#     so the PyBullet adapter (pybullet_env.py) shares it. (Austin Beinder)
 #   - 2026-10-10: Generated this entire file: a kinematic 2D mock env that
 #     implements docs/ICD.md v0.2 (action repeat, per-tick termination, walls,
 #     possession radius, carry slowdown, pursuit red, goto_target scenario,
@@ -204,35 +206,9 @@ class MockEnv:
 
     # --- ICD plumbing -------------------------------------------------------------
     def _parse_actions(self, actions: Any) -> tuple[np.ndarray, list[int]]:
-        """Validate actions strictly (ICD §6); return capped move vectors + triggers."""
-        if not isinstance(actions, dict):
-            raise TypeError(f"actions must be a dict, got {type(actions).__name__}")
-        if set(actions) != {"blue"}:
-            raise ValueError(f"actions must have exactly the key 'blue', got {sorted(actions)}")
-        blue = actions["blue"]
-        if not isinstance(blue, list):
-            raise TypeError(f"actions['blue'] must be a list, got {type(blue).__name__}")
-        if len(blue) != self.n_blue:
-            raise ValueError(f"actions['blue'] must have {self.n_blue} entries, got {len(blue)}")
-        move = np.zeros((self.n_blue, 2))
-        triggers = []
-        for i, a in enumerate(blue):
-            where = f"actions['blue'][{i}]"
-            if not isinstance(a, dict):
-                raise TypeError(f"{where} must be a dict")
-            if set(a) != {"move", "kick_trigger", "kick_vec"}:
-                raise ValueError(f"{where} must have keys move, kick_trigger, kick_vec; got {sorted(a)}")
-            move[i] = _vec2(a["move"], f"{where}['move']")
-            _vec2(a["kick_vec"], f"{where}['kick_vec']")
-            trig = a["kick_trigger"]
-            if type(trig) is not int:
-                raise TypeError(f"{where}['kick_trigger'] must be an int 0 or 1, got {trig!r}")
-            if trig not in (0, 1):
-                raise ValueError(f"{where}['kick_trigger'] must be 0 or 1, got {trig}")
-            triggers.append(trig)
-        norm = np.linalg.norm(move, axis=1, keepdims=True)
-        move = np.where(norm > 1.0, move / np.maximum(norm, 1e-12), move)  # 2-norm speed cap (ICD §6)
-        return move, triggers
+        ### AI GENERATED
+        return parse_actions(actions, self.n_blue)
+        ### END AI GENERATED
 
     def _state(self) -> dict:
         def entity(team: str, i: int, pos: np.ndarray, vel: np.ndarray) -> dict:
@@ -255,6 +231,43 @@ class MockEnv:
 
     def _info(self, events: list[dict]) -> dict:
         return {"events": events, "kick_applied": [False] * self.n_blue}
+
+
+### AI GENERATED (moved out of MockEnv so the PyBullet adapter can share it)
+def parse_actions(actions: Any, n_blue: int) -> tuple[np.ndarray, list[int]]:
+    """Validate actions strictly (ICD §6); return capped move vectors + triggers.
+
+    Shared by every ICD env (the mock and the PyBullet adapter) so they reject the same inputs.
+    """
+    if not isinstance(actions, dict):
+        raise TypeError(f"actions must be a dict, got {type(actions).__name__}")
+    if set(actions) != {"blue"}:
+        raise ValueError(f"actions must have exactly the key 'blue', got {sorted(actions)}")
+    blue = actions["blue"]
+    if not isinstance(blue, list):
+        raise TypeError(f"actions['blue'] must be a list, got {type(blue).__name__}")
+    if len(blue) != n_blue:
+        raise ValueError(f"actions['blue'] must have {n_blue} entries, got {len(blue)}")
+    move = np.zeros((n_blue, 2))
+    triggers = []
+    for i, a in enumerate(blue):
+        where = f"actions['blue'][{i}]"
+        if not isinstance(a, dict):
+            raise TypeError(f"{where} must be a dict")
+        if set(a) != {"move", "kick_trigger", "kick_vec"}:
+            raise ValueError(f"{where} must have keys move, kick_trigger, kick_vec; got {sorted(a)}")
+        move[i] = _vec2(a["move"], f"{where}['move']")
+        _vec2(a["kick_vec"], f"{where}['kick_vec']")
+        trig = a["kick_trigger"]
+        if type(trig) is not int:
+            raise TypeError(f"{where}['kick_trigger'] must be an int 0 or 1, got {trig!r}")
+        if trig not in (0, 1):
+            raise ValueError(f"{where}['kick_trigger'] must be 0 or 1, got {trig}")
+        triggers.append(trig)
+    norm = np.linalg.norm(move, axis=1, keepdims=True)
+    move = np.where(norm > 1.0, move / np.maximum(norm, 1e-12), move)  # 2-norm speed cap (ICD §6)
+    return move, triggers
+### END AI GENERATED
 
 
 def _vec2(v: Any, where: str) -> tuple[float, float]:

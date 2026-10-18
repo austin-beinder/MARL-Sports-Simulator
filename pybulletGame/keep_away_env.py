@@ -49,6 +49,9 @@ class KeepAwayConfig:
     red_max_speed: float = 2.0  # slower than blue with the ball (3.0 * 0.75 = 2.25), so blue can escape
     red_gain: float = 2.0  # red's P-controller gain: commanded speed per metre of distance to the ball
     possession_speed_multiplier: float = 0.75  # blue's speed is scaled by this while it holds the ball
+    ### AI GENERATED
+    player_radius: float = 0.3
+    ### END AI GENERATED
 
     # Rules
     red_win_time: float = 0.3
@@ -75,7 +78,12 @@ class KeepAwayEnv:
         """
         self.config = config or KeepAwayConfig()
         self.render_mode = render_mode
-        p.connect(p.GUI if render_mode == "human" else p.DIRECT)
+        ### AI GENERATED
+        # Reuse an existing connection: the entity classes all talk to pybullet's default one, so a
+        # second connect() would only open a connection nothing uses.
+        if not p.isConnected():
+            p.connect(p.GUI if render_mode == "human" else p.DIRECT)
+        ### END AI GENERATED
 
         self.time_step = p.getPhysicsEngineParameters()["fixedTimeStep"]
         self.control_dt = self.config.action_repeat * self.time_step
@@ -96,11 +104,22 @@ class KeepAwayEnv:
         """
         Start a new game. Rebuilds the whole simulation so nothing carries over from the last game.
         seed seeds Python's random module, which decides whether steals succeed.
+        ### AI GENERATED
+        options can override the spawn (anything left out keeps the default spawn):
+        - "blue_position", "red_position", "ball_position": (x, y) in metres
+        - "blue_has_ball": True to start the game with blue holding the ball (it is moved onto blue)
+        ### END AI GENERATED
 
         Returns (observation, info).
         """
         if seed is not None:
             random.seed(seed)
+        ### AI GENERATED
+        options = dict(options or {})
+        unknown = set(options) - {"blue_position", "red_position", "ball_position", "blue_has_ball"}
+        if unknown:
+            raise ValueError(f"unknown reset option(s) {sorted(unknown)}")
+        ### END AI GENERATED
 
         if self.render_mode == "human":
             p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 0)  # don't draw while rebuilding
@@ -114,10 +133,22 @@ class KeepAwayEnv:
         blue_start = np.array([-cfg.spawn_separation / 2, 0.0, 0.0])
         red_start = np.array([cfg.spawn_separation / 2, 0.0, 0.0])
         ball_start = blue_start + cfg.ball_spawn_fraction * (red_start - blue_start)
+        ### AI GENERATED
+        def spawn_xy(key, default):
+            return np.array([*options[key][:2], 0.0], dtype=float) if key in options else default
 
-        self.blue = Player(team=Team.BLUE, initial_position=blue_start, maxJointVelocity=cfg.blue_max_speed)
-        self.red = Player(team=Team.RED, initial_position=red_start, maxJointVelocity=cfg.red_max_speed)
+        blue_start = spawn_xy("blue_position", blue_start)
+        red_start = spawn_xy("red_position", red_start)
+        ball_start = blue_start.copy() if options.get("blue_has_ball") else spawn_xy("ball_position", ball_start)
+
+        self.blue = Player(team=Team.BLUE, radius=cfg.player_radius, initial_position=blue_start,
+                           maxJointVelocity=cfg.blue_max_speed)
+        self.red = Player(team=Team.RED, radius=cfg.player_radius, initial_position=red_start,
+                          maxJointVelocity=cfg.red_max_speed)
         self.ball = Ball(initial_position=ball_start)
+        if options.get("blue_has_ball"):
+            self.ball._player_takes_possession(self.blue)
+        ### END AI GENERATED
         for entity in (self.blue, self.red, self.ball):
             entity.sync_from_pybullet()
 
@@ -126,6 +157,13 @@ class KeepAwayEnv:
         self.red_hold_steps = 0
         self.blue_total_hold_steps = 0  # all the time blue has had the ball this game
         self.winner = Team.NONE
+        ### AI GENERATED
+        # Every change of ball holder during the last step() call, as (physics step, old holder, new holder)
+        # with holders being Player objects or None. Checked every physics step, so a possession that is
+        # gained and lost within one step() is still recorded.
+        self.possession_events = []
+        self._last_holder = self.ball.possession_player
+        ### END AI GENERATED
 
         if self.render_mode == "human":
             p.configureDebugVisualizer(p.COV_ENABLE_GUI, 0)  # hide the side panels
@@ -150,6 +188,7 @@ class KeepAwayEnv:
             raise RuntimeError("The game is over, call reset() to start a new one")
 
         blue_command = self._clip_speed(np.asarray(action, dtype=float)[:2], self.config.blue_max_speed)
+        self.possession_events = []  # AI GENERATED
 
         for _ in range(self.config.action_repeat):
             # Blue: the RL action, slowed while holding the ball
@@ -299,6 +338,11 @@ class KeepAwayEnv:
     def _update_rules(self):
         """Advance the possession timers by one physics step and decide if anyone has won."""
         holder = self.ball.possession_player
+        ### AI GENERATED
+        if holder is not self._last_holder:
+            self.possession_events.append((self.game_steps, self._last_holder, holder))
+            self._last_holder = holder
+        ### END AI GENERATED
         if holder is self.blue:
             self.blue_hold_steps += 1
             self.blue_total_hold_steps += 1

@@ -180,10 +180,22 @@ class TestWallCollisions(unittest.TestCase):
     def test_wall_collision_prints_message(self):
         player = Player(initial_position=np.array([5.0 - 0.2, 0.0, 0.0]))
 
+        ### AI GENERATED (the print is a debug message now, off unless Entity.print_collisions is set)
+        with mock.patch.object(Entity, "print_collisions", True), mock.patch("builtins.print") as printed:
+            step([player])
+        ### END AI GENERATED
+
+        printed.assert_any_call("Entity collided with wall")
+
+    ### AI GENERATED
+    def test_wall_collision_is_quiet_by_default(self):
+        player = Player(initial_position=np.array([5.0 - 0.2, 0.0, 0.0]))
+
         with mock.patch("builtins.print") as printed:
             step([player])
 
-        printed.assert_any_call("Entity collided with wall")
+        printed.assert_not_called()
+    ### END AI GENERATED
 
     def test_ball_touching_wall_fires_wall_collision_event(self):
         ball = Ball(initial_position=np.array([5.0 - 0.1, 0.0, 0.0]))

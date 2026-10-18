@@ -8,6 +8,8 @@
 #     keys + RL-only keys), TOML loading, strict unknown-key rejection,
 #     validation at load, and the derived discount factor (design #19, #21).
 #   - 2026-10-11: Set the red_max_speed default to the calibrated 1.8 (step 10).
+#   - 2026-10-18: Added run.env ("mock" | "pybullet") to pick the env
+#     train/report/calibrate use. (Austin Beinder)
 # Prompt summary: Implement Phase 3 step 1 of the issue #7 plan (config +
 #   validation) following the student's design decisions.
 # Human review:   Pending review
@@ -47,6 +49,7 @@ OPTIONS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
     "horizon_mode": (frozenset({"infinite"}), frozenset({"finite"})),
     "obs_ordering": (frozenset({"distance"}), frozenset({"index"})),
     "obs_mode": (frozenset({"full"}), frozenset({"radius"})),
+    "env": (frozenset({"mock", "pybullet"}), frozenset()),  # AI GENERATED
 }
 
 # Reward term names (#14). The registry in marl/rl/reward.py must match these
@@ -150,6 +153,11 @@ class RunConfig:
     # Fixed across training seeds, so every run is evaluated on the same episodes (#23).
     eval_seed: int = 20261019
     out_dir: str = "runs"
+    ### AI GENERATED
+    # Which env implementation to train/evaluate on (marl.envs.make_env). Not shared config: the
+    # env side doesn't need it, and both envs implement the same ICD.
+    env: str = "mock"
+    ### END AI GENERATED
 
 
 @dataclass(frozen=True)
@@ -370,3 +378,4 @@ def _validate_run(cfg: Config) -> None:
     _require(r.eval_every >= 1, "run.eval_every must be >= 1")
     _require(r.eval_episodes >= 1, "run.eval_episodes must be >= 1")
     _require(bool(r.out_dir), "run.out_dir must not be empty")
+    _check_option("env", r.env)  # AI GENERATED

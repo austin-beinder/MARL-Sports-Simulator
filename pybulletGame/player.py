@@ -70,7 +70,10 @@ class Player(Entity):
         """
         This function will get called when a new collision occurs.
         """
-        print(f"Entity: {self.body_id} collided with Entity: {collided_entity.body_id}")
+        ### AI GENERATED (debug switch)
+        if Entity.print_collisions:
+            print(f"Entity: {self.body_id} collided with Entity: {collided_entity.body_id}")
+        ### END AI GENERATED
 
         ### AI GENERATED
         # Walls have team NONE, so without this check they'd be treated as an opponent below
