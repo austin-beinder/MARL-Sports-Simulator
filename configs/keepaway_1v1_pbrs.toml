@@ -1,0 +1,24 @@
+# ==============================================================================
+# AI CITATION
+# Tool:    Claude Code (Claude Opus 5.5)
+# Date:    2026-10-14
+# Author:  JC Stinson III (LifeHackerIII)
+# Usage:
+#   - 2026-10-14: Created this file: the PBRS acquisition-ablation config
+#     (keep-away 1v1 + pbrs_ball_acquisition at coef 4, which the student chose
+#     from the coefficient pilot).
+# Prompt summary: Run the for-score PBRS ablation (issue #7 plan, follow-on
+#   TODO (c)).
+# Human review:   Pending review
+# ==============================================================================
+# PBRS acquisition ablation: keepaway_1v1.toml plus one potential-based shaping
+# term. Every other key takes its default in marl/common/config.py, and those
+# defaults equal keepaway_1v1.toml (a test checks it). So each run differs from
+# its survival-only control with the same seed ONLY in the reward.
+#
+# coef = 4: the largest weight with no cost to possession learning in the pilot
+# (coef 1/2/4/8/16, seeds 10-11, 200k steps; see the plan doc, 2026-10-14).
+
+[rl.reward]
+base = "survival"
+shaping = [{ name = "pbrs_ball_acquisition", enabled = true, coef = 4.0 }]

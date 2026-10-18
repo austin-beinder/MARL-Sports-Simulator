@@ -9,6 +9,10 @@
 #     curve, the goto_target sanity check, training diagnostics) and a
 #     markdown table view, styled with a validated light-mode palette and the
 #     "emphasis" form (design #23; Phase 3 step 11).
+#   - 2026-10-14: Added the PBRS ablation figures (survival-only vs + PBRS
+#     learning curves; the coefficient-pilot sweep of closing speed, races won
+#     and possession survival), their table views, race columns in the
+#     keep-away table, and a validated second series color (slot 2).
 # Prompt summary: Implement Phase 3 step 11 of the issue #7 plan (plots for the
 #   midterm from the 5-seed keep-away runs).
 # Human review:   Pending review
@@ -24,6 +28,8 @@ Visual rules (data-viz method, light mode):
   in the evaluation table); the line is the mean.
 * Thin solid lines, hairline solid gridlines, text in ink tokens (never series color).
 * Every figure has a table view twin: ``results_tables.md`` (plus the source CSVs).
+* The PBRS comparison has TWO learned arms: survival-only keeps the accent (slot 1,
+  as in every other figure); + PBRS takes categorical slot 2, validated against it.
 """
 
 from __future__ import annotations
@@ -49,6 +55,9 @@ from marl.common.config import load_config  # noqa: E402
 # Light-mode tokens from the data-viz reference palette.
 SURFACE, INK, INK_2, MUTED, GRID, AXIS = "#fcfcfb", "#0b0b0b", "#52514e", "#898781", "#e1e0d9", "#c3c2b7"
 ACCENT = "#2a78d6"  # categorical slot 1; validator: band, chroma and >= 3:1 on SURFACE all PASS
+# Categorical slot 2. Validator, pair with ACCENT on SURFACE (light): band, chroma PASS;
+# CVD dE 24.7 (target >= 8); normal-vision dE 33.6 (floor 15); contrast >= 3:1 PASS.
+SERIES_2 = "#eb6834"
 CONTEXT = MUTED  # de-emphasis gray for reference/context marks (always direct-labeled)
 BAND_ALPHA = 0.12
 
@@ -160,26 +169,26 @@ def smooth(Y: np.ndarray, window: int) -> np.ndarray:
 
 
 # --- Marks ----------------------------------------------------------------------------
-def _mean_band(ax, x: np.ndarray, Y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+def _mean_band(ax, x: np.ndarray, Y: np.ndarray, color: str = ACCENT) -> tuple[np.ndarray, np.ndarray]:
     m, sd = mean_std(Y)
-    ax.fill_between(x, m - sd, m + sd, color=ACCENT, alpha=BAND_ALPHA, linewidth=0, zorder=2)
-    ax.plot(x, m, color=ACCENT, zorder=3)
+    ax.fill_between(x, m - sd, m + sd, color=color, alpha=BAND_ALPHA, linewidth=0, zorder=2)
+    ax.plot(x, m, color=color, zorder=3)
     return m, sd
 
 
-def _end_dot(ax, x: float, y: float) -> None:
-    ax.plot([x], [y], "o", ms=8, color=ACCENT, mec=SURFACE, mew=2, zorder=5)
+def _end_dot(ax, x: float, y: float, color: str = ACCENT) -> None:
+    ax.plot([x], [y], "o", ms=8, color=color, mec=SURFACE, mew=2, zorder=5)
 
 
-def _reference(ax, y: float, text: str, above: bool) -> None:
+def _reference(ax, y: float, text: str, above: bool, right: bool = False) -> None:
     ax.axhline(y, color=CONTEXT, linewidth=1.5, zorder=1)
     ax.annotate(
         text,
-        xy=(0.01, y),
+        xy=(0.99 if right else 0.01, y),
         xycoords=("axes fraction", "data"),
         xytext=(0, 4 if above else -4),
         textcoords="offset points",
-        ha="left",
+        ha="right" if right else "left",
         va="bottom" if above else "top",
         fontsize=9,
         color=INK_2,
@@ -207,6 +216,23 @@ def _end_label(ax, x: float, y: float, text: str, refs: Sequence[float], series:
         fontweight="semibold",
         color=INK,
     )
+
+
+def _end_labels(ax, ends: Sequence[tuple[float, float, str]], refs: Sequence[float]) -> None:
+    """Direct-label several line ends at once. Two ends closer than 8% of the y-range
+    split: the higher label goes above its line, the lower one below. A lone end avoids
+    a nearby reference line (else goes above). Call after the y-limits are final."""
+    lo, hi = ax.get_ylim()
+    near = 0.08 * (hi - lo)
+    for k, (x, y, text) in enumerate(ends):
+        rivals = [(e[1], j) for j, e in enumerate(ends) if j != k and abs(e[1] - y) < near]
+        if rivals:
+            above = (y, k) > max(rivals)
+        else:
+            close = [r for r in refs if abs(r - y) < near]
+            above = not close or min(close, key=lambda r: abs(r - y)) < y
+        ax.annotate(text, xy=(x, y), xytext=(-8, 9 if above else -9), textcoords="offset points", ha="right",
+                    va="bottom" if above else "top", fontsize=9.5, fontweight="semibold", color=INK)
 
 
 def _legend(fig, n_seeds: int, context_label: str) -> None:
@@ -384,17 +410,146 @@ def fig_diagnostics(curves: dict[str, np.ndarray], out_dir: Path, window: int = 
     return _save(fig, out_dir, "keepaway_training_diagnostics")
 
 
+# --- PBRS ablation (acquisition shaping) -------------------------------------------------
+def fig_pbrs_curves(ctl: dict[str, np.ndarray], pbrs: dict[str, np.ndarray], table: dict[str, dict[str, float]],
+                    coef: float, out_dir: Path) -> Path:
+    """Survival-only vs + PBRS: evaluation curves per start type (same training seeds,
+    same fixed evaluation episodes); scripted baselines as labeled gray context."""
+    arms = ((ctl, ACCENT, "survival only"), (pbrs, SERIES_2, f"+ PBRS (coef {coef:g})"))
+    fig, axes = plt.subplots(1, 2, figsize=(10, 4.6), sharey=True, layout="constrained")
+    axes[0].set_ylim(50, 175)
+    for ax, key, title in zip(axes, ("len_mean_possession", "len_mean_free_ball"), ("Possession starts", "Free-ball starts")):
+        flee = table["flee"][key]
+        trivial = float(np.mean([table[p][key] for p in TRIVIAL]))
+        _reference(ax, flee, f"flee (scripted): {flee:.0f}", above=True)
+        _reference(ax, trivial, f"random / still / untrained: {trivial:.0f}", above=False)
+        ends = []
+        for curves, color, name in arms:
+            x = curves["env_steps"] / 1e6
+            m, sd = _mean_band(ax, x, curves[key], color)
+            _end_dot(ax, x[-1], m[-1], color)
+            ends.append((x[-1], m[-1], f"{name} {m[-1]:.0f} ± {sd[-1]:.0f}"))
+        _end_labels(ax, ends, [flee, trivial])
+        ax.set_title(title)
+        ax.set_xlabel("Environment steps (millions)")
+        ax.set_xlim(0, max(e[0] for e in ends) * 1.02)
+    axes[0].set_ylabel("Mean episode length (control steps)")
+    fig.suptitle(f"Keep-away 1v1: survival-only vs + PBRS acquisition shaping (coef {coef:g}), fixed evaluation episodes",
+                 x=0.01, ha="left", color=INK, fontsize=12, fontweight="semibold")
+    handles = [(Patch(facecolor=c, alpha=BAND_ALPHA, linewidth=0), Line2D([], [], color=c, linewidth=2)) for _, c, _ in arms]
+    labels = [f"{name}: mean, shaded ± 1 std over {len(curves['len_mean'])} seeds" for curves, _, name in arms]
+    fig.legend([*handles, Line2D([], [], color=CONTEXT, linewidth=1.5)], [*labels, "scripted baselines (values labeled)"],
+               loc="outside lower center", ncols=3, fontsize=9)
+    return _save(fig, out_dir, "pbrs_learning_curves")
+
+
+SWEEP_METRICS = ("approach_m_per_step", "approach_alignment", "pickup_rate", "len_mean_possession",
+                 "len_mean_free_ball", "env_steps")
+SWEEP_PANELS = (  # key, title, y label, scale, value format, y-limits
+    ("approach_m_per_step", "Closing speed on the loose ball", "Meters closed per control step", 1.0, "{:.3f}", (0, 0.11)),
+    ("pickup_rate", "Races won", "% of free-ball evaluation starts", 100.0, "{:.0f}%", (0, 105)),
+    ("len_mean_possession", "Survival in possession starts", "Mean episode length (control steps)", 1.0, "{:.0f}", (50, 175)),
+)
+
+
+def sweep_rows(paths: Sequence[str | Path]) -> tuple[list[dict[str, float]], dict[str, float]]:
+    """The PPO (stochastic) rows of the pilot's per-run evaluation CSVs, one per (coef, seed),
+    plus the flee baseline (the same in every file: same fixed episodes)."""
+    rows: list[dict[str, float]] = []
+    flee: dict[str, float] | None = None
+    for p in paths:
+        for r in read_csv(p):
+            values = {k: float(v) for k, v in r.items() if k not in ("policy", "run")}
+            if r["policy"] == "ppo":
+                rows.append(values)
+            elif r["policy"] == "flee" and flee is None:
+                flee = values
+    if not rows or flee is None:
+        raise ValueError("the sweep files hold no PPO or flee rows (were they written by scripts/evaluate.py?)")
+    return rows, flee
+
+
+def sweep_table(rows: Sequence[dict[str, float]]) -> dict[str, dict[str, float]]:
+    """Mean and seed std per coefficient, in the shape ``table_markdown`` takes."""
+    table = {}
+    for c in sorted({r["pbrs_coef"] for r in rows}):
+        sel = [r for r in rows if r["pbrs_coef"] == c]
+        out: dict[str, float] = {"n_seeds": len(sel)}
+        for k in SWEEP_METRICS:
+            vals = np.array([r[k] for r in sel])
+            out[k] = float(vals.mean())
+            out[f"{k}_seed_std"] = float(vals.std(ddof=1)) if len(vals) > 1 else float("nan")
+        table["0 (survival only)" if c == 0 else f"{c:g}"] = out
+    return table
+
+
+def fig_pbrs_sweep(rows: Sequence[dict[str, float]], flee: dict[str, float], chosen: float | None, out_dir: Path) -> Path:
+    """The coefficient pilot: one point per coefficient (ordinal x: the coefficients double),
+    seeds as faint dots behind the mean; flee as the gray "runs straight at it" reference."""
+    coefs = sorted({r["pbrs_coef"] for r in rows})
+    pos = {c: i for i, c in enumerate(coefs)}
+    seeds = {c: sum(r["pbrs_coef"] == c for r in rows) for c in coefs}
+    fig, axes = plt.subplots(1, 3, figsize=(12, 4.3), layout="constrained")
+    for ax, (key, title, ylabel, scale, fmt, ylim) in zip(axes, SWEEP_PANELS):
+        ax.set_ylim(*ylim)
+        near = 0.08 * (ylim[1] - ylim[0])
+        ref = flee[key] * scale
+        _reference(ax, ref, f"flee (scripted): {fmt.format(ref)}", above=False, right=True)
+        means = []
+        for c in coefs:
+            vals = np.array([r[key] for r in rows if r["pbrs_coef"] == c]) * scale
+            # clip_on=False: a 0% point sits ON the baseline and must show whole
+            ax.plot(np.full(len(vals), pos[c]), vals, "o", ms=5, color=ACCENT, alpha=0.35, mew=0, zorder=2, clip_on=False)
+            means.append(float(vals.mean()))
+            if c in (coefs[0], chosen):  # label selectively: no shaping vs the chosen weight
+                # Clear the seed dots: above the cluster, or below it if a reference line is close above.
+                above = not 0 <= ref - vals.max() < near
+                ax.annotate(fmt.format(means[-1]), xy=(pos[c], vals.max() if above else vals.min()),
+                            xytext=(0, 7 if above else -7), textcoords="offset points", ha="center",
+                            va="bottom" if above else "top", fontsize=9.5, fontweight="semibold", color=INK)
+        ax.plot(range(len(coefs)), means, color=ACCENT, marker="o", ms=8, mec=SURFACE, mew=2, zorder=3, clip_on=False)
+        ax.set_xticks(range(len(coefs)), [("0\n(none)" if c == 0 else f"{c:g}") + ("\n(chosen)" if c == chosen else "")
+                                          for c in coefs])
+        if chosen in pos:  # mark the chosen weight on its tick label, in ink (no extra line through the data)
+            tick = ax.get_xticklabels()[pos[chosen]]
+            tick.set_color(INK)
+            tick.set_fontweight("semibold")
+        ax.set_xlim(-0.5, len(coefs) - 0.5)
+        ax.set_xlabel("PBRS coefficient")
+        ax.set_ylabel(ylabel)
+        ax.set_title(title, fontsize=10)
+    fig.suptitle("PBRS coefficient pilot (~200k steps each): stronger shaping speeds the approach but doesn't win races",
+                 x=0.01, ha="left", color=INK, fontsize=12, fontweight="semibold")
+    counts = list(seeds.values())
+    common = max(set(counts), key=counts.count)
+    others = [f"{n} at coef {c:g}" for c, n in seeds.items() if n != common]
+    n_text = f"{common} per coef" + (f"; {', '.join(others)}" if others else "")
+    handles = [
+        Line2D([], [], color=ACCENT, marker="o", ms=7, mec=SURFACE, mew=1.5),
+        Line2D([], [], linestyle="", marker="o", ms=5, color=ACCENT, alpha=0.35, mew=0),
+        Line2D([], [], color=CONTEXT, linewidth=1.5),
+    ]
+    labels = [f"PPO, stochastic eval: mean over training seeds ({n_text})", "individual training seeds",
+              "flee (scripted): runs straight at a loose ball"]
+    fig.legend(handles, labels, loc="outside lower center", ncols=2, fontsize=9)
+    return _save(fig, out_dir, "pbrs_coef_sweep")
+
+
 # --- Table view -----------------------------------------------------------------------
-def table_markdown(title: str, table: dict[str, dict[str, float]], columns: Sequence[tuple[str, str]]) -> str:
-    def cell(row: dict[str, float], key: str) -> str:
+def table_markdown(title: str, table: dict[str, dict[str, float]], columns: Sequence[tuple[str, ...]],
+                   first: str = "policy") -> str:
+    """Columns are (key, name) or (key, name, format spec); the default format is ".2f"."""
+
+    def cell(row: dict[str, float], key: str, fmt: str) -> str:
         v, s = row.get(key, float("nan")), row.get(f"{key}_seed_std", float("nan"))
         if not math.isfinite(v):
             return "-"
-        return f"{v:.2f} ± {s:.2f}" if math.isfinite(s) else f"{v:.2f}"
+        return f"{v:{fmt}} ± {s:{fmt}}" if math.isfinite(s) else f"{v:{fmt}}"
 
-    head = "| policy | seeds | " + " | ".join(name for _, name in columns) + " |"
+    head = f"| {first} | seeds | " + " | ".join(c[1] for c in columns) + " |"
     sep = "|---|---|" + "---|" * len(columns)
-    body = [f"| {p} | {int(r['n_seeds'])} | " + " | ".join(cell(r, k) for k, _ in columns) + " |" for p, r in table.items()]
+    body = [f"| {p} | {int(r['n_seeds'])} | " + " | ".join(cell(r, c[0], c[2] if len(c) > 2 else ".2f") for c in columns) + " |"
+            for p, r in table.items()]
     return "\n".join([f"### {title}", "", head, sep, *body, ""])
 
 
@@ -403,10 +558,32 @@ def _dirs(pattern: str) -> list[str]:
     return sorted(p for p in glob.glob(pattern) if Path(p).is_dir())
 
 
+def _arm_coef(table_path: Path) -> float:
+    """The PBRS coefficient of the runs behind an evaluation table (its per-run CSV records it)."""
+    rows = read_csv(table_path.with_name(table_path.stem + "_per_run.csv"))
+    return float(next(r["pbrs_coef"] for r in rows if r["policy"] == "ppo"))
+
+
+KEEPAWAY_COLUMNS = (
+    ("len_mean", "overall length"), ("len_mean_possession", "possession starts"),
+    ("len_mean_free_ball", "free-ball starts"), ("frac_truncated", "fraction truncated"),
+    ("pickup_rate", "free-ball races won (0-1)"), ("approach_m_per_step", "closing speed (m/step)", ".4f"),
+)
+SWEEP_COLUMNS = (
+    ("approach_m_per_step", "closing speed (m/step)", ".4f"), ("approach_alignment", "alignment (cos)"),
+    ("pickup_rate", "races won (0-1)"), ("len_mean_possession", "possession starts"),
+    ("len_mean_free_ball", "free-ball starts"), ("env_steps", "env steps", ".0f"),
+)
+SWEEP_DEFAULT = ("runs/eval_keepaway_1v1_seed0_iter_00100_per_run.csv", "runs/eval_pilot_pbrs_coef*_seed10_per_run.csv")
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Make the report figures from finished runs (step 11).")
     ap.add_argument("--keepaway", default="runs/keepaway_1v1_seed*", help="glob of keep-away run directories")
     ap.add_argument("--goto", default="runs/goto_target_seed*", help="glob of goto_target run directories")
+    ap.add_argument("--pbrs", default="runs/keepaway_1v1_pbrs_seed*", help="glob of the PBRS-ablation run directories")
+    ap.add_argument("--sweep", nargs="+", default=list(SWEEP_DEFAULT),
+                    help="per-run evaluation CSVs of the PBRS coefficient pilot (globs allowed)")
     ap.add_argument("--calibration", type=Path, default=Path("runs/calibration_keepaway_1v1.csv"))
     ap.add_argument("--config", type=Path, default=Path("configs/keepaway_1v1.toml"),
                     help="keep-away config (for the chosen red speed and the carrier speed)")
@@ -427,13 +604,31 @@ def main(argv: Sequence[str] | None = None) -> int:
             table = read_table(tpath)
             made.append(fig_keepaway_curves(eval_curves(keep), table, args.out))
             made.append(fig_keepaway_final(table, args.out))
-            cols = (("len_mean", "overall length"), ("len_mean_possession", "possession starts"),
-                    ("len_mean_free_ball", "free-ball starts"), ("frac_truncated", "fraction truncated"))
-            tables_md.append(table_markdown(f"Keep-away ({len(keep)} runs; mean episode length, control steps)", table, cols))
+            tables_md.append(table_markdown(f"Keep-away ({len(keep)} runs; mean episode length, control steps)", table,
+                                            KEEPAWAY_COLUMNS))
         else:
             notes.append(f"skipped keep-away curves/results: run `python scripts/evaluate.py {' '.join(keep)}` first")
     else:
         notes.append(f"no keep-away runs match {args.keepaway!r}")
+
+    pbrs, chosen = _dirs(args.pbrs), None
+    if pbrs and keep and table_path_for(pbrs).exists() and table_path_for(keep).exists():
+        ppath = table_path_for(pbrs)
+        chosen = _arm_coef(ppath)
+        made.append(fig_pbrs_curves(eval_curves(keep), eval_curves(pbrs), read_table(table_path_for(keep)), chosen, args.out))
+        tables_md.append(table_markdown(
+            f"Keep-away + PBRS acquisition shaping, coef {chosen:g} ({len(pbrs)} runs; mean episode length, control steps)",
+            read_table(ppath), KEEPAWAY_COLUMNS))
+    elif pbrs:
+        notes.append(f"skipped the PBRS comparison: run `python scripts/evaluate.py {' '.join(pbrs)}` "
+                     "(and on the keep-away runs) first")
+
+    sweep = sorted({p for pattern in args.sweep for p in glob.glob(pattern)})
+    if sweep:
+        rows, flee = sweep_rows(sweep)
+        made.append(fig_pbrs_sweep(rows, flee, chosen, args.out))
+        tables_md.append(table_markdown("PBRS coefficient pilot (PPO, stochastic eval; lengths in control steps)",
+                                        sweep_table(rows), SWEEP_COLUMNS, first="PBRS coef"))
 
     goto = _dirs(args.goto)
     gpath = table_path_for(goto) if goto else None

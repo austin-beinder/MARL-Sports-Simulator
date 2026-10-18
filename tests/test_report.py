@@ -9,6 +9,8 @@
 #     exactly, aggregation across seeds, refusing mixed tasks, the CLI).
 #   - 2026-10-11: Added a goto_target reproduction test: keep-away lengths are
 #     too coarse to tell two untrained inits apart (a mutation check showed it).
+#   - 2026-10-14: Added tests for the race metrics and arm columns, pbrs_coef,
+#     and the --checkpoint option (it never overwrites the final table).
 # Prompt summary: Implement Phase 3 step 10 of the issue #7 plan (baselines,
 #   evaluation, calibration).
 # Human review:   Pending review
@@ -19,7 +21,7 @@ import math
 import pytest
 
 from marl.common.config import config_from_dict
-from marl.rl.report import evaluate_runs, format_table, main
+from marl.rl.report import evaluate_runs, format_table, main, pbrs_coef
 from marl.rl.train import train
 
 KEYS = ("len_mean", "frac_truncated", "mean_reward", "len_mean_possession", "len_mean_free_ball")
@@ -98,3 +100,33 @@ def test_cli_writes_both_tables(tmp_path):
     out = tmp_path / "table.csv"
     assert main([str(run), "--out", str(out)]) == 0
     assert len(csv_rows(out)) == 6 and len(csv_rows(tmp_path / "table_per_run.csv")) == 6
+
+
+def test_rows_carry_race_metrics_and_the_arm(tmp_path):
+    run = tiny_run(tmp_path, start={"start_mix": 0.0})  # every eval episode is a race
+    per_run, table = evaluate_runs([run])
+    by = {r["policy"]: r for r in per_run}
+    assert (by["ppo"]["pbrs_coef"], by["ppo"]["env_steps"], by["untrained"]["env_steps"]) == (0.0, 128, 0)
+    assert math.isnan(by["flee"]["pbrs_coef"]) and math.isnan(by["flee"]["env_steps"])
+    assert all(r["races"] == 4 for r in per_run)
+    assert by["flee"]["pickup_rate"] == 1.0 and by["flee"]["approach_m_per_step"] == pytest.approx(0.1)
+    tab = {r["policy"]: r for r in table}
+    assert tab["ppo"]["pickup_rate"] == by["ppo"]["pickup_rate"]  # aggregated like every metric
+    assert "pickup" in format_table(table)
+
+
+def test_pbrs_coef_identifies_the_arm():
+    def shaped(enabled):
+        term = {"name": "pbrs_ball_acquisition", "enabled": enabled, "coef": 4.0}
+        return config_from_dict({"rl": {"reward": {"shaping": [term]}}})
+
+    assert (pbrs_coef(config_from_dict({})), pbrs_coef(shaped(True)), pbrs_coef(shaped(False))) == (0.0, 4.0, 0.0)
+
+
+def test_cli_checkpoint_option_never_overwrites_the_final_table(tmp_path):
+    run = tiny_run(tmp_path)  # 2 iterations, eval_every 2 -> checkpoints iter_00002.pt + final.pt
+    assert main([str(run), "--checkpoint", "iter_00002.pt"]) == 0
+    assert (tmp_path / f"eval_{run.name}_iter_00002.csv").exists()
+    assert not (tmp_path / f"eval_{run.name}.csv").exists()  # the final table's name stays free
+    rows = csv_rows(tmp_path / f"eval_{run.name}_iter_00002_per_run.csv")
+    assert rows[0]["env_steps"] == "128"

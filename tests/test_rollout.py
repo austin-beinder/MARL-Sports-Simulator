@@ -10,6 +10,8 @@
 #     records), episodes spanning rollouts, value-cache refresh after an
 #     update, determinism, goto_target and N=2/M=2.
 #   - 2026-10-11: Added a check of the episode mean_reward against the replay.
+#   - 2026-10-14: Added a test that the shaping reward is reported separately
+#     and never enters an episode's mean_reward (PBRS ablation).
 # Prompt summary: Implement Phase 3 step 7 of the issue #7 plan (buffer +
 #   GAE, plus the rollout collector that owns the next_value contract).
 # Human review:   Pending review
@@ -170,6 +172,20 @@ def test_n2_m2_rollout_shapes_and_shared_critic_input():
     assert not np.array_equal(buf.obs[:, 0], buf.obs[:, 1])  # but different self-first o_i
     buf.compute_advantages(cfg.gamma, cfg.rl.ppo.gae_lambda)
     assert np.array_equal(buf.advantages[:, 0], buf.advantages[:, 1])
+
+
+def test_shaping_is_reported_separately_and_kept_out_of_mean_reward():
+    free_ball = {"start": {"start_mix": 0.0}, "max_episode_steps": 60}
+    shaping = [{"name": "pbrs_ball_acquisition", "enabled": True, "coef": 2.0}]
+    cfg, env, col, buf, critic = setup({"shared": free_ball, "rl": {"reward": {"shaping": shaping}}}, T=300)
+    stats = col.collect(buf)
+    # The survival base is 1 per step, so everything above 1 in the stored rewards is shaping.
+    assert stats.mean_shaping == pytest.approx(float(buf.rewards.mean()) / col.reward_fn.scale - 1.0, abs=1e-6)
+    assert stats.mean_shaping != 0.0
+    assert stats.episodes and all(e.mean_reward == 1.0 for e in stats.episodes)  # the task reward only
+
+    cfg, env, col, buf, critic = setup({"shared": free_ball}, T=60)
+    assert col.collect(buf).mean_shaping == 0.0  # exactly 0 without shaping terms
 
 
 def test_start_types_are_inferred_from_the_reset_state():

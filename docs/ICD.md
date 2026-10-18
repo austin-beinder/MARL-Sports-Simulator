@@ -13,6 +13,8 @@ Usage:
     the possession semantics section, mid-block termination, kick release
     formula, red speed, arena walls, max_episode_steps, the go-to-target
     scenario, reset/info details, action types, and conformance tests.
+  2026-10-14: Added the returned-state snapshot rule (§5) and its conformance
+    test (§11). The PBRS reward term needs them; the student approved the change.
 Prompt summary: Draft the Gym/RL interface control document (issue #11) from
   the student's issue #7 design decisions, for teammates to review.
 Human review:   Pending review (student added the axis convention, 2026-10-10)
@@ -109,6 +111,13 @@ s = {
 ```
 
 - At most one entity has `has_possession = True`. All False means the ball is loose.
+- **A returned `s` is a snapshot (added 2026-10-14).**
+  - Each `reset()` / `step()` call returns a new `s`.
+  - The env never modifies a returned `s` afterwards, neither in later `step()` calls nor in `reset()`.
+  - Why: the RL side keeps `s` while it steps the env. For example, potential-based reward shaping reads
+    Φ(s) after `step()` has returned `s_next`.
+  - How: build fresh dicts and lists on every call; never return references to internal buffers that the
+    next tick updates.
 - **Hidden state rule:** if the env keeps **any** other memory that affects future dynamics, it must
   be added to `s`. Examples: possession hysteresis or contact counters, kick cooldowns, ball
   spin / angular velocity (if it affects rolling), internal state in red's script.
@@ -257,6 +266,7 @@ The RL side will write a test suite against this ICD that can run on **both** th
 - `terminated` ⇒ some red has `has_possession` in `s_next`;
 - terminated takes priority over truncated;
 - the final `s_next` is the true final state (no auto-reset);
+- a returned `s` is never modified afterwards, by later `step()` or `reset()` calls (§5);
 - `kick_applied[i]` == (`kick_trigger == 1` and possession at the start of the step);
 - spawn constraints hold; no reset starts with red possession;
 - `n_red = 0` works (goto_target).

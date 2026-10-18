@@ -8,6 +8,9 @@
 #     loop on tiny configs (outputs, checkpoint reload, determinism,
 #     evaluation isolation, the same eval seeds for every training seed,
 #     output-directory safety, --set parsing, the CLI script).
+#   - 2026-10-14: Added tests for the train.csv shaping column and for enabling
+#     a shaping term with --set (the PBRS pilot's command line). The
+#     run_episodes spy now passes the new optional on_step argument through.
 # Prompt summary: Implement Phase 3 step 8 of the issue #7 plan (PPO update +
 #   training loop).
 # Human review:   Pending review
@@ -22,7 +25,7 @@ import pytest
 import torch
 
 import marl.rl.evaluate as evaluate_mod
-from marl.common.config import config_from_dict
+from marl.common.config import ShapingTerm, config_from_dict, load_config, with_overrides
 from marl.rl.checkpoint import load_actor, load_checkpoint
 from marl.rl.networks import MOVE
 from marl.rl.train import parse_overrides, train
@@ -104,9 +107,9 @@ def test_every_training_seed_is_evaluated_on_the_same_episodes(tmp_path, monkeyp
     seen = []
     real = evaluate_mod.run_episodes
 
-    def spy(env, policy, cfg, reward_fn, seeds):
+    def spy(env, policy, cfg, reward_fn, seeds, *rest):
         seen.append(list(seeds))
-        return real(env, policy, cfg, reward_fn, seeds)
+        return real(env, policy, cfg, reward_fn, seeds, *rest)
 
     monkeypatch.setattr(evaluate_mod, "run_episodes", spy)
     train(tiny(seed=0, total_steps=64), tmp_path / "s0", log=quiet)
@@ -121,6 +124,33 @@ def test_keepaway_run_works(tmp_path):
     })
     res = train(cfg, tmp_path / "ka", log=quiet)
     assert res.final_eval["episodes"] == 2 and res.final_eval["len_mean"] > 0
+
+
+def test_shaping_column_in_train_csv(tmp_path):
+    def run(name, shaping):
+        cfg = config_from_dict({
+            "shared": {"start": {"start_mix": 0.0}},  # free-ball starts: the ball is loose at first
+            "rl": {"reward": {"shaping": shaping}, "ppo": {"rollout_steps": 64, "num_minibatches": 4, "update_epochs": 1}},
+            "run": {"total_steps": 128, "eval_every": 2, "eval_episodes": 2},
+        })
+        return train(cfg, tmp_path / name, log=quiet).out_dir
+
+    plain = run("plain", [])
+    shaped = run("shaped", [{"name": "pbrs_ball_acquisition", "enabled": True, "coef": 1.0}])
+    assert all(float(r["reward_shaping_mean_unscaled"]) == 0.0 for r in rows(plain / "train.csv"))
+    tr = rows(shaped / "train.csv")
+    assert any(float(r["reward_shaping_mean_unscaled"]) != 0.0 for r in tr)
+    for r in tr:  # survival base = 1 per step: the column is exactly the rest of the reward
+        assert float(r["reward_shaping_mean_unscaled"]) == pytest.approx(float(r["reward_mean_unscaled"]) - 1.0, abs=1e-5)
+    # Evaluation reports the task reward only (survival: 1 per step), shaping or not.
+    assert all(float(r["mean_reward"]) == 1.0 for r in rows(shaped / "eval.csv"))
+
+
+def test_set_can_enable_a_shaping_term():
+    # The PBRS pilot's command line: the whole shaping list as one TOML array of inline tables.
+    over = parse_overrides(['rl.reward.shaping=[{name = "pbrs_ball_acquisition", enabled = true, coef = 2}]'])
+    cfg = with_overrides(load_config(ROOT / "configs" / "keepaway_1v1.toml"), over)
+    assert cfg.rl.reward.shaping == (ShapingTerm("pbrs_ball_acquisition", True, 2.0),)
 
 
 def test_output_directory_safety(tmp_path):

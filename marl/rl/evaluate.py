@@ -8,6 +8,13 @@
 #     with an isolated torch RNG (fork_rng), a generic episode runner for any
 #     policy callable (reused by the baselines), and per-start-type summaries
 #     (design #17, #23; walk-through steps 0 and 5).
+#   - 2026-10-14: An episode's mean_reward now counts the base (task) reward
+#     only, so shaping terms never change the evaluation (PBRS ablation).
+#   - 2026-10-14: Added an optional per-step observer to run_episodes and
+#     evaluate_actor, plus the race metrics for the loose ball in free-ball
+#     starts (RaceTracker, summarize_races: pickup rate, closing speed,
+#     alignment), moved from Claude's pilot-analysis scripts at the student's
+#     request.
 # Prompt summary: Implement Phase 3 step 8 of the issue #7 plan (PPO update +
 #   training loop); evaluation is called by the loop.
 # Human review:   Pending review
@@ -23,11 +30,16 @@
   numbers (common random numbers: lower-variance comparisons).
 * Evaluation gets its OWN env instance: it must never reset the training env
   in the middle of a training episode.
+* An optional per-step observer (``on_step``) sees every transition of the same
+  episodes, e.g. ``RaceTracker``, which measures the race for a loose ball (the
+  PBRS acquisition ablation) without playing any extra episodes.
 """
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
@@ -41,6 +53,7 @@ from marl.rl.reward import RewardModule, effective_terminal
 from marl.rl.rollout import EpisodeRecord, Featurizer, start_type_of
 
 Policy = Callable[[dict], dict]  # global state s -> ICD action dict
+StepObserver = Callable[[dict, dict, dict, bool, bool], None]  # (s, actions, s_next, terminated, truncated)
 START_TYPES = (START_POSSESSION, START_FREE_BALL, START_TARGET)
 
 
@@ -58,19 +71,29 @@ def actor_policy(actor: Actor, featurizer: Featurizer, deterministic: bool = Fal
     return policy
 
 
-def run_episodes(env: Any, policy: Policy, cfg: Config, reward_fn: RewardModule, seeds: Sequence[int]) -> list[EpisodeRecord]:
-    """Play one full episode per seed with ``policy``; works for learned and scripted policies."""
+def run_episodes(
+    env: Any,
+    policy: Policy,
+    cfg: Config,
+    reward_fn: RewardModule,
+    seeds: Sequence[int],
+    on_step: StepObserver | None = None,
+) -> list[EpisodeRecord]:
+    """Play one full episode per seed with ``policy``; works for learned and scripted policies.
+    ``on_step`` (if given) sees every transition; it can't change what is played."""
     options = cfg.shared.start.to_reset_options()
     records = []
     for seed in seeds:
         s, _ = env.reset(seed=int(seed), options=options)
         start_type = start_type_of(s, cfg.shared.scenario)
-        reward_sum = 0.0
+        base_sum = 0.0  # the task reward only: shaping is a training aid, never part of evaluation
         while True:
             actions = policy(s)
             s_next, terminated, truncated, info = env.step(actions)
             eff = effective_terminal(terminated, truncated, cfg.rl.horizon_mode)
-            reward_sum += reward_fn(s, actions, s_next, eff, truncated, info)
+            base_sum += reward_fn.parts(s, actions, s_next, eff, truncated, info).base
+            if on_step is not None:
+                on_step(s, actions, s_next, terminated, truncated)
             s = s_next
             if terminated or truncated:
                 break
@@ -80,7 +103,7 @@ def run_episodes(env: Any, policy: Policy, cfg: Config, reward_fn: RewardModule,
                 terminated=terminated,
                 truncated=truncated,
                 start_type=start_type,
-                mean_reward=reward_sum / reward_fn.scale / s["step"],
+                mean_reward=base_sum / s["step"],
             )
         )
     return records
@@ -93,12 +116,13 @@ def evaluate_actor(
     featurizer: Featurizer,
     reward_fn: RewardModule,
     deterministic: bool = False,
+    on_step: StepObserver | None = None,
 ) -> list[EpisodeRecord]:
     """The fixed evaluation protocol (#23): ``run.eval_episodes`` episodes on the eval seeds."""
     seeds = eval_env_seeds(cfg.run.eval_seed, cfg.run.eval_episodes)
     with torch.random.fork_rng(devices=[]):  # restore the training RNG afterwards
         torch.manual_seed(cfg.run.eval_seed)
-        return run_episodes(env, actor_policy(actor, featurizer, deterministic), cfg, reward_fn, seeds)
+        return run_episodes(env, actor_policy(actor, featurizer, deterministic), cfg, reward_fn, seeds, on_step)
 
 
 def summarize(records: Sequence[EpisodeRecord]) -> dict[str, float]:
@@ -117,3 +141,71 @@ def summarize(records: Sequence[EpisodeRecord]) -> dict[str, float]:
         out[f"n_{st}"] = len(sel)
         out[f"len_mean_{st}"] = float(sel.mean()) if len(sel) else nan
     return out
+
+
+# --- The race for a loose ball (PBRS acquisition ablation) ------------------------------
+@dataclass(frozen=True)
+class RaceRecord:
+    """One free-ball start: did blue win the race for the loose ball, and how did it run?"""
+
+    length: int  # episode length (control steps)
+    pickup_step: int | None  # control step at which blue gained the ball; None = never
+    approach_steps: int  # steps that began AND ended with the ball loose
+    closed_m: float  # meters the closest blue closed on the ball over those steps
+    moving_steps: int  # steps that began with the ball loose and that blue moved
+    alignment_sum: float  # sum over those steps of cos(its motion, direction to the ball)
+
+
+def _loose(s: dict) -> bool:
+    return not any(p["has_possession"] for p in s["blue"]) and not any(p["has_possession"] for p in s["red"])
+
+
+class RaceTracker:
+    """A ``run_episodes`` observer: records the race for the loose ball in every free-ball
+    start (``.records``). "Closest blue" is the team's closest player at each step, as in
+    the PBRS potential. With no kicks (milestone 1) a loose ball doesn't move, so all of
+    the distance closed is blue's doing."""
+
+    def __init__(self, cfg: Config):
+        self._scenario = cfg.shared.scenario
+        self.records: list[RaceRecord] = []
+
+    def __call__(self, s: dict, actions: dict, s_next: dict, terminated: bool, truncated: bool) -> None:
+        if s["step"] == 0:  # an episode's first transition
+            self._free = start_type_of(s, self._scenario) == START_FREE_BALL
+            self._pickup: int | None = None
+            self._n, self._closed, self._moving, self._cos = 0, 0.0, 0, 0.0
+        if self._free and _loose(s):
+            ball = s["ball"]["pos"]
+            dists = [math.dist(b["pos"], ball) for b in s["blue"]]
+            i = int(np.argmin(dists))
+            if _loose(s_next):
+                self._n += 1
+                self._closed += dists[i] - min(math.dist(b["pos"], ball) for b in s_next["blue"])
+            elif any(b["has_possession"] for b in s_next["blue"]):
+                self._pickup = s_next["step"]
+            p0, p1 = s["blue"][i]["pos"], s_next["blue"][i]["pos"]
+            move = (p1[0] - p0[0], p1[1] - p0[1])
+            norm = math.hypot(*move)
+            if norm > 1e-9:
+                self._moving += 1
+                self._cos += (move[0] * (ball[0] - p0[0]) + move[1] * (ball[1] - p0[1])) / (norm * dists[i])
+        if (terminated or truncated) and self._free:
+            self.records.append(
+                RaceRecord(s_next["step"], self._pickup, self._n, self._closed, self._moving, self._cos)
+            )
+
+
+def summarize_races(records: Sequence[RaceRecord]) -> dict[str, float]:
+    """Race statistics with FIXED keys (CSV columns), NaN where undefined. Closing speed
+    and alignment are pooled over steps, so a long race counts more than a short one."""
+    nan = float("nan")
+    won = [r.pickup_step for r in records if r.pickup_step is not None]
+    steps, moving = sum(r.approach_steps for r in records), sum(r.moving_steps for r in records)
+    return {
+        "races": len(records),
+        "pickup_rate": len(won) / len(records) if records else nan,
+        "pickup_step_mean": float(np.mean(won)) if won else nan,
+        "approach_m_per_step": sum(r.closed_m for r in records) / steps if steps else nan,
+        "approach_alignment": sum(r.alignment_sum for r in records) / moving if moving else nan,
+    }

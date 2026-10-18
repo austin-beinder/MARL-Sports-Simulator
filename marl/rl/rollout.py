@@ -11,6 +11,9 @@
 #     #20, #23).
 #   - 2026-10-11: Added mean_reward (unscaled reward per step) to episode
 #     records, needed for goto_target, where every episode has the same length.
+#   - 2026-10-14: The rollout now reports the mean shaping reward per step
+#     (RolloutStats.mean_shaping), and an episode's mean_reward counts the base
+#     (task) reward only, so shaping never leaks into it (PBRS ablation).
 # Prompt summary: Implement Phase 3 step 7 of the issue #7 plan (buffer +
 #   GAE); the rollout collector moved here from step 8 because it owns the
 #   next_value contract that GAE depends on.
@@ -84,8 +87,9 @@ class EpisodeRecord:
     terminated: bool
     truncated: bool
     start_type: str
-    # Reward per step WITHOUT the (1 - gamma) scale: 1 for survival, minus the mean
-    # blue-to-target distance (m) for goto_target, where length is always the max.
+    # BASE (task) reward per step, without the (1 - gamma) scale and without any
+    # shaping: 1 for survival, minus the mean blue-to-target distance (m) for
+    # goto_target, where length is always the max.
     mean_reward: float
 
 
@@ -93,6 +97,7 @@ class EpisodeRecord:
 class RolloutStats:
     episodes: list[EpisodeRecord]  # episodes that ENDED during this rollout
     mean_commanded_speed: float  # KL-1 symptom metric (#23)
+    mean_shaping: float  # unscaled shaping reward per step (0.0 without shaping terms)
 
 
 def make_buffer(cfg: Config, featurizer: Featurizer, actor: Actor) -> RolloutBuffer:
@@ -124,7 +129,7 @@ class RolloutCollector:
         # weights must not leak into this rollout's first row.
         self._value = None
         episodes: list[EpisodeRecord] = []
-        speed = 0.0
+        speed = shaping = 0.0
         for _ in range(buf.n_steps):
             if self._s is None:
                 self._begin_episode()
@@ -138,8 +143,9 @@ class RolloutCollector:
 
             s_next, terminated, truncated, info = self.env.step(actions)
             eff = effective_terminal(terminated, truncated, self.cfg.rl.horizon_mode)
-            reward = self.reward_fn(s, actions, s_next, eff, truncated, info)
-            self._ep_reward += reward
+            parts = self.reward_fn.parts(s, actions, s_next, eff, truncated, info)
+            shaping += parts.shaping
+            self._ep_base += parts.base
             obs_next, cin_next = self.featurize(s_next)
             with torch.no_grad():
                 # V(true s_{t+1}), BEFORE any reset (#12): at an episode end this is the
@@ -153,7 +159,7 @@ class RolloutCollector:
                 log_prob=log_prob.numpy(),
                 value=value.numpy(),
                 next_value=next_value.numpy(),
-                reward=reward,
+                reward=parts.total,
                 terminated=terminated,
                 truncated=truncated,
                 effective_terminal=eff,
@@ -165,19 +171,19 @@ class RolloutCollector:
                         terminated=terminated,
                         truncated=truncated,
                         start_type=self._start_type,
-                        mean_reward=self._ep_reward / self.reward_fn.scale / s_next["step"],
+                        mean_reward=self._ep_base / s_next["step"],
                     )
                 )
                 self._s = None  # no auto-reset (ICD §4): the next step starts a new episode
             else:
                 self._s, self._obs, self._cin = s_next, obs_next, cin_next
                 self._value = next_value  # V(s_{t+1}) is the next step's V(s_t)
-        return RolloutStats(episodes, speed / buf.n_steps)
+        return RolloutStats(episodes, speed / buf.n_steps, shaping / buf.n_steps)
 
     def _begin_episode(self) -> None:
         seed = int(self._seed_rng.integers(0, 2**31 - 1))
         self._s, _ = self.env.reset(seed=seed, options=self._reset_options)
         self._start_type = start_type_of(self._s, self.cfg.shared.scenario)
-        self._ep_reward = 0.0  # scaled rewards summed over the episode (it may span rollouts)
+        self._ep_base = 0.0  # unscaled base rewards summed over the episode (it may span rollouts)
         self._obs, self._cin = self.featurize(self._s)
         self._value = None

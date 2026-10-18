@@ -55,7 +55,7 @@ OPTIONS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
 # Reward term names (#14). The registry in marl/rl/reward.py must match these
 # (a test checks it); they live here so the config can be validated at load.
 BASE_REWARD_TERMS: frozenset[str] = frozenset({"survival", "goto_target"})
-SHAPING_TERMS_BUILT: frozenset[str] = frozenset()
+SHAPING_TERMS_BUILT: frozenset[str] = frozenset({"pbrs_ball_acquisition"})  # acquisition ablation
 SHAPING_TERMS_DEFERRED: frozenset[str] = frozenset({"pbrs_red_distance"})  # #15
 
 # The base reward each scenario needs (survival is constant in goto_target,
@@ -348,6 +348,8 @@ def _validate_rl(cfg: Config) -> None:
         known = SHAPING_TERMS_BUILT | SHAPING_TERMS_DEFERRED
         _require(term.name in known, f"rl.reward.shaping: unknown term {term.name!r}; choose from {sorted(known)}")
         _require(term.name not in seen, f"rl.reward.shaping: duplicate term {term.name!r}")
+        # The sign is part of each potential's definition; a negative coef is almost surely a typo.
+        _require(term.coef >= 0, f"rl.reward.shaping: {term.name!r} coef must be >= 0, got {term.coef}")
         seen.add(term.name)
         if term.enabled and term.name in SHAPING_TERMS_DEFERRED:
             raise NotImplementedError(f"shaping term {term.name!r} is interface-only for milestone 1 (#15)")
