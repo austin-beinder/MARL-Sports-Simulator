@@ -1,6 +1,6 @@
 ### AI GENERATED
 """
-Generates textures/grass.png, the tiling grass texture used by pybullet/field.py.
+Generates textures/grass.png, the tiling grass texture used by pybulletGame/field.py.
 
 The image is one tile of mowed grass: a light stripe on the left half and a dark stripe on
 the right half, with noise on top. The noise wraps around the edges, so the tile repeats

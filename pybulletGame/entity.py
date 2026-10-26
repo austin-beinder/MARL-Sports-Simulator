@@ -51,6 +51,10 @@ class Entity:
 
     ### AI GENERATED
     _registry: Dict[int, "Entity"] = {}
+
+    # Debug switch for the collision prints ("Entity: 6 collided with Entity: 4", walls too). Shared
+    # by every entity (Ball and Player included): set Entity.print_collisions = True to turn them on.
+    print_collisions: bool = False
     ### END AI GENERATED
 
     def __init__(self, 
@@ -140,7 +144,10 @@ class Entity:
         """
         This function will get called when a new collision occurs.
         """
-        print(f"Entity: {self.body_id} collided with Entity: {collided_entity.body_id}")
+        ### AI GENERATED (debug switch)
+        if Entity.print_collisions:
+            print(f"Entity: {self.body_id} collided with Entity: {collided_entity.body_id}")
+        ### END AI GENERATED
 
         ### AI GENERATED
         if collided_entity.is_wall:
@@ -153,7 +160,8 @@ class Entity:
 
         Override or extend this to react to walls (for example a reward penalty).
         """
-        print("Entity collided with wall")
+        if Entity.print_collisions:  # AI GENERATED (debug switch)
+            print("Entity collided with wall")
     ### END AI GENERATED
 
     def get_observables(self) -> dict:

@@ -4,10 +4,10 @@
     "python.testing.unittestArgs": [
         "-v",
         "-s",
-        "pybullet/tests",
+        "pybulletGame/tests",
         "-p",
         "*_test.py",
         "-t",
-        "pybullet"
+        "pybulletGame"
     ]
 }

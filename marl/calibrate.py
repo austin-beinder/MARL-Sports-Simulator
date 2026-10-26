@@ -4,6 +4,8 @@
 # Date:    2026-10-11
 # Author:  JC Stinson III (LifeHackerIII)
 # Usage:
+#   - 2026-10-18: Envs come from run.env via make_env, with an --env flag.
+#     (Austin Beinder)
 #   - 2026-10-11: Generated this entire file: the red-speed calibration sweep
 #     (scripted baselines on dedicated calibration seeds), the band-center
 #     selection rule, and its command-line entry point (design #22, ICD §10).
@@ -37,7 +39,7 @@ import numpy as np
 
 from marl.baselines import make_baseline
 from marl.common.config import Config, load_config, with_overrides
-from marl.envs.mock_env import MockEnv
+from marl.envs import make_env  # AI GENERATED
 from marl.rl.evaluate import eval_env_seeds, run_episodes, summarize
 from marl.rl.reward import RewardModule
 
@@ -62,7 +64,7 @@ def survival_table(cfg: Config, speeds: Sequence[float], episodes: int, policies
         reward_fn = RewardModule(c)
         for name in policies:
             policy = make_baseline(name, c.shared, seed=CALIBRATION_SEED)
-            stats = summarize(run_episodes(MockEnv(c.shared), policy, c, reward_fn, seeds))
+            stats = summarize(run_episodes(make_env(c), policy, c, reward_fn, seeds))  # AI GENERATED
             rows.append(
                 {"red_max_speed": float(speed), "policy": name, "survival": stats["len_mean"] / c.shared.max_episode_steps, **stats}
             )
@@ -98,9 +100,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--speeds", default="1.5:2.0:0.05", help='"start:stop:step" or "a,b,c" (m/s)')
     ap.add_argument("--episodes", type=int, default=100, help="episodes per (speed, policy)")
     ap.add_argument("--out", type=Path, help="CSV path (default: runs/calibration_<config name>.csv)")
+    ap.add_argument("--env", choices=("mock", "pybullet"), help="override run.env")  # AI GENERATED
     args = ap.parse_args(argv)
 
     cfg = load_config(args.config)
+    ### AI GENERATED
+    if args.env is not None:
+        cfg = with_overrides(cfg, {"run": {"env": args.env}})
+    ### END AI GENERATED
     speeds = parse_speeds(args.speeds)
     max_steps = cfg.shared.max_episode_steps
     print(f"[calibrate] {len(speeds)} speeds x {args.episodes} episodes; carrier speed = "
@@ -116,7 +123,10 @@ def main(argv: Sequence[str] | None = None) -> int:
               f"{f['len_mean_free_ball'] / max_steps:6.3f} {f['frac_truncated']:6.0%} | "
               f"{by['random']['survival']:6.3f} | {by['still']['survival']:6.3f}", flush=True)
 
-    out = args.out or Path(cfg.run.out_dir) / f"calibration_{args.config.stem}.csv"
+    ### AI GENERATED (non-mock envs get a suffix so they don't overwrite the mock's table)
+    suffix = "" if cfg.run.env == "mock" else f"_{cfg.run.env}"
+    out = args.out or Path(cfg.run.out_dir) / f"calibration_{args.config.stem}{suffix}.csv"
+    ### END AI GENERATED
     out.parent.mkdir(parents=True, exist_ok=True)
     with open(out, "w", newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(fh, fieldnames=list(rows[0]))

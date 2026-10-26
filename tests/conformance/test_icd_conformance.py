@@ -4,6 +4,8 @@
 # Date:    2026-10-10
 # Author:  JC Stinson III (LifeHackerIII)
 # Usage:
+#   - 2026-10-18: Added the PyBullet adapter to ENV_FACTORIES and skip
+#     configs a factory doesn't support. (Austin Beinder)
 #   - 2026-10-10: Generated this entire file: the ICD §11 conformance suite,
 #     parametrized over env factories so the real env can be plugged in.
 # Prompt summary: Implement Phase 3 step 3 of the issue #7 plan (mock env +
@@ -22,8 +24,13 @@ import pytest
 from marl.common.config import config_from_dict
 from marl.envs.mock_env import MockEnv
 
-# name -> callable(SharedConfig) -> env. Add the PyBullet env here when it lands.
-ENV_FACTORIES = {"mock": MockEnv}
+### AI GENERATED
+from marl.envs.pybullet_env import PyBulletEnv  # noqa: E402
+
+# name -> callable(SharedConfig) -> env. A factory that raises NotImplementedError for a config
+# (e.g. the 1v1-only PyBullet env with n_blue = 2) skips that test instead of failing it.
+ENV_FACTORIES = {"mock": MockEnv, "pybullet": PyBulletEnv}
+### END AI GENERATED
 
 GOTO = {"shared": {"scenario": "goto_target", "n_red": 0}, "rl": {"reward": {"base": "goto_target"}}}
 
@@ -34,7 +41,12 @@ def make_env(request):
 
     def make(data=None):
         cfg = config_from_dict(data or {})
-        return factory(cfg.shared), cfg.shared
+        ### AI GENERATED
+        try:
+            return factory(cfg.shared), cfg.shared
+        except NotImplementedError as e:
+            pytest.skip(f"{request.param}: {e}")
+        ### END AI GENERATED
 
     return make
 

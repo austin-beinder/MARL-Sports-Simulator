@@ -95,7 +95,10 @@ class Ball(Entity):
 
         It might also be called by a player in possession of the ball because they would need to decide possession.
         """
-        print(f"Entity: {self.body_id} collided with Entity: {collided_entity.body_id}")
+        ### AI GENERATED (debug switch)
+        if Entity.print_collisions:
+            print(f"Entity: {self.body_id} collided with Entity: {collided_entity.body_id}")
+        ### END AI GENERATED
 
         changed_possession = False
 

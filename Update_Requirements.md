@@ -78,7 +78,7 @@ Always pass **both** files. `pip-sync` uninstalls anything not listed, so syncin
 4. Run the tests to confirm nothing broke:
 
 ```shell
-python -m unittest discover -s pybullet/tests -p "*_test.py" -t pybullet
+python -m unittest discover -s pybulletGame/tests -p "*_test.py" -t pybulletGame
 ```
 
 5. Commit `requirements.in`, `requirements.txt`, `requirements-dev.in`, and `requirements-dev.txt`.

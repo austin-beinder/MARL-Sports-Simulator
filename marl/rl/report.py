@@ -4,6 +4,8 @@
 # Date:    2026-10-11
 # Author:  JC Stinson III (LifeHackerIII)
 # Usage:
+#   - 2026-10-18: Envs come from run.env via make_env; runs on different
+#     envs count as different tasks. (Austin Beinder)
 #   - 2026-10-11: Generated this entire file: the final evaluation table
 #     (trained runs, stochastic + deterministic; the untrained initial
 #     policy; scripted baselines), all on the fixed evaluation episodes, with
@@ -42,7 +44,7 @@ import torch
 
 from marl.baselines import baselines_for, make_baseline
 from marl.common.config import Config
-from marl.envs.mock_env import MockEnv
+from marl.envs import make_env  # AI GENERATED
 from marl.rl.checkpoint import load_actor
 from marl.rl.evaluate import eval_env_seeds, evaluate_actor, run_episodes, summarize
 from marl.rl.networks import seeded_networks
@@ -53,7 +55,7 @@ METRICS = ("len_mean", "len_mean_possession", "len_mean_free_ball", "frac_trunca
 
 
 def _same_task(a: Config, b: Config) -> bool:
-    keys = ("eval_seed", "eval_episodes")
+    keys = ("eval_seed", "eval_episodes", "env")  # AI GENERATED (env: runs on different envs aren't comparable)
     return a.shared == b.shared and a.rl == b.rl and all(getattr(a.run, k) == getattr(b.run, k) for k in keys)
 
 
@@ -67,7 +69,7 @@ def evaluate_runs(run_dirs: Sequence[str | Path]) -> tuple[list[dict[str, Any]],
             cfg0 = cfg
         elif not _same_task(cfg0, cfg):
             raise ValueError(f"{run_dir} is a different task (config differs beyond run.seed); compare like with like")
-        reward_fn, env = RewardModule(cfg), MockEnv(cfg.shared)
+        reward_fn, env = RewardModule(cfg), make_env(cfg)  # AI GENERATED (the env the run trained on)
         for policy, deterministic in (("ppo", False), ("ppo_deterministic", True)):
             records = evaluate_actor(env, cfg, actor, featurizer, reward_fn, deterministic)
             per_run.append({"policy": policy, "seed": cfg.run.seed, "run": str(run_dir), **summarize(records)})
@@ -81,7 +83,7 @@ def evaluate_runs(run_dirs: Sequence[str | Path]) -> tuple[list[dict[str, Any]],
     reward_fn, seeds = RewardModule(cfg0), eval_env_seeds(cfg0.run.eval_seed, cfg0.run.eval_episodes)
     for name in baselines_for(cfg0.shared.scenario):
         policy = make_baseline(name, cfg0.shared, seed=cfg0.run.eval_seed)
-        records = run_episodes(MockEnv(cfg0.shared), policy, cfg0, reward_fn, seeds)
+        records = run_episodes(make_env(cfg0), policy, cfg0, reward_fn, seeds)  # AI GENERATED
         per_run.append({"policy": name, "seed": float("nan"), "run": "", **summarize(records)})
     return per_run, aggregate(per_run, cfg0.shared.max_episode_steps)
 
