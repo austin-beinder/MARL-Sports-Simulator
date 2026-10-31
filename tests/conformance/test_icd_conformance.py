@@ -8,6 +8,8 @@
 #     configs a factory doesn't support. (Austin Beinder)
 #   - 2026-10-10: Generated this entire file: the ICD §11 conformance suite,
 #     parametrized over env factories so the real env can be plugged in.
+#   - 2026-10-14: Added the returned-states-are-snapshots test (the PBRS reward
+#     reads Phi(s) after step(), so an env must not mutate a returned state).
 # Prompt summary: Implement Phase 3 step 3 of the issue #7 plan (mock env +
 #   ICD conformance tests).
 # Human review:   Pending review
@@ -17,6 +19,8 @@
 These use ONLY the public API (reset/step + the shared config), so they double as
 the acceptance test for the real env: add its constructor to ``ENV_FACTORIES``.
 """
+
+import copy
 
 import numpy as np
 import pytest
@@ -118,6 +122,25 @@ def test_step_counter_and_plain_types(make_env):
         if term or trunc:
             break
         assert s["step"] == t
+
+
+def test_returned_states_are_never_mutated_later(make_env):
+    # ICD §5: a returned s is a snapshot. The RL side keeps s while it steps the env: the
+    # PBRS reward reads Phi(s) AFTER step() returns s' (marl/rl/reward.py). An env that
+    # updated a returned dict in place would silently corrupt that.
+    env, sc = make_env({"shared": {"n_blue": 2, "n_red": 2}})
+    options = sc.start.to_reset_options()
+    s, _ = env.reset(seed=3, options=options)
+    kept = [(s, copy.deepcopy(s))]
+    rng = np.random.default_rng(1)
+    for _ in range(20):
+        s, term, trunc, _ = env.step(random_actions(rng, 2))
+        kept.append((s, copy.deepcopy(s)))
+        if term or trunc:
+            break
+    env.reset(seed=4, options=options)  # a reset must not touch old states either
+    for i, (state, snapshot) in enumerate(kept):
+        assert state == snapshot, f"state {i} changed after it was returned"
 
 
 # --- Determinism (ICD §2) ---------------------------------------------------------

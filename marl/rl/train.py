@@ -20,6 +20,8 @@
 #     (OneDrive makes folders read-only). (Austin Beinder)
 #   - 2026-10-11: Progress lines now flush immediately, so they appear even when
 #     output is redirected to a file (e.g. seeds run in the background).
+#   - 2026-10-14: Added the reward_shaping_mean_unscaled column to train.csv
+#     (PBRS ablation; the student approved a separate shaping column).
 # Prompt summary: Implement Phase 3 step 8 of the issue #7 plan (PPO update +
 #   training loop).
 # Human review:   Pending review
@@ -164,6 +166,9 @@ def train(
                 pre = {
                     "reward_mean": reward_mean,
                     "reward_mean_unscaled": reward_mean / reward_fn.scale,
+                    # The shaping part of reward_mean_unscaled (0 without shaping). The learner's
+                    # reward includes it; the evaluation metric (episode length) never does.
+                    "reward_shaping_mean_unscaled": stats.mean_shaping,
                     "commanded_speed": stats.mean_commanded_speed,
                     "adv_std_raw": float(buf.advantages.std()),  # before per-minibatch normalization (#23)
                     "explained_variance": explained_variance(buf.values, buf.returns),

@@ -6,10 +6,14 @@
 # Usage:
 #   - 2026-10-10: Generated this entire file: tests for config loading and
 #     validation (plan "Verification": config, derived gamma).
+#   - 2026-10-14: Added tests for the built pbrs_ball_acquisition term and the
+#     non-negative shaping coef check, and a test that the PBRS ablation config
+#     differs from the survival-only control config only in the reward.
 # Prompt summary: Implement Phase 3 step 1 of the issue #7 plan (config +
 #   validation) with expected-input, unexpected-input and corner-case tests.
 # Human review:   Pending review
 # ==============================================================================
+import dataclasses
 from pathlib import Path
 
 import pytest
@@ -77,6 +81,20 @@ def test_reset_options_match_icd_keys():
 def test_disabled_deferred_shaping_term_is_allowed():
     cfg = config_from_dict({"rl": {"reward": {"shaping": [{"name": "pbrs_red_distance", "enabled": False}]}}})
     assert cfg.rl.reward.shaping[0].name == "pbrs_red_distance"
+
+
+def test_pbrs_config_differs_from_the_control_only_in_the_reward():
+    # keepaway_1v1_pbrs.toml relies on the defaults equaling keepaway_1v1.toml, so the
+    # ablation's two arms differ ONLY in the reward. This fails if either file drifts.
+    ctl, pbrs = load_config(CONFIGS / "keepaway_1v1.toml"), load_config(CONFIGS / "keepaway_1v1_pbrs.toml")
+    assert dataclasses.replace(pbrs, rl=dataclasses.replace(pbrs.rl, reward=ctl.rl.reward)) == ctl
+    assert [(t.name, t.enabled, t.coef) for t in pbrs.rl.reward.shaping] == [("pbrs_ball_acquisition", True, 4.0)]
+
+
+def test_built_pbrs_term_can_be_enabled():
+    cfg = config_from_dict({"rl": {"reward": {"shaping": [{"name": "pbrs_ball_acquisition", "enabled": True, "coef": 2}]}}})
+    term = cfg.rl.reward.shaping[0]
+    assert (term.name, term.enabled, term.coef) == ("pbrs_ball_acquisition", True, 2.0)
 
 
 def test_n2_m2_is_valid():
@@ -148,6 +166,10 @@ def test_unknown_option_raises_value_error(data):
         (
             {"rl": {"reward": {"shaping": [{"name": "pbrs_red_distance"}, {"name": "pbrs_red_distance"}]}}},
             "duplicate",
+        ),
+        (
+            {"rl": {"reward": {"shaping": [{"name": "pbrs_ball_acquisition", "enabled": True, "coef": -1.0}]}}},
+            "coef must be >= 0",
         ),
     ],
 )
