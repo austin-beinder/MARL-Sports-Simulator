@@ -11,6 +11,8 @@
 #   - 2026-10-14: Added tests for the train.csv shaping column and for enabling
 #     a shaping term with --set (the PBRS pilot's command line). The
 #     run_episodes spy now passes the new optional on_step argument through.
+#   - 2026-10-31: Added a test that training prints a progress line for every
+#     iteration (backlog task 1: the old ~50-line throttle was removed).
 # Prompt summary: Implement Phase 3 step 8 of the issue #7 plan (PPO update +
 #   training loop).
 # Human review:   Pending review
@@ -81,6 +83,17 @@ def test_outputs_and_checkpoint_reload(tmp_path):
             getattr(actor.distributions(obs)[MOVE], name), getattr(res.actor.distributions(obs)[MOVE], name)
         )
     assert res.final_eval["mode"] == "stochastic" and res.final_eval_deterministic["mode"] == "deterministic"
+
+
+def test_progress_line_every_iteration(tmp_path):
+    # 100 iterations: enough that the old throttle (every n_iters // 50) would have skipped half.
+    data = json.loads(json.dumps(TINY))
+    data["rl"]["ppo"] |= {"rollout_steps": 8, "num_minibatches": 2}
+    data["run"] |= {"total_steps": 800, "eval_every": 1000}
+    lines = []
+    train(config_from_dict(data), tmp_path / "run", log=lines.append)
+    printed = [int(line.split()[1].split("/")[0]) for line in lines if line.startswith("it ")]
+    assert printed == list(range(1, 101))
 
 
 def test_same_seed_same_run(tmp_path):

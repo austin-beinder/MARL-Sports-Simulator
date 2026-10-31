@@ -20,6 +20,8 @@
 #     (OneDrive makes folders read-only). (Austin Beinder)
 #   - 2026-10-11: Progress lines now flush immediately, so they appear even when
 #     output is redirected to a file (e.g. seeds run in the background).
+#   - 2026-10-31: A progress line prints for every iteration; removed the
+#     throttle to ~50 lines per run (backlog task 1, the student's choice).
 #   - 2026-10-14: Added the reward_shaping_mean_unscaled column to train.csv
 #     (PBRS ablation; the student approved a separate shaping column).
 #   - 2026-10-31: Evaluation runs in-process for PyBullet too (each env has
@@ -124,7 +126,6 @@ def train(
 
     T = cfg.rl.ppo.rollout_steps
     n_iters = cfg.run.total_steps // T
-    print_every = max(1, n_iters // 50)
     log(
         f"[train] env={cfg.run.env} scenario={cfg.shared.scenario} {cfg.shared.n_blue}v{cfg.shared.n_red} "  # AI GENERATED (env=)
         f"critic={cfg.rl.critic_input} gamma={cfg.gamma:.4f} seed={cfg.run.seed} "
@@ -187,8 +188,7 @@ def train(
                     "wall_time_s": time.perf_counter() - start,
                 }
                 train_log.log(row)
-                if it == 1 or it % print_every == 0 or it == n_iters:
-                    log(_train_line(row, n_iters))
+                log(_train_line(row, n_iters))
                 if it % cfg.run.eval_every == 0 or it == n_iters:
                     final_eval = evaluate(it, deterministic=False)
                     checkpoint(f"iter_{it:05d}.pt", it)
