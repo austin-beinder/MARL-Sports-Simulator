@@ -8,6 +8,9 @@
 #     run in-process for the mock env and in its own process for envs that
 #     share one simulation per process (PyBullet).
 #   - 2026-10-18: Pass print_collisions through to the worker's env.
+#   - 2026-10-31: make_evaluator is in-process for every env: PyBullet envs
+#     no longer share one simulation. InProcessEvaluator.close() now closes
+#     its env. (Austin Beinder)
 # Prompt summary: Run evaluation in its own process so the shared pybullet
 #   simulation doesn't break training.
 # Human review:   Pending review
@@ -16,10 +19,12 @@
 """The training loop's evaluator.
 
 Evaluation must never reset the training env mid-episode (see ``marl/rl/evaluate.py``).
-The mock gets that from a second env instance. PyBullet can't: every instance in a
-process shares pybullet's one default simulation. So for those envs
-(``marl.envs.SHARED_SIM_ENVS``) evaluation runs in a worker process with its own env
-and its own copy of the actor:
+``InProcessEvaluator`` gets that from a second env instance, and it is what training uses for
+every env: since 2026-10-31 each PyBullet env has its own simulation too.
+
+``SubprocessEvaluator`` is no longer used by training. It was needed while every PyBullet env in
+a process shared one simulation, and it still works, evaluating in a worker process with its own
+env and its own copy of the actor:
 
 * each call sends the actor's current weights to the worker and waits for the episode
   records, so evaluation happens at the same points in training and blocks it the same way;
@@ -38,7 +43,7 @@ from typing import Any
 import torch
 
 from marl.common.config import Config, config_from_dict, config_to_dict
-from marl.envs import SHARED_SIM_ENVS, make_env
+from marl.envs import make_env
 from marl.rl.evaluate import evaluate_actor
 from marl.rl.networks import Actor, build_networks
 from marl.rl.reward import RewardModule
@@ -56,7 +61,9 @@ class InProcessEvaluator:
         return evaluate_actor(self.env, self.cfg, actor, self.featurizer, self.reward_fn, deterministic)
 
     def close(self) -> None:
-        pass
+        close = getattr(self.env, "close", None)  # PyBullet frees its simulation; the mock has nothing to free
+        if close is not None:
+            close()
 
 
 class SubprocessEvaluator:
@@ -96,12 +103,9 @@ class SubprocessEvaluator:
         return payload
 
 
-def make_evaluator(
-    cfg: Config, featurizer: Featurizer, reward_fn: RewardModule, print_collisions: bool = False
-) -> InProcessEvaluator | SubprocessEvaluator:
-    """The worker's env is always headless: only the training env is ever rendered."""
-    if cfg.run.env in SHARED_SIM_ENVS:
-        return SubprocessEvaluator(cfg, print_collisions)
+def make_evaluator(cfg: Config, featurizer: Featurizer, reward_fn: RewardModule) -> InProcessEvaluator:
+    """The training loop's evaluator: in-process for every env, since each env instance (PyBullet
+    included) has its own simulation. Its env is headless: only the training env is ever rendered."""
     return InProcessEvaluator(cfg, featurizer, reward_fn)
 
 

@@ -283,6 +283,108 @@ class TestRulesWithShortGames(KeepAwayEnvTestCase):
         self.assertGreaterEqual(info["game_time"], 1.0)
 
 
+class TestTeams(KeepAwayEnvTestCase):
+    # 2026-10-31: teams of any size
+    config = KeepAwayConfig(n_blue=2, n_red=3)
+
+    def test_default_spawn_lines_each_team_up(self):
+        self.assertEqual(len(self.env.blues), 2)
+        self.assertEqual(len(self.env.reds), 3)
+        self.assertIs(self.env.blue, self.env.blues[0])
+        self.assertIs(self.env.red, self.env.reds[0])
+        reds = np.array([xy(r, "position") for r in self.observation["reds"]])
+        self.assertTrue(np.allclose(reds[:, 0], 1.0))
+        self.assertTrue(np.allclose(reds[:, 1], [-2.0, 0.0, 2.0]))
+        self.assertEqual(len(Entity._registry), 2 + 3 + 1 + 4)
+
+    def test_spawn_positions_and_holder_from_options(self):
+        observation, _ = self.env.reset(options={
+            "blue_positions": [(-3, 0), (-3, 2)], "red_positions": [(3, 0), (3, 2), (3, -2)], "ball_holder": 1})
+
+        self.assertTrue(np.allclose(xy(observation["blues"][1], "position"), [-3, 2]))
+        self.assertIs(self.env.ball.possession_player, self.env.blues[1])
+        with self.assertRaises(ValueError):
+            self.env.reset(options={"blue_position": (0, 0)})  # a single position for a team of two
+        with self.assertRaises(ValueError):
+            self.env.reset(options={"blue_positions": [(0, 0)]})  # one position short
+
+    def test_one_action_per_blue_player(self):
+        observation, *_ = self.env.step([[0.0, 2.0], [0.0, -2.0]])
+
+        self.assertGreater(observation["blues"][0]["velocity"]["y"], 1.5)
+        self.assertLess(observation["blues"][1]["velocity"]["y"], -1.5)
+        with self.assertRaises(ValueError):
+            self.env.step([0.0, 2.0])
+
+    def test_every_red_chases_the_ball(self):
+        observation, *_ = self.env.step([[0.0, 2.0], [0.0, 2.0]])  # blue leaves the ball alone
+
+        for red in observation["reds"]:
+            self.assertLess(red["velocity"]["x"], 0.0)
+
+
+class TestTargetGame(KeepAwayEnvTestCase):
+    # 2026-10-31: goto_target. Red count 0, and the ball is an immobile target nobody can touch.
+    config = KeepAwayConfig(n_red=0, ball_is_target=True, max_game_time=1.0)
+
+    def test_blue_passes_through_the_target(self):
+        ball = xy(self.observation["ball"], "position")
+        for _ in range(20):  # 20 * 8 / 240 s at ~3 m/s: about 2 m, from x = -1 to past the ball at -0.4
+            observation, *_ = self.env.step([3.0, 0.0])  # straight at the ball and past it
+
+        self.assertTrue(np.allclose(xy(observation["ball"], "position"), ball))
+        self.assertGreater(observation["blue"]["position"]["x"], ball[0] + 0.5)
+        self.assertIsNone(observation["ball"]["possession_player"])
+        self.assertIsNone(observation["red"])
+
+    def test_only_time_ends_the_game(self):
+        observation, reward, terminated, truncated, info = self.step_until_done()
+
+        self.assertFalse(terminated)
+        self.assertTrue(truncated)
+
+    def test_bad_team_sizes_raise(self):
+        with self.assertRaises(ValueError):
+            KeepAwayEnv(KeepAwayConfig(n_red=1, ball_is_target=True))
+        with self.assertRaises(ValueError):
+            KeepAwayEnv(KeepAwayConfig(n_red=0))
+        with self.assertRaises(ValueError):
+            self.env.reset(options={"blue_has_ball": True})
+
+
+class TestSideBySide(KeepAwayEnvTestCase):
+    # 2026-10-31: every game has its own pybullet simulation
+
+    def test_two_games_run_independently(self):
+        other = KeepAwayEnv(self.config)
+        try:
+            other.reset(options={"blue_position": (-4, 3), "red_position": (4, -3), "ball_position": (0, 3)})
+            self.assertNotEqual(self.env.client, other.client)
+            self.assertEqual(len(Entity._registry), 2 * 7)  # both games' entities and walls
+
+            for _ in range(5):
+                mine, *_ = self.env.step([0.0, 2.0])
+                theirs, *_ = other.step([0.0, -2.0])
+
+            self.assertGreater(mine["blue"]["position"]["y"], 0.3)
+            self.assertLess(theirs["blue"]["position"]["y"], 3.0 - 0.3)
+            self.assertAlmostEqual(mine["game"]["time"], theirs["game"]["time"])
+        finally:
+            other.close()
+
+        self.assertEqual(len(Entity._registry), 7)  # closing a game forgets only its entities
+        observation, *_ = self.env.step([0.0, 2.0])  # and this game keeps running
+        self.assertGreater(observation["blue"]["position"]["y"], 0.3)
+
+    def test_reset_does_not_touch_the_global_random_generator(self):
+        import random
+        random.seed(123)
+        expected = random.random()
+        random.seed(123)
+        self.env.reset(seed=0)
+        self.assertEqual(random.random(), expected)
+
+
 class TestPlayGame(KeepAwayEnvTestCase):
     config = KeepAwayConfig(blue_win_time=3.0)
 

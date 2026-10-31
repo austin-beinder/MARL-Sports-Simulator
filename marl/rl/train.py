@@ -22,6 +22,9 @@
 #     output is redirected to a file (e.g. seeds run in the background).
 #   - 2026-10-14: Added the reward_shaping_mean_unscaled column to train.csv
 #     (PBRS ablation; the student approved a separate shaping column).
+#   - 2026-10-31: Evaluation runs in-process for PyBullet too (each env has
+#     its own simulation now), and the training env is closed at the end.
+#     (Austin Beinder)
 # Prompt summary: Implement Phase 3 step 8 of the issue #7 plan (PPO update +
 #   training loop).
 # Human review:   Pending review
@@ -111,9 +114,9 @@ def train(
     ### AI GENERATED
     train_env = make_env(cfg, render=render, print_collisions=print_collisions)
     collector = RolloutCollector(train_env, cfg, actor, critic, reward_fn, np.random.default_rng(env_seq))
-    # Never the training env: it is mid-episode between rollouts. For PyBullet this is a worker
-    # process with its own simulation (every env in one process shares pybullet's).
-    evaluator = make_evaluator(cfg, featurizer, reward_fn, print_collisions)
+    # Never the training env: it is mid-episode between rollouts. A second env, with its own
+    # simulation for PyBullet, in this process.
+    evaluator = make_evaluator(cfg, featurizer, reward_fn)
     ### END AI GENERATED
     buf = make_buffer(cfg, featurizer, actor)
     updater = PPOUpdater(actor, critic, cfg.rl.ppo)
@@ -193,6 +196,8 @@ def train(
             checkpoint("final.pt", n_iters)
     finally:
         evaluator.close()
+        if hasattr(train_env, "close"):  # PyBullet: free this run's simulation (the mock has none)
+            train_env.close()
     ### END AI GENERATED
     log(f"[train] done in {time.perf_counter() - start:.0f} s -> {out_dir}")
     return TrainResult(out_dir, actor, critic, final_eval, final_det)

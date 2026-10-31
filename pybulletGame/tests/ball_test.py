@@ -342,6 +342,21 @@ class TestAdd(unittest.TestCase):
 
         self.assertAlmostEqual(ball.sim_time, 10 * time_step)
 
+    ### AI GENERATED (2026-10-31)
+    def test_teammate_handoff_can_be_switched_off(self):
+        blue = Player(team=Team.BLUE, initial_position=np.array([2.0, 0.0, 0.0]))
+        blue2 = Player(team=Team.BLUE, initial_position=np.array([-2.0, 0.0, 0.0]))
+        ball = self._ball_held_by(blue)
+        ball.allow_teammate_handoff = False
+
+        changed = ball.on_new_collision(blue2)
+
+        self.assertFalse(changed)
+        self.assertIs(ball.possession_player, blue)
+        self.assertIs(blue.ball, ball)
+        self.assertIsNone(blue2.ball)
+    ### END AI GENERATED
+
     def test_kick_moves_ball_clear_of_kicker(self):
         red = Player(team=Team.RED, initial_position=np.array([0.0, 0.0, 0.0]))
         ball = self._ball_held_by(red)

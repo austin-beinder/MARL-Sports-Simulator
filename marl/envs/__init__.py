@@ -8,6 +8,8 @@
 #   - 2026-10-18: Added make_env (the run.env selector) and SHARED_SIM_ENVS,
 #     with render / print_collisions options.
 #     (Austin Beinder)
+#   - 2026-10-31: Removed SHARED_SIM_ENVS: every PyBulletEnv now has its own
+#     simulation. (Austin Beinder)
 # Prompt summary: Implement Phase 3 of the issue #7 plan (RL layer + mock env).
 # Human review:   Pending review
 # ==============================================================================
@@ -20,16 +22,13 @@ from typing import Any
 
 from marl.common.config import Config
 
-# Envs whose instances share one simulation per process (pybullet's default connection), so
-# two of them can't be mid-episode at once: training evaluates these in a separate process.
-SHARED_SIM_ENVS = frozenset({"pybullet"})
-
 
 def make_env(cfg: Config, *, render: bool = False, print_collisions: bool = False) -> Any:
     """A new env for ``cfg.run.env``, built from ``cfg.shared``.
 
-    render opens the PyBullet GUI; print_collisions turns on the sim's collision debug prints.
-    Both are PyBullet-only (the mock has no GUI and no collisions).
+    render opens the PyBullet GUI (one per process); print_collisions turns on the sim's collision
+    debug prints, for every PyBullet env in the process. Both are PyBullet-only (the mock has no GUI
+    and no collisions).
     """
     if cfg.run.env == "mock":
         if render:

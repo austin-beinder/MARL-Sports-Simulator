@@ -1,4 +1,7 @@
 """
+AI edits 2026-10-31 (Claude Code, Austin Beinder): physics_client on every pybullet call, and
+Entity._registry keyed by (client, body id) with clear_registry(). See the AI GENERATED markers.
+
 Create skeleton code for player
 i. Implementable
 1) Position
@@ -50,21 +53,34 @@ from teams import Team
 class Entity:
 
     ### AI GENERATED
-    _registry: Dict[int, "Entity"] = {}
+    # Every entity (and field wall) by (physics client, body id). Body ids restart at 0 in each
+    # pybullet simulation, so the client is part of the key (2026-10-31).
+    _registry: Dict[tuple, "Entity"] = {}
 
     # Debug switch for the collision prints ("Entity: 6 collided with Entity: 4", walls too). Shared
     # by every entity (Ball and Player included): set Entity.print_collisions = True to turn them on.
     print_collisions: bool = False
+
+    @classmethod
+    def clear_registry(cls, physics_client=None):
+        """Forget the entities of one simulation (all of them if physics_client is None)."""
+        if physics_client is None:
+            Entity._registry.clear()
+        else:
+            for key in [key for key in Entity._registry if key[0] == physics_client]:
+                del Entity._registry[key]
     ### END AI GENERATED
 
-    def __init__(self, 
-                 radius=0.3, 
-                 height=0.1, 
+    def __init__(self,
+                 radius=0.3,
+                 height=0.1,
                  mass=1.0,
                  initial_position=np.array([0.0, 0.0, 0.0]),
                  rgbaColor=[0, 0, 0, 1],
-                 maxJointVelocity=3.0):
+                 maxJointVelocity=3.0,
+                 physics_client=0):  # AI GENERATED (which pybullet simulation; 0 = the default connection)
 
+        self.client = physics_client  # AI GENERATED (passed to every pybullet call as physicsClientId)
         self.position = initial_position
         self.velocity = np.array([0.0, 0.0, 0.0])
         self.is_ball = False
@@ -79,8 +95,10 @@ class Entity:
         self.MAX_FORCE = 10.0
 
         ### AI GENERATED
-        collision_shape = p.createCollisionShape(p.GEOM_CYLINDER, radius=radius, height=height)
-        visual_shape = p.createVisualShape(p.GEOM_CYLINDER, radius=radius, length=height, rgbaColor=rgbaColor)
+        collision_shape = p.createCollisionShape(p.GEOM_CYLINDER, radius=radius, height=height,
+                                                 physicsClientId=self.client)
+        visual_shape = p.createVisualShape(p.GEOM_CYLINDER, radius=radius, length=height, rgbaColor=rgbaColor,
+                                           physicsClientId=self.client)
 
         # Useful https://github.com/bulletphysics/bullet3/blob/master/docs/pybullet_quickstart_guide/PyBulletQuickstartGuide.md.html
         ### AI Assisted
@@ -98,24 +116,26 @@ class Entity:
             linkParentIndices=[0, 1, 2],     # chain: base -> x -> y -> yaw
             linkJointTypes=[p.JOINT_PRISMATIC, p.JOINT_PRISMATIC, p.JOINT_REVOLUTE],
             linkJointAxis=[[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+            physicsClientId=self.client,  # AI GENERATED (2026-10-31)
         )
 
         # Claude told me how to do this
-        p.changeDynamics(self.body_id, 0, maxJointVelocity=maxJointVelocity)
-        p.changeDynamics(self.body_id, 1, maxJointVelocity=maxJointVelocity)
+        p.changeDynamics(self.body_id, 0, maxJointVelocity=maxJointVelocity, physicsClientId=self.client)
+        p.changeDynamics(self.body_id, 1, maxJointVelocity=maxJointVelocity, physicsClientId=self.client)
         ### AI Assisted
 
         # Joints have velocity motors switched on by default, and they act like brakes. Turn them off:
-        p.setJointMotorControlArray(self.body_id, [0, 1, 2], p.VELOCITY_CONTROL, forces=[0, 0, 0])
+        p.setJointMotorControlArray(self.body_id, [0, 1, 2], p.VELOCITY_CONTROL, forces=[0, 0, 0],
+                                    physicsClientId=self.client)
 
 
-        Entity._registry[self.body_id] = self
+        Entity._registry[(self.client, self.body_id)] = self
         ### END AI GENERATED
 
     ### AI GENERATED
     def sync_from_pybullet(self):
-        pos = p.getLinkState(self.body_id, 2, computeLinkVelocity=1)[0]
-        vel = p.getLinkState(self.body_id, 2, computeLinkVelocity=1)[6]
+        pos = p.getLinkState(self.body_id, 2, computeLinkVelocity=1, physicsClientId=self.client)[0]
+        vel = p.getLinkState(self.body_id, 2, computeLinkVelocity=1, physicsClientId=self.client)[6]
         self.position = np.array(pos)
         self.velocity = np.array(vel)
         self.update_collisions()
@@ -127,12 +147,12 @@ class Entity:
         previous_collided_entities = self.collided_entities
         self.collided_entities = []
         seen_body_ids = set()
-        for contact in p.getContactPoints(bodyA=self.body_id):
+        for contact in p.getContactPoints(bodyA=self.body_id, physicsClientId=self.client):
             other_body_id = contact[2]
             if other_body_id in seen_body_ids:
                 continue
             seen_body_ids.add(other_body_id)
-            other_entity = Entity._registry.get(other_body_id)
+            other_entity = Entity._registry.get((self.client, other_body_id))
             if other_entity is not None:
                 self.collided_entities.append(other_entity)
                 if not (other_entity in previous_collided_entities):
@@ -192,10 +212,10 @@ class Entity:
         """
         ### AI GENERATED (had to change body_id to self.body_id, vx/vy to x and y)
         # Joint 0 = x slider, 1 = y slider, 2 = yaw
-        x_pos, _ = p.getJointState(self.body_id, 0)[:2]
-        y_pos, _ = p.getJointState(self.body_id, 1)[:2]
-        p.resetJointState(self.body_id, 0, targetValue=x_pos, targetVelocity=x)
-        p.resetJointState(self.body_id, 1, targetValue=y_pos, targetVelocity=y)
+        x_pos, _ = p.getJointState(self.body_id, 0, physicsClientId=self.client)[:2]
+        y_pos, _ = p.getJointState(self.body_id, 1, physicsClientId=self.client)[:2]
+        p.resetJointState(self.body_id, 0, targetValue=x_pos, targetVelocity=x, physicsClientId=self.client)
+        p.resetJointState(self.body_id, 1, targetValue=y_pos, targetVelocity=y, physicsClientId=self.client)
         self.sync_from_pybullet()
         ### END AI GENERATED
 
@@ -210,14 +230,15 @@ class Entity:
         y = max(-self.MAX_FORCE, min(y, self.MAX_FORCE))
 
         self.sync_from_pybullet()
-        p.applyExternalForce(self.body_id, 2, forceObj=[x, y, z], posObj=[0,0,0], flags=p.LINK_FRAME)
+        p.applyExternalForce(self.body_id, 2, forceObj=[x, y, z], posObj=[0,0,0], flags=p.LINK_FRAME,
+                             physicsClientId=self.client)  # AI GENERATED (physicsClientId)
 
     def apply_position(self, x: float = 0.0, y: float = 0.0, z: float = 0.0):
         """
         This function applies an instantaneous position to the entity
         """
-        p.resetJointState(self.body_id, 0, targetValue=x)
-        p.resetJointState(self.body_id, 1, targetValue=y)
+        p.resetJointState(self.body_id, 0, targetValue=x, physicsClientId=self.client)  # AI GENERATED (physicsClientId)
+        p.resetJointState(self.body_id, 1, targetValue=y, physicsClientId=self.client)  # AI GENERATED (physicsClientId)
         self.sync_from_pybullet()
 
 

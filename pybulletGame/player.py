@@ -2,6 +2,8 @@
 Many cited parts of entity.py were AI generated. 
 This file was largely copy pasted from entity.py.
 All modifications were human generated or found via Google.
+Except: AI edits 2026-10-31 (Claude Code, Austin Beinder): physics_client on every pybullet call,
+and only the actual carrier can lose the ball to an opponent's touch. See the AI GENERATED markers.
 """
 
 import numpy as np
@@ -22,7 +24,8 @@ class Player(Entity):
                  height=0.1, 
                  mass=1.0,
                  initial_position=np.array([0.0, 0.0, 0.0]),
-                 maxJointVelocity=3.0):
+                 maxJointVelocity=3.0,
+                 physics_client=0):  # AI GENERATED (which pybullet simulation, see Entity)
 
         self.ball = None  # If you are in possession of the ball, you get a self.ball
 
@@ -40,27 +43,30 @@ class Player(Entity):
             initial_position=initial_position,
             rgbaColor=rgbaColor,
             maxJointVelocity=maxJointVelocity,
+            physics_client=physics_client,  # AI GENERATED
         )
-        
+
         self.team: Team = team
 
 
         # This creates some friction so it doesn't slide or spin forever or accelerate super quickly
         # Found by googling how to add drag in pybullet.
-        p.changeDynamics(self.body_id, 0, linearDamping=1.25, angularDamping=10.05, maxJointVelocity=maxJointVelocity)
-        p.changeDynamics(self.body_id, 1, linearDamping=1.25, angularDamping=10.05, maxJointVelocity=maxJointVelocity)
+        p.changeDynamics(self.body_id, 0, linearDamping=1.25, angularDamping=10.05, maxJointVelocity=maxJointVelocity,
+                         physicsClientId=self.client)  # AI GENERATED (physicsClientId)
+        p.changeDynamics(self.body_id, 1, linearDamping=1.25, angularDamping=10.05, maxJointVelocity=maxJointVelocity,
+                         physicsClientId=self.client)  # AI GENERATED (physicsClientId)
 
     def update_collisions(self):
         """Refresh collided_entities with whatever this entity is touching as of the last stepSimulation."""
         previous_collided_entities = self.collided_entities
         self.collided_entities = []
         seen_body_ids = set()
-        for contact in p.getContactPoints(bodyA=self.body_id):
+        for contact in p.getContactPoints(bodyA=self.body_id, physicsClientId=self.client):  # AI GENERATED (physicsClientId)
             other_body_id = contact[2]
             if other_body_id in seen_body_ids:
                 continue
             seen_body_ids.add(other_body_id)
-            other_entity = Entity._registry.get(other_body_id)
+            other_entity = Entity._registry.get((self.client, other_body_id))  # AI GENERATED (keyed by client too)
             if other_entity is not None:
                 self.collided_entities.append(other_entity)
                 if not (other_entity in previous_collided_entities):
@@ -88,7 +94,11 @@ class Player(Entity):
         if not collided_entity.is_ball:
             if collided_entity.team != self.team:
 
-                if self.ball is not None:
+                ### AI GENERATED (2026-10-31)
+                # self.ball is also set by just touching the ball, so check this player really holds it.
+                # Otherwise, with teammates, an opponent touching a non-carrier would steal from the carrier.
+                if self.ball is not None and self.ball.possession_player is self:
+                ### END AI GENERATED
                     if self.ball.on_new_collision(collided_entity):
                         self.ball = None
 

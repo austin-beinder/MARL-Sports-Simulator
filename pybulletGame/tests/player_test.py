@@ -166,6 +166,22 @@ class TestAdd(unittest.TestCase):
         self.assertEqual(observables['collided_entities'][0], 1)
         self.assertEqual(observables['team'], Team.RED)
 
+    ### AI GENERATED (2026-10-31)
+    def test_opponent_touching_a_non_carrier_does_not_steal(self):
+        from ball import Ball
+
+        carrier = Player(team=Team.BLUE, initial_position=np.array([-3.0, 0.0, 0.0]))
+        teammate = Player(team=Team.BLUE, initial_position=np.array([0.0, 0.0, 0.0]))
+        red = Player(team=Team.RED, initial_position=np.array([3.0, 0.0, 0.0]))
+        ball = Ball(initial_position=np.array([5.0, 5.0, 0.0]))
+        ball.on_new_collision(carrier)
+        teammate.ball = ball  # touching the ball sets this, even without getting possession
+
+        teammate.on_new_collision(red)
+
+        self.assertIs(ball.possession_player, carrier)
+    ### END AI GENERATED
+
 
 if __name__ == "__main__":
     unittest.main()

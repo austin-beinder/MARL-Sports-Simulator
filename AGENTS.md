@@ -7,6 +7,10 @@ Usage:
   2026-10-25: Rewrote this file for the repo as it stands after PRs #22 and #23
     (marl/ RL layer, pybulletGame/ rename, PyBullet adapter). The issue #10
     version described a YAML/runner infrastructure that was never merged.
+  2026-10-31: PyBulletEnv now runs N blue vs M red and goto_target; updated
+    the limits, the expected test skips and the dynamics test file.
+  2026-10-31: Replaced the one-simulation-per-process constraint: every env
+    has its own pybullet connection.
 Prompt summary: Update AGENTS.md with the current state of the repo.
 Human review:   Pending review
 -->
@@ -20,8 +24,8 @@ multi-agent reinforcement learning on a PyBullet soccer-style simulation.
 
 Milestone 1, the current state: **keep-away, 1 blue (learner) vs 1 scripted
 red, movement only (no kicking)**, trained with PPO / MAPPO-style centralized
-critic. The interfaces are written to extend to N blue vs M red and to kicking,
-but neither is implemented in the PyBullet env yet.
+critic. Both envs also run N blue vs M red and the `goto_target` sanity check.
+Kicking is in the interface but not implemented in either env yet.
 
 ## Layout
 
@@ -58,8 +62,14 @@ configs/*.toml -> marl.common.config.Config
   `step(action) -> (obs, reward, terminated, truncated, info)` with its own
   reward and observation. `PyBulletEnv` drops those and translates to the ICD:
   ICD actions in [-1, 1] → m/s, `SharedConfig` → `KeepAwayConfig`, spawns from
-  `marl.common.spawn.sample_spawn`, red possession terminal after one tick, and
-  blue's "hold for 20 s" win switched off.
+  `marl.common.spawn.sample_spawn`, red possession terminal after one tick,
+  blue's "hold for 20 s" win switched off, teammate handoff off (only a kick
+  releases the ball, ICD §8), and for `goto_target` an untouchable, immobile
+  ball (`KeepAwayConfig.ball_is_target`).
+- Possession in PyBullet is contact-based (player touching the ball, or an
+  opponent touching the carrier), not `possession_radius`; red's controller
+  slows as it nears the ball. So the same policy survives longer there than in
+  the mock. That difference is accepted.
 - `MockEnv` implements the same ICD in numpy. It's fast, so most tests and quick
   experiments use it. The ICD conformance tests run against both envs.
 
@@ -73,13 +83,16 @@ configs/*.toml -> marl.common.config.Config
   package (`from pybulletGame import KeepAwayEnv, KeepAwayConfig, Entity, Team`),
   **not** from submodules like `pybulletGame.entity`, which would load a second
   copy of the module whose classes and settings the game never sees.
-- **One PyBullet simulation per process.** The entity classes use pybullet's
-  default connection, so every `KeepAwayEnv`/`PyBulletEnv` in a process shares
-  it. Only one `PyBulletEnv` may be mid-episode at a time (it raises
-  otherwise). For that reason training evaluates PyBullet in a separate worker
-  process (`marl/rl/eval_worker.py`, `SHARED_SIM_ENVS`). Don't add code that
-  creates a second env in the training process, or calls `p.connect`
-  outside `KeepAwayEnv`.
+- **One PyBullet simulation per env.** Each `KeepAwayEnv` opens its own
+  pybullet connection, and every pybullet call in `pybulletGame/` passes
+  `physicsClientId` (the `physics_client` / `.client` of `Entity`, `Ball`,
+  `Player`, `Field`, `Wall`). `Entity._registry` is keyed by
+  `(client, body_id)`, since body ids restart in every simulation. Keep both
+  when adding pybullet code: a call without `physicsClientId` silently acts on
+  connection 0. Any number of envs can run in one process (training evaluates
+  in-process), but pybullet allows only one GUI per process. Close envs you
+  create: `KeepAwayEnv.close()` frees the connection, and runs only once
+  because pybullet reuses freed connection ids.
 - **`marl/common/config.py` stays torch-free** so the env side can import it.
 
 ## Configuration
@@ -95,9 +108,11 @@ configs/*.toml -> marl.common.config.Config
   the real sim. Override any key with `--set section.key=value`.
 - `KeepAwayConfig`'s own defaults (21 × 13.6 m field, blue 3.0 m/s, etc.)
   are only used when running `keep_away_env.py` directly. Training uses
-  `SharedConfig` values (16 × 10 m, 2.0 m/s, `control_k = 12`).
-- `PyBulletEnv` currently supports only `scenario = "keepaway"`, 1v1, and
-  `kick_trigger = 0`.
+  `SharedConfig` values (16 × 10 m, 2.0 m/s, `control_k = 12`). Red's
+  1.8 m/s is the same in both.
+- Both envs support `keepaway` and `goto_target`, any team sizes the config
+  allows, and only `kick_trigger = 0`. `PyBulletEnv` also needs
+  `physics_dt = 1/240` (pybullet's fixed time step).
 
 ## Common commands
 
@@ -105,7 +120,7 @@ Run from the repo root with the venv active.
 
 ```bash
 python scripts/train.py --config configs/keepaway_1v1.toml --env pybullet --seed 0
-python scripts/train.py --config configs/goto_target.toml          # mock env
+python scripts/train.py --config configs/goto_target.toml          # mock env (add --env pybullet for the sim)
 python scripts/evaluate.py runs/keepaway_1v1_pybullet_seed0
 python scripts/watch.py runs/keepaway_1v1_pybullet_seed0           # newest checkpoint in the GUI
 python scripts/watch.py --baseline flee
@@ -134,8 +149,11 @@ python -m unittest discover -s pybulletGame/tests -p "*_test.py" -t pybulletGame
 ```
 
 - `pytest` covers `tests/` only (`pyproject.toml`). It takes about 2 minutes.
-  The 8 skips are expected: PyBullet conformance cases for 2v2, `goto_target`
-  and kicking, which that env doesn't implement yet.
+  The 2 skips are expected: the kick-with-possession conformance test, on
+  each env, since neither implements kicking yet.
+- `tests/test_env_dynamics.py` checks the game rules both envs share, through
+  each env's `set_state_for_testing` hook; `tests/test_mock_env.py` pins the
+  mock's exact kinematics.
 - The `pybulletGame` tests are `unittest`-style `*_test.py` files and are not
   collected by pytest.
 
