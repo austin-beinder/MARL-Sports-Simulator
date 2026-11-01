@@ -11,6 +11,7 @@
 #     too coarse to tell two untrained inits apart (a mutation check showed it).
 #   - 2026-10-14: Added tests for the race metrics and arm columns, pbrs_coef,
 #     and the --checkpoint option (it never overwrites the final table).
+#   - 2026-11-01: Added tests for glob expansion in the CLI (task 2, step 5).
 # Prompt summary: Implement Phase 3 step 10 of the issue #7 plan (baselines,
 #   evaluation, calibration).
 # Human review:   Pending review
@@ -100,6 +101,21 @@ def test_cli_writes_both_tables(tmp_path):
     out = tmp_path / "table.csv"
     assert main([str(run), "--out", str(out)]) == 0
     assert len(csv_rows(out)) == 6 and len(csv_rows(tmp_path / "table_per_run.csv")) == 6
+
+
+def test_cli_expands_globs_itself(tmp_path):
+    # PowerShell passes `runs/x_seed*` to Python literally, so evaluate.py expands it (sorted).
+    for seed in (1, 0):
+        tiny_run(tmp_path, seed=seed)
+    assert main([str(tmp_path / "run_s*")]) == 0
+    table = {r["policy"]: r for r in csv_rows(tmp_path / "eval_run_s0.csv")}  # named by the FIRST sorted run
+    assert table["ppo"]["n_seeds"] == "2"
+
+
+def test_cli_glob_matching_nothing_is_a_usage_error(tmp_path, capsys):
+    with pytest.raises(SystemExit):
+        main([str(tmp_path / "nothing_seed*")])
+    assert "matches no run directories" in capsys.readouterr().err
 
 
 def test_rows_carry_race_metrics_and_the_arm(tmp_path):

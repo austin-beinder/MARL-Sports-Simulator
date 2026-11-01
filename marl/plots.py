@@ -13,57 +13,88 @@
 #     learning curves; the coefficient-pilot sweep of closing speed, races won
 #     and possession survival), their table views, race columns in the
 #     keep-away table, and a validated second series color (slot 2).
+#   - 2026-11-01: Moved the CSV/curve/table helpers (read_csv, eval_curves,
+#     train_curves, read_table, table_path_for, mean_std, smooth) unchanged
+#     to marl/results.py and re-imported them here (task 2, step 1).
+#   - 2026-11-01: Reworked the figures into manifest-driven kinds (curves,
+#     final, diagnostics, goto, sweep, calibration) that take 1-9 arms, with
+#     tab10 colors that follow the arm label; figure builders now return the
+#     figure and a render layer loads, saves (PNG only) and writes the table
+#     view; replaced the hard-coded command line with --manifest (task 2,
+#     step 3).
+#   - 2026-11-01: Command line for ad-hoc --arm plots (default kinds per
+#     scenario), the --overwrite guard (record renders to their default folder
+#     exempt), and warnings for mismatched eval episodes and unfrozen record
+#     inputs (task 2, step 4).
 # Prompt summary: Implement Phase 3 step 11 of the issue #7 plan (plots for the
-#   midterm from the 5-seed keep-away runs).
+#   midterm from the 5-seed keep-away runs); later, the task 2 plotting
+#   refactor (records, manifests, N-arm figures).
 # Human review:   Pending review
 # ==============================================================================
-"""Report figures (step 11). Reads only CSVs that training, ``scripts/evaluate.py``
-and ``scripts/calibrate.py`` already wrote, so making figures never re-runs anything.
+"""Report figures. Reads only CSVs that training, ``scripts/evaluate.py`` and
+``scripts/calibrate.py`` already wrote, so making figures never re-runs anything.
+
+What to draw comes from a manifest (``marl/manifest.py``): each ``[[figure]]`` has a
+``kind`` and its arms (or sweep points). The builders (``fig_*``) take loaded data and
+return a matplotlib figure; ``render_figure`` loads a figure's inputs and builds it;
+``render_manifest`` saves every figure as PNG plus the ``results_tables.md`` table view.
 
 Visual rules (data-viz method, light mode):
 
-* **Emphasis form**: the learned policy (PPO) is the one accent-colored series;
-  scripted baselines are gray context lines, each direct-labeled with its value.
+* Each learned arm is one colored series: matplotlib's ``tab10`` minus its gray, in
+  fixed order, assigned by arm label so an arm keeps its color in every figure of a
+  manifest (up to 9 arms; the student waived the colorblind checks, 2026-11-01).
+* Scripted baselines are gray context lines, each direct-labeled with its value.
 * The shaded band is +/- 1 standard deviation across training seeds (ddof=1, as
   in the evaluation table); the line is the mean.
 * Thin solid lines, hairline solid gridlines, text in ink tokens (never series color).
-* Every figure has a table view twin: ``results_tables.md`` (plus the source CSVs).
-* The PBRS comparison has TWO learned arms: survival-only keeps the accent (slot 1,
-  as in every other figure); + PBRS takes categorical slot 2, validated against it.
 """
 
 from __future__ import annotations
 
 import argparse
-import csv
-import glob
+import json
 import math
+import sys
 from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import matplotlib
 
 matplotlib.use("Agg")  # write files only; never open a window
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
+from matplotlib.figure import Figure  # noqa: E402
 from matplotlib.lines import Line2D  # noqa: E402
 from matplotlib.patches import Patch  # noqa: E402
 
-from marl.common.config import load_config  # noqa: E402
+from marl.common.config import config_from_dict, load_config  # noqa: E402
+from marl.manifest import ARM_KINDS, FigureSpec, Manifest, PointSpec, ad_hoc_manifest, load_manifest  # noqa: E402
+from marl.results import (  # noqa: E402,F401 (re-exported: callers import these from marl.plots)
+    EVAL_METRICS,
+    TRAIN_METRICS,
+    Arm,
+    eval_curves,
+    eval_mismatch,
+    mean_std,
+    read_csv,
+    read_table,
+    run_config,
+    smooth,
+    table_path_for,
+    train_curves,
+)
 
 # Light-mode tokens from the data-viz reference palette.
 SURFACE, INK, INK_2, MUTED, GRID, AXIS = "#fcfcfb", "#0b0b0b", "#52514e", "#898781", "#e1e0d9", "#c3c2b7"
-ACCENT = "#2a78d6"  # categorical slot 1; validator: band, chroma and >= 3:1 on SURFACE all PASS
-# Categorical slot 2. Validator, pair with ACCENT on SURFACE (light): band, chroma PASS;
-# CVD dE 24.7 (target >= 8); normal-vision dE 33.6 (floor 15); contrast >= 3:1 PASS.
-SERIES_2 = "#eb6834"
+# Arm colors: tab10 without its gray (#7f7f7f), which would read as a baseline.
+PALETTE = ("#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#bcbd22", "#17becf")
 CONTEXT = MUTED  # de-emphasis gray for reference/context marks (always direct-labeled)
 BAND_ALPHA = 0.12
 
-EVAL_METRICS = ("len_mean", "len_mean_possession", "len_mean_free_ball", "mean_reward")
-TRAIN_METRICS = ("entropy", "explained_variance", "approx_kl", "clip_frac")
 TRIVIAL = ("random", "still", "untrained")  # baselines that never learn to evade
+CURVE_PANELS = (("len_mean_possession", "Possession starts"), ("len_mean_free_ball", "Free-ball starts"))
 
 
 def apply_style() -> None:
@@ -103,80 +134,62 @@ def apply_style() -> None:
     )
 
 
-# --- Data -----------------------------------------------------------------------------
-def read_csv(path: str | Path) -> list[dict[str, str]]:
-    with open(path, newline="", encoding="utf-8") as fh:
-        return list(csv.DictReader(fh))
+# --- Data shapes ----------------------------------------------------------------------
+@dataclass(frozen=True)
+class Series:
+    """One arm's loaded curves (arrays [n_runs, n_points] plus ``env_steps``) and its color."""
+
+    label: str
+    color: str
+    curves: dict[str, np.ndarray]
+
+    @property
+    def n(self) -> int:
+        return len(next(v for k, v in self.curves.items() if k != "env_steps"))
 
 
-def _col(rows: Sequence[dict[str, str]], key: str) -> np.ndarray:
-    return np.array([float(r[key]) for r in rows])
+@dataclass(frozen=True)
+class SweepPoint:
+    """One x position of a sweep: the PPO (stochastic) rows of its per-run evaluation CSV."""
+
+    x: float
+    label: str | None
+    rows: list[dict[str, float]]
+
+    @property
+    def name(self) -> str:
+        return self.label or f"{self.x:g}"
 
 
-def eval_curves(run_dirs: Sequence[str | Path], mode: str = "stochastic") -> dict[str, np.ndarray]:
-    """Evaluation metrics per run: arrays [n_runs, n_evals] plus the shared ``env_steps``."""
-    return _curves(run_dirs, "eval.csv", EVAL_METRICS, lambda r: r["mode"] == mode)
-
-
-def train_curves(run_dirs: Sequence[str | Path]) -> dict[str, np.ndarray]:
-    return _curves(run_dirs, "train.csv", TRAIN_METRICS, lambda r: True)
-
-
-def _curves(run_dirs, filename, metrics, keep) -> dict[str, np.ndarray]:
-    if not run_dirs:
-        raise ValueError("no runs given")
-    steps: np.ndarray | None = None
-    data: dict[str, list[np.ndarray]] = {k: [] for k in metrics}
-    for d in run_dirs:
-        rows = [r for r in read_csv(Path(d) / filename) if keep(r)]
-        s = _col(rows, "env_steps")
-        if steps is None:
-            steps = s
-        elif not np.array_equal(steps, s):
-            raise ValueError(f"{d}: its {filename} schedule differs from the other runs (different configs?)")
-        for k in metrics:
-            data[k].append(_col(rows, k))
-    return {"env_steps": steps, **{k: np.vstack(v) for k, v in data.items()}}
-
-
-def read_table(path: str | Path) -> dict[str, dict[str, float]]:
-    """An evaluation table written by ``scripts/evaluate.py``: policy -> numeric columns."""
-    table = {}
-    for r in read_csv(path):
-        table[r["policy"]] = {k: float(v) for k, v in r.items() if k != "policy"}
-    return table
-
-
-def table_path_for(run_dirs: Sequence[str | Path]) -> Path:
-    """Where ``scripts/evaluate.py`` writes the table when these runs are passed in this order."""
-    first = Path(run_dirs[0])
-    return first.parent / f"eval_{first.name}.csv"
-
-
-def mean_std(Y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Across runs (axis 0): mean and sample std (ddof=1; 0 for a single run)."""
-    sd = np.std(Y, axis=0, ddof=1) if len(Y) > 1 else np.zeros(Y.shape[1])
-    return np.mean(Y, axis=0), sd
-
-
-def smooth(Y: np.ndarray, window: int) -> np.ndarray:
-    """Centered moving average along axis 1, renormalized at the edges."""
-    if window <= 1:
-        return Y
-    kernel = np.ones(window)
-    num = np.apply_along_axis(lambda r: np.convolve(r, kernel, mode="same"), 1, Y)
-    return num / np.convolve(np.ones(Y.shape[1]), kernel, mode="same")
+def assign_colors(figures: Sequence[FigureSpec]) -> dict[str, str]:
+    """Arm label -> color for a whole manifest. Explicit ``color`` overrides win; the other
+    labels take the unused palette slots in order of first appearance."""
+    colors: dict[str, str] = {}
+    for f in figures:
+        for a in f.arms:
+            if a.color is not None:
+                if colors.get(a.label, a.color) != a.color:
+                    raise ValueError(f"arm {a.label!r} is given two colors ({colors[a.label]} and {a.color})")
+                colors[a.label] = a.color
+    free = [c for c in PALETTE if c not in colors.values()]
+    for f in figures:
+        for a in f.arms:
+            if a.label not in colors:
+                if not free:
+                    raise ValueError(f"more than {len(PALETTE)} distinct arm labels; give some arms an explicit color")
+                colors[a.label] = free.pop(0)
+    return colors
 
 
 # --- Marks ----------------------------------------------------------------------------
-def _mean_band(ax, x: np.ndarray, Y: np.ndarray, color: str = ACCENT) -> tuple[np.ndarray, np.ndarray]:
+def _mean_band(ax, x: np.ndarray, Y: np.ndarray, color: str) -> tuple[np.ndarray, np.ndarray]:
     m, sd = mean_std(Y)
     ax.fill_between(x, m - sd, m + sd, color=color, alpha=BAND_ALPHA, linewidth=0, zorder=2)
     ax.plot(x, m, color=color, zorder=3)
     return m, sd
 
 
-def _end_dot(ax, x: float, y: float, color: str = ACCENT) -> None:
+def _end_dot(ax, x: float, y: float, color: str) -> None:
     ax.plot([x], [y], "o", ms=8, color=color, mec=SURFACE, mew=2, zorder=5)
 
 
@@ -235,67 +248,101 @@ def _end_labels(ax, ends: Sequence[tuple[float, float, str]], refs: Sequence[flo
                     va="bottom" if above else "top", fontsize=9.5, fontweight="semibold", color=INK)
 
 
-def _legend(fig, n_seeds: int, context_label: str) -> None:
-    handles = [
-        (Patch(facecolor=ACCENT, alpha=BAND_ALPHA, linewidth=0), Line2D([], [], color=ACCENT, linewidth=2)),
-        Line2D([], [], color=CONTEXT, linewidth=1.5),
-    ]
-    labels = [f"PPO: mean, shaded ± 1 std over {n_seeds} seeds", context_label]
-    fig.legend(handles, labels, loc="outside lower center", ncols=2, fontsize=9)
+def _label_ends(ax, ends: Sequence[tuple[float, float, str, np.ndarray]], refs: Sequence[float]) -> None:
+    """One arm: label by the line's direction; several: split close ends apart."""
+    if len(ends) == 1:
+        x, y, text, m = ends[0]
+        _end_label(ax, x, y, text, refs, m)
+    else:
+        _end_labels(ax, [e[:3] for e in ends], refs)
+
+
+def _suptitle(fig, text: str, fontsize: float = 12) -> None:
+    fig.suptitle(text, x=0.01, ha="left", color=INK, fontsize=fontsize, fontweight="semibold")
+
+
+def _series_legend(fig, series: Sequence[Series], context: str | None = None) -> None:
+    handles: list = [(Patch(facecolor=s.color, alpha=BAND_ALPHA, linewidth=0), Line2D([], [], color=s.color, linewidth=2))
+                     for s in series]
+    labels = [f"{s.label}: mean, shaded ± 1 std over {s.n} seeds" for s in series]
+    if context:
+        handles.append(Line2D([], [], color=CONTEXT, linewidth=1.5))
+        labels.append(context)
+    fig.legend(handles, labels, loc="outside lower center", ncols=min(len(labels), 3), fontsize=9)
+
+
+def _keepaway_refs(ax, baselines: dict[str, dict[str, float]] | None, key: str) -> list[float]:
+    """The scripted reference lines of a keep-away panel (whichever the table has)."""
+    if baselines is None:
+        return []
+    refs = []
+    if "flee" in baselines:
+        flee = baselines["flee"][key]
+        _reference(ax, flee, f"flee (scripted): {flee:.0f}", above=True)
+        refs.append(flee)
+    trivial = [p for p in TRIVIAL if p in baselines]
+    if trivial:
+        value = float(np.mean([baselines[p][key] for p in trivial]))
+        _reference(ax, value, f"{' / '.join(trivial)}: {value:.0f}", above=False)
+        refs.append(value)
+    return refs
 
 
 def _save(fig, out_dir: Path, name: str) -> Path:
     path = out_dir / f"{name}.png"
-    fig.savefig(path, dpi=200)
-    fig.savefig(out_dir / f"{name}.pdf")
+    fig.savefig(path, dpi=200, metadata={"Software": None})  # no version stamp: fewer byte changes
     plt.close(fig)
     return path
 
 
-# --- Figures --------------------------------------------------------------------------
-def fig_keepaway_curves(curves: dict[str, np.ndarray], table: dict[str, dict[str, float]], out_dir: Path) -> Path:
-    x = curves["env_steps"] / 1e6
-    n = len(curves["len_mean"])
+# --- Figure builders (loaded data in, figure out) ---------------------------------------------
+def fig_curves(series: Sequence[Series], baselines: dict[str, dict[str, float]] | None = None,
+               title: str | None = None, ylim: tuple[float, float] | None = None) -> Figure:
+    """Keep-away evaluation curves per start type, one mean +/- std band per arm."""
     fig, axes = plt.subplots(1, 2, figsize=(10, 4.6), sharey=True, layout="constrained")
-    axes[0].set_ylim(50, 175)
-    for ax, key, title in zip(axes, ("len_mean_possession", "len_mean_free_ball"), ("Possession starts", "Free-ball starts")):
-        m, sd = _mean_band(ax, x, curves[key])
-        _end_dot(ax, x[-1], m[-1])
-        flee = table["flee"][key]
-        trivial = float(np.mean([table[p][key] for p in TRIVIAL]))
-        _reference(ax, flee, f"flee (scripted): {flee:.0f}", above=True)
-        _reference(ax, trivial, f"random / still / untrained: {trivial:.0f}", above=False)
-        _end_label(ax, x[-1], m[-1], f"PPO {m[-1]:.0f} ± {sd[-1]:.0f}", [flee, trivial], m)
-        ax.set_title(title)
+    if ylim:
+        axes[0].set_ylim(*ylim)
+    pending = []
+    for ax, (key, panel) in zip(axes, CURVE_PANELS):
+        refs = _keepaway_refs(ax, baselines, key)
+        ends = []
+        for s in series:
+            x = s.curves["env_steps"] / 1e6
+            m, sd = _mean_band(ax, x, s.curves[key], s.color)
+            _end_dot(ax, x[-1], m[-1], s.color)
+            ends.append((x[-1], m[-1], f"{s.label} {m[-1]:.0f} ± {sd[-1]:.0f}", m))
+        pending.append((ax, ends, refs))
+        ax.set_title(panel)
         ax.set_xlabel("Environment steps (millions)")
-        ax.set_xlim(0, x[-1] * 1.02)
+        ax.set_xlim(0, max(e[0] for e in ends) * 1.02)
     axes[0].set_ylabel("Mean episode length (control steps)")
-    fig.suptitle("Keep-away 1v1: survival on the fixed evaluation episodes during training", x=0.01, ha="left",
-                 color=INK, fontsize=12, fontweight="semibold")
-    _legend(fig, n, "scripted baselines (values labeled)")
-    return _save(fig, out_dir, "keepaway_learning_curves")
+    for ax, ends, refs in pending:  # after both panels: the shared y-limits are final
+        _label_ends(ax, ends, refs)
+    _suptitle(fig, title or "Keep-away: survival on the fixed evaluation episodes during training")
+    _series_legend(fig, series, "scripted baselines (values labeled)" if baselines else None)
+    return fig
 
 
-FINAL_ORDER = (
-    ("ppo", "PPO (stochastic)"),
-    ("ppo_deterministic", "PPO (deterministic)"),
-    ("flee", "flee (scripted)"),
-    ("random", "random"),
-    ("still", "stand still"),
-    ("untrained", "untrained PPO"),
-)
+BASELINE_ROWS = (("flee", "flee (scripted)"), ("random", "random"), ("still", "stand still"),
+                 ("untrained", "untrained PPO"))
 
 
-def fig_keepaway_final(table: dict[str, dict[str, float]], out_dir: Path) -> Path:
-    rows = [(p, name) for p, name in FINAL_ORDER if p in table]
+def fig_final(arms: Sequence[tuple[str, str, dict[str, dict[str, float]]]],
+              baselines: dict[str, dict[str, float]] | None = None, title: str | None = None) -> Figure:
+    """Final evaluation bars: each arm's PPO (stochastic, deterministic), then the baselines."""
+    rows = []  # (name, row, color)
+    for label, color, table in arms:
+        for policy, mode in (("ppo", "stochastic"), ("ppo_deterministic", "deterministic")):
+            if policy in table:
+                rows.append((f"{label} ({mode})", table[policy], color))
+    if baselines is not None:
+        rows += [(name, baselines[p], CONTEXT) for p, name in BASELINE_ROWS if p in baselines]
     y = np.arange(len(rows))[::-1]
-    n_seeds = int(table["ppo"]["n_seeds"])
-    fig, axes = plt.subplots(1, 2, figsize=(10, 3.8), sharey=True, layout="constrained")
-    for ax, key, title in zip(axes, ("len_mean_possession", "len_mean_free_ball"), ("Possession starts", "Free-ball starts")):
-        vals = np.array([table[p][key] for p, _ in rows])
-        stds = np.array([table[p][f"{key}_seed_std"] for p, _ in rows])
-        colors = [ACCENT if p.startswith("ppo") else CONTEXT for p, _ in rows]
-        ax.barh(y, vals, height=0.5, color=colors, zorder=2)
+    fig, axes = plt.subplots(1, 2, figsize=(10, max(3.8, 1.1 + 0.45 * len(rows))), sharey=True, layout="constrained")
+    for ax, (key, panel) in zip(axes, CURVE_PANELS):
+        vals = np.array([r[key] for _, r, _ in rows])
+        stds = np.array([r[f"{key}_seed_std"] for _, r, _ in rows])
+        ax.barh(y, vals, height=0.5, color=[c for _, _, c in rows], zorder=2)
         for yi, v, s in zip(y, vals, stds):
             has_spread = math.isfinite(s)
             if has_spread:
@@ -309,26 +356,25 @@ def fig_keepaway_final(table: dict[str, dict[str, float]], out_dir: Path) -> Pat
                 fontsize=9,
                 color=INK_2,
             )
-        ax.set_yticks(y, [name for _, name in rows])
+        ax.set_yticks(y, [name for name, _, _ in rows])
         ax.tick_params(axis="y", length=0)
         ax.grid(axis="x", visible=True)
         ax.grid(axis="y", visible=False)
         ax.set_xlim(0, float(np.nanmax(vals + np.nan_to_num(stds))) * 1.32)
         ax.set_xlabel("Mean episode length (control steps)")
-        ax.set_title(title)
-    fig.suptitle("Keep-away 1v1: final evaluation (same fixed episodes for every policy)", x=0.01, ha="left",
-                 color=INK, fontsize=12, fontweight="semibold")
-    fig.legend(
-        [Patch(color=ACCENT), Patch(color=CONTEXT)],
-        [f"PPO (learned); error bars ± 1 std over {n_seeds} seeds", "baselines"],
-        loc="outside lower center",
-        ncols=2,
-        fontsize=9,
-    )
-    return _save(fig, out_dir, "keepaway_final_results")
+        ax.set_title(panel)
+    _suptitle(fig, title or "Keep-away: final evaluation (same fixed episodes for every policy)")
+    handles = [Patch(color=color) for _, color, _ in arms]
+    labels = [f"{label} (learned); error bars ± 1 std over {int(table['ppo']['n_seeds'])} seeds"
+              for label, _, table in arms]
+    if baselines is not None:
+        handles.append(Patch(color=CONTEXT))
+        labels.append("baselines")
+    fig.legend(handles, labels, loc="outside lower center", ncols=min(len(labels), 3), fontsize=9)
+    return fig
 
 
-def fig_calibration(rows: Sequence[dict[str, str]], chosen: float, carrier: float, out_dir: Path) -> Path:
+def fig_calibration(rows: Sequence[dict[str, str]], chosen: float, carrier: float, title: str | None = None) -> Figure:
     speeds = sorted({float(r["red_max_speed"]) for r in rows})
 
     def survival(policies: Sequence[str]) -> np.ndarray:
@@ -346,7 +392,7 @@ def fig_calibration(rows: Sequence[dict[str, str]], chosen: float, carrier: floa
         ax.axvline(v, color=AXIS if v == carrier else INK_2, linewidth=1, zorder=1)
         ax.annotate(text, xy=(v, 98), xytext=(4, 0), textcoords="offset points", va="top", fontsize=9, color=INK_2)
     ax.plot(speeds, trivial, color=CONTEXT, linewidth=1.5, zorder=2)
-    ax.plot(speeds, flee, color=ACCENT, marker="o", ms=8, mec=SURFACE, mew=2, zorder=3)
+    ax.plot(speeds, flee, color=PALETTE[0], marker="o", ms=8, mec=SURFACE, mew=2, zorder=3)
     ax.annotate("flee (scripted)", xy=(speeds[-1], flee[-1]), xytext=(0, 10), textcoords="offset points",
                 ha="right", va="bottom", fontsize=9.5, fontweight="semibold", color=INK)
     ax.annotate("random / still", xy=(speeds[-1], trivial[-1]), xytext=(0, -8), textcoords="offset points",
@@ -359,88 +405,67 @@ def fig_calibration(rows: Sequence[dict[str, str]], chosen: float, carrier: floa
     ax.set_xlim(speeds[0] - 0.02, speeds[-1] + 0.02)
     ax.set_xlabel("Red max speed (m/s)")
     ax.set_ylabel("Survival (% of max episode length)")
-    ax.set_title("Calibrating red's speed against the scripted flee policy")
+    ax.set_title(title or "Calibrating red's speed against the scripted flee policy")
     ax.legend(
-        [Line2D([], [], color=ACCENT, marker="o", ms=7, mec=SURFACE, mew=1.5), Line2D([], [], color=CONTEXT, linewidth=1.5),
-         Patch(color=GRID, alpha=0.6)],
+        [Line2D([], [], color=PALETTE[0], marker="o", ms=7, mec=SURFACE, mew=1.5),
+         Line2D([], [], color=CONTEXT, linewidth=1.5), Patch(color=GRID, alpha=0.6)],
         ["flee (scripted)", "random / still (overlap)", "target band"],
         loc="lower left",
         fontsize=9,
     )
-    return _save(fig, out_dir, "calibration_red_speed")
+    return fig
 
 
-def fig_goto(curves: dict[str, np.ndarray], table: dict[str, dict[str, float]], out_dir: Path) -> Path:
-    x = curves["env_steps"] / 1e3
-    n = len(curves["mean_reward"])
+def fig_goto(series: Sequence[Series], baselines: dict[str, dict[str, float]] | None = None,
+             title: str | None = None, ylim: tuple[float, float] | None = None) -> Figure:
+    """goto_target: mean distance to the target (= minus the reward) during training."""
     fig, ax = plt.subplots(figsize=(6.6, 4.5), layout="constrained")
-    oracle = -table["oracle"]["mean_reward"]
-    trivial = -float(np.mean([table[p]["mean_reward"] for p in ("random", "still")]))
-    ax.set_ylim(0, trivial * 1.18)
-    m, sd = _mean_band(ax, x, -curves["mean_reward"])  # reward = -distance (m)
-    _end_dot(ax, x[-1], m[-1])
-    _reference(ax, oracle, f"oracle (straight to target): {oracle:.2f} m", above=True)
-    _reference(ax, trivial, f"random / still: {trivial:.1f} m", above=True)
-    _end_label(ax, x[-1], m[-1], f"PPO {m[-1]:.2f} ± {sd[-1]:.2f} m", [oracle, trivial], m)
-    ax.set_xlim(0, x[-1] * 1.02)
+    refs: list[float] = []
+    if baselines is not None:
+        oracle = -baselines["oracle"]["mean_reward"]
+        trivial = -float(np.mean([baselines[p]["mean_reward"] for p in ("random", "still")]))
+        ylim = ylim or (0, trivial * 1.18)
+        _reference(ax, oracle, f"oracle (straight to target): {oracle:.2f} m", above=True)
+        _reference(ax, trivial, f"random / still: {trivial:.1f} m", above=True)
+        refs = [oracle, trivial]
+    if ylim:
+        ax.set_ylim(*ylim)
+    ends = []
+    for s in series:
+        x = s.curves["env_steps"] / 1e3
+        m, sd = _mean_band(ax, x, -s.curves["mean_reward"], s.color)  # reward = -distance (m)
+        _end_dot(ax, x[-1], m[-1], s.color)
+        ends.append((x[-1], m[-1], f"{s.label} {m[-1]:.2f} ± {sd[-1]:.2f} m", m))
+    _label_ends(ax, ends, refs)
+    ax.set_xlim(0, max(e[0] for e in ends) * 1.02)
     ax.set_xlabel("Environment steps (thousands)")
     ax.set_ylabel("Mean distance to target (m), lower is better")
-    ax.set_title("goto_target sanity check")
-    _legend(fig, n, "references (values labeled)")
-    return _save(fig, out_dir, "goto_target_curve")
+    ax.set_title(title or "goto_target sanity check")
+    _series_legend(fig, series, "references (values labeled)" if baselines else None)
+    return fig
 
 
-def fig_diagnostics(curves: dict[str, np.ndarray], out_dir: Path, window: int = 9) -> Path:
-    x = curves["env_steps"] / 1e6
-    n = len(curves["entropy"])
-    panels = (
+def fig_diagnostics(series: Sequence[Series], title: str | None = None, window: int = 9) -> Figure:
+    x_panels = (
         ("entropy", "Policy entropy (nats; max 0 = uniform)"),
         ("explained_variance", "Critic explained variance"),
         ("approx_kl", "Approx. KL(old || new) per update"),
         ("clip_frac", "Fraction of ratios clipped"),
     )
     fig, axes = plt.subplots(2, 2, figsize=(10, 6), sharex=True, layout="constrained")
-    for ax, (key, title) in zip(axes.flat, panels):
-        _mean_band(ax, x, smooth(curves[key], window))
-        ax.set_title(title, fontsize=10)
+    for ax, (key, panel) in zip(axes.flat, x_panels):
+        for s in series:
+            _mean_band(ax, s.curves["env_steps"] / 1e6, smooth(s.curves[key], window), s.color)
+        ax.set_title(panel, fontsize=10)
     for ax in axes[1]:
         ax.set_xlabel("Environment steps (millions)")
-    fig.suptitle(f"Keep-away PPO training diagnostics (mean ± 1 std over {n} seeds; {window}-iteration moving average)",
-                 x=0.01, ha="left", color=INK, fontsize=11, fontweight="semibold")
-    return _save(fig, out_dir, "keepaway_training_diagnostics")
-
-
-# --- PBRS ablation (acquisition shaping) -------------------------------------------------
-def fig_pbrs_curves(ctl: dict[str, np.ndarray], pbrs: dict[str, np.ndarray], table: dict[str, dict[str, float]],
-                    coef: float, out_dir: Path) -> Path:
-    """Survival-only vs + PBRS: evaluation curves per start type (same training seeds,
-    same fixed evaluation episodes); scripted baselines as labeled gray context."""
-    arms = ((ctl, ACCENT, "survival only"), (pbrs, SERIES_2, f"+ PBRS (coef {coef:g})"))
-    fig, axes = plt.subplots(1, 2, figsize=(10, 4.6), sharey=True, layout="constrained")
-    axes[0].set_ylim(50, 175)
-    for ax, key, title in zip(axes, ("len_mean_possession", "len_mean_free_ball"), ("Possession starts", "Free-ball starts")):
-        flee = table["flee"][key]
-        trivial = float(np.mean([table[p][key] for p in TRIVIAL]))
-        _reference(ax, flee, f"flee (scripted): {flee:.0f}", above=True)
-        _reference(ax, trivial, f"random / still / untrained: {trivial:.0f}", above=False)
-        ends = []
-        for curves, color, name in arms:
-            x = curves["env_steps"] / 1e6
-            m, sd = _mean_band(ax, x, curves[key], color)
-            _end_dot(ax, x[-1], m[-1], color)
-            ends.append((x[-1], m[-1], f"{name} {m[-1]:.0f} ± {sd[-1]:.0f}"))
-        _end_labels(ax, ends, [flee, trivial])
-        ax.set_title(title)
-        ax.set_xlabel("Environment steps (millions)")
-        ax.set_xlim(0, max(e[0] for e in ends) * 1.02)
-    axes[0].set_ylabel("Mean episode length (control steps)")
-    fig.suptitle(f"Keep-away 1v1: survival-only vs + PBRS acquisition shaping (coef {coef:g}), fixed evaluation episodes",
-                 x=0.01, ha="left", color=INK, fontsize=12, fontweight="semibold")
-    handles = [(Patch(facecolor=c, alpha=BAND_ALPHA, linewidth=0), Line2D([], [], color=c, linewidth=2)) for _, c, _ in arms]
-    labels = [f"{name}: mean, shaded ± 1 std over {len(curves['len_mean'])} seeds" for curves, _, name in arms]
-    fig.legend([*handles, Line2D([], [], color=CONTEXT, linewidth=1.5)], [*labels, "scripted baselines (values labeled)"],
-               loc="outside lower center", ncols=3, fontsize=9)
-    return _save(fig, out_dir, "pbrs_learning_curves")
+    counts = {s.n for s in series}
+    seeds = f"{counts.pop()} seeds" if len(counts) == 1 else "each arm's seeds"
+    _suptitle(fig, f"{title or 'PPO training diagnostics'} (mean ± 1 std over {seeds}; {window}-iteration moving average)",
+              fontsize=11)
+    if len(series) > 1:
+        _series_legend(fig, series)
+    return fig
 
 
 SWEEP_METRICS = ("approach_m_per_step", "approach_alignment", "pickup_rate", "len_mean_possession",
@@ -452,87 +477,87 @@ SWEEP_PANELS = (  # key, title, y label, scale, value format, y-limits
 )
 
 
-def sweep_rows(paths: Sequence[str | Path]) -> tuple[list[dict[str, float]], dict[str, float]]:
-    """The PPO (stochastic) rows of the pilot's per-run evaluation CSVs, one per (coef, seed),
-    plus the flee baseline (the same in every file: same fixed episodes)."""
-    rows: list[dict[str, float]] = []
-    flee: dict[str, float] | None = None
-    for p in paths:
-        for r in read_csv(p):
-            values = {k: float(v) for k, v in r.items() if k not in ("policy", "run")}
-            if r["policy"] == "ppo":
-                rows.append(values)
-            elif r["policy"] == "flee" and flee is None:
-                flee = values
-    if not rows or flee is None:
-        raise ValueError("the sweep files hold no PPO or flee rows (were they written by scripts/evaluate.py?)")
-    return rows, flee
+def sweep_points(specs: Sequence[PointSpec]) -> tuple[list[SweepPoint], dict[str, float]]:
+    """Load each point's per-run evaluation CSV: its PPO (stochastic) rows, plus the flee
+    baseline (the same in every file: same fixed episodes). Sorted by x."""
+    points, flee = [], None
+    for spec in specs:
+        rows = read_csv(_need(spec.table.path))
+        ppo = [{k: float(v) for k, v in r.items() if k not in ("policy", "run")} for r in rows if r["policy"] == "ppo"]
+        if not ppo:
+            raise ValueError(f"{spec.table.path}: no PPO rows (was it written by scripts/evaluate.py?)")
+        points.append(SweepPoint(spec.x, spec.label, ppo))
+        if flee is None:
+            flee = next(({k: float(v) for k, v in r.items() if k not in ("policy", "run")}
+                         for r in rows if r["policy"] == "flee"), None)
+    if flee is None:
+        raise ValueError("the sweep files hold no flee rows (were they written by scripts/evaluate.py?)")
+    return sorted(points, key=lambda p: p.x), flee
 
 
-def sweep_table(rows: Sequence[dict[str, float]]) -> dict[str, dict[str, float]]:
-    """Mean and seed std per coefficient, in the shape ``table_markdown`` takes."""
+def sweep_table(points: Sequence[SweepPoint]) -> dict[str, dict[str, float]]:
+    """Mean and seed std per point, in the shape ``table_markdown`` takes."""
     table = {}
-    for c in sorted({r["pbrs_coef"] for r in rows}):
-        sel = [r for r in rows if r["pbrs_coef"] == c]
-        out: dict[str, float] = {"n_seeds": len(sel)}
+    for p in sorted(points, key=lambda q: q.x):
+        out: dict[str, float] = {"n_seeds": len(p.rows)}
         for k in SWEEP_METRICS:
-            vals = np.array([r[k] for r in sel])
+            vals = np.array([r[k] for r in p.rows])
             out[k] = float(vals.mean())
             out[f"{k}_seed_std"] = float(vals.std(ddof=1)) if len(vals) > 1 else float("nan")
-        table["0 (survival only)" if c == 0 else f"{c:g}"] = out
+        table[p.name] = out
     return table
 
 
-def fig_pbrs_sweep(rows: Sequence[dict[str, float]], flee: dict[str, float], chosen: float | None, out_dir: Path) -> Path:
-    """The coefficient pilot: one point per coefficient (ordinal x: the coefficients double),
-    seeds as faint dots behind the mean; flee as the gray "runs straight at it" reference."""
-    coefs = sorted({r["pbrs_coef"] for r in rows})
-    pos = {c: i for i, c in enumerate(coefs)}
-    seeds = {c: sum(r["pbrs_coef"] == c for r in rows) for c in coefs}
+def fig_sweep(points: Sequence[SweepPoint], flee: dict[str, float], highlight: float | None = None,
+              title: str | None = None, x_label: str | None = None) -> Figure:
+    """One position per x value (ordinal: the values needn't be evenly spaced), seeds as
+    faint dots behind the mean; flee as the gray "runs straight at it" reference."""
+    color = PALETTE[0]
+    xs = [p.x for p in points]
     fig, axes = plt.subplots(1, 3, figsize=(12, 4.3), layout="constrained")
-    for ax, (key, title, ylabel, scale, fmt, ylim) in zip(axes, SWEEP_PANELS):
+    for ax, (key, panel, ylabel, scale, fmt, ylim) in zip(axes, SWEEP_PANELS):
         ax.set_ylim(*ylim)
         near = 0.08 * (ylim[1] - ylim[0])
         ref = flee[key] * scale
         _reference(ax, ref, f"flee (scripted): {fmt.format(ref)}", above=False, right=True)
         means = []
-        for c in coefs:
-            vals = np.array([r[key] for r in rows if r["pbrs_coef"] == c]) * scale
+        for i, p in enumerate(points):
+            vals = np.array([r[key] for r in p.rows]) * scale
             # clip_on=False: a 0% point sits ON the baseline and must show whole
-            ax.plot(np.full(len(vals), pos[c]), vals, "o", ms=5, color=ACCENT, alpha=0.35, mew=0, zorder=2, clip_on=False)
+            ax.plot(np.full(len(vals), i), vals, "o", ms=5, color=color, alpha=0.35, mew=0, zorder=2, clip_on=False)
             means.append(float(vals.mean()))
-            if c in (coefs[0], chosen):  # label selectively: no shaping vs the chosen weight
+            if i == 0 or p.x == highlight:  # label selectively: the first point vs the highlighted one
                 # Clear the seed dots: above the cluster, or below it if a reference line is close above.
                 above = not 0 <= ref - vals.max() < near
-                ax.annotate(fmt.format(means[-1]), xy=(pos[c], vals.max() if above else vals.min()),
+                ax.annotate(fmt.format(means[-1]), xy=(i, vals.max() if above else vals.min()),
                             xytext=(0, 7 if above else -7), textcoords="offset points", ha="center",
                             va="bottom" if above else "top", fontsize=9.5, fontweight="semibold", color=INK)
-        ax.plot(range(len(coefs)), means, color=ACCENT, marker="o", ms=8, mec=SURFACE, mew=2, zorder=3, clip_on=False)
-        ax.set_xticks(range(len(coefs)), [("0\n(none)" if c == 0 else f"{c:g}") + ("\n(chosen)" if c == chosen else "")
-                                          for c in coefs])
-        if chosen in pos:  # mark the chosen weight on its tick label, in ink (no extra line through the data)
-            tick = ax.get_xticklabels()[pos[chosen]]
+        ax.plot(range(len(points)), means, color=color, marker="o", ms=8, mec=SURFACE, mew=2, zorder=3, clip_on=False)
+        # Tick labels wrap at the first space ("0 (survival only)" -> two lines) to stay narrow.
+        ax.set_xticks(range(len(points)), [p.name.replace(" ", "\n", 1) + ("\n(chosen)" if p.x == highlight else "")
+                                           for p in points])
+        if highlight in xs:  # mark the highlighted value on its tick label, in ink (no extra line through the data)
+            tick = ax.get_xticklabels()[xs.index(highlight)]
             tick.set_color(INK)
             tick.set_fontweight("semibold")
-        ax.set_xlim(-0.5, len(coefs) - 0.5)
-        ax.set_xlabel("PBRS coefficient")
+        ax.set_xlim(-0.5, len(points) - 0.5)
+        ax.set_xlabel(x_label or "Swept value")
         ax.set_ylabel(ylabel)
-        ax.set_title(title, fontsize=10)
-    fig.suptitle("PBRS coefficient pilot (~200k steps each): stronger shaping speeds the approach but doesn't win races",
-                 x=0.01, ha="left", color=INK, fontsize=12, fontweight="semibold")
-    counts = list(seeds.values())
+        ax.set_title(panel, fontsize=10)
+    _suptitle(fig, title or "Sweep")
+    counts = [len(p.rows) for p in points]
     common = max(set(counts), key=counts.count)
-    others = [f"{n} at coef {c:g}" for c, n in seeds.items() if n != common]
-    n_text = f"{common} per coef" + (f"; {', '.join(others)}" if others else "")
+    others = [f"{len(p.rows)} at {p.name}" for p in points if len(p.rows) != common]
+    n_text = f"{common} per point" + (f"; {', '.join(others)}" if others else "")
     handles = [
-        Line2D([], [], color=ACCENT, marker="o", ms=7, mec=SURFACE, mew=1.5),
-        Line2D([], [], linestyle="", marker="o", ms=5, color=ACCENT, alpha=0.35, mew=0),
+        Line2D([], [], color=color, marker="o", ms=7, mec=SURFACE, mew=1.5),
+        Line2D([], [], linestyle="", marker="o", ms=5, color=color, alpha=0.35, mew=0),
         Line2D([], [], color=CONTEXT, linewidth=1.5),
     ]
     labels = [f"PPO, stochastic eval: mean over training seeds ({n_text})", "individual training seeds",
               "flee (scripted): runs straight at a loose ball"]
     fig.legend(handles, labels, loc="outside lower center", ncols=2, fontsize=9)
-    return _save(fig, out_dir, "pbrs_coef_sweep")
+    return fig
 
 
 # --- Table view -----------------------------------------------------------------------
@@ -553,17 +578,6 @@ def table_markdown(title: str, table: dict[str, dict[str, float]], columns: Sequ
     return "\n".join([f"### {title}", "", head, sep, *body, ""])
 
 
-# --- Command line ---------------------------------------------------------------------
-def _dirs(pattern: str) -> list[str]:
-    return sorted(p for p in glob.glob(pattern) if Path(p).is_dir())
-
-
-def _arm_coef(table_path: Path) -> float:
-    """The PBRS coefficient of the runs behind an evaluation table (its per-run CSV records it)."""
-    rows = read_csv(table_path.with_name(table_path.stem + "_per_run.csv"))
-    return float(next(r["pbrs_coef"] for r in rows if r["policy"] == "ppo"))
-
-
 KEEPAWAY_COLUMNS = (
     ("len_mean", "overall length"), ("len_mean_possession", "possession starts"),
     ("len_mean_free_ball", "free-ball starts"), ("frac_truncated", "fraction truncated"),
@@ -574,80 +588,181 @@ SWEEP_COLUMNS = (
     ("pickup_rate", "races won (0-1)"), ("len_mean_possession", "possession starts"),
     ("len_mean_free_ball", "free-ball starts"), ("env_steps", "env steps", ".0f"),
 )
-SWEEP_DEFAULT = ("runs/eval_keepaway_1v1_seed0_iter_00100_per_run.csv", "runs/eval_pilot_pbrs_coef*_seed10_per_run.csv")
+COLUMNS = {"keepaway": KEEPAWAY_COLUMNS, "sweep": SWEEP_COLUMNS, "goto": (("mean_reward", "mean reward (-m)"),)}
+
+
+# --- Rendering (manifest in, files out) ---------------------------------------------------
+class MissingInput(FileNotFoundError):
+    """An input a figure or table needs hasn't been written yet (e.g. no evaluate.py table)."""
+
+
+def _need(path: str | Path) -> Path:
+    path = Path(path)
+    if not path.exists():
+        raise MissingInput(f"{path} not found")
+    return path
+
+
+def _arm_table(arm: Arm) -> dict[str, dict[str, float]]:
+    path = arm.table_path()
+    if not path.exists():
+        raise MissingInput(f"arm {arm.label!r} has no evaluation table {path}; "
+                           f"run `python scripts/evaluate.py \"{arm.runs}\"` first")
+    return read_table(path)
+
+
+def _shared_config(path: str | Path):
+    """The ``shared`` config of a run's config.json (or of a TOML config file)."""
+    path = _need(path)
+    if path.suffix == ".toml":
+        return load_config(path).shared
+    return config_from_dict(json.loads(path.read_text(encoding="utf-8"))).shared
+
+
+def render_figure(spec: FigureSpec, colors: dict[str, str]) -> Figure:
+    """Load one figure's inputs and build it. Raises MissingInput before drawing anything."""
+    arms = [a.to_arm() for a in spec.arms]
+    base = _arm_table(next(a for a in arms if a.label == spec.baselines)) if spec.baselines else None
+
+    def series(load) -> list[Series]:
+        return [Series(a.label, colors[a.label], load(a)) for a in arms]
+
+    if spec.kind == "curves":
+        return fig_curves(series(lambda a: a.eval_curves()), base, spec.title, spec.ylim)
+    if spec.kind == "final":
+        return fig_final([(a.label, colors[a.label], _arm_table(a)) for a in arms], base, spec.title)
+    if spec.kind == "diagnostics":
+        return fig_diagnostics(series(lambda a: a.train_curves()), spec.title, spec.window or 9)
+    if spec.kind == "goto":
+        return fig_goto(series(lambda a: a.eval_curves()), base, spec.title, spec.ylim)
+    if spec.kind == "sweep":
+        points, flee = sweep_points(spec.points)
+        return fig_sweep(points, flee, spec.highlight, spec.title, spec.x_label)
+    if spec.kind == "calibration":
+        rows = read_csv(_need(spec.csv.path))
+        cfg = _shared_config(spec.config.path)
+        return fig_calibration(rows, cfg.red_max_speed, cfg.max_speed * cfg.carry_speed_factor, spec.title)
+    raise ValueError(f"unknown figure kind {spec.kind!r}")  # the manifest loader already rejects these
+
+
+def render_tables(manifest: Manifest) -> tuple[list[str], list[str]]:
+    """The ``results_tables.md`` sections in manifest order, plus notes for skipped ones."""
+    sweeps = {f.name: f for f in manifest.figures if f.kind == "sweep"}
+    sections, notes = [], []
+    for t in manifest.tables:
+        try:
+            if t.source is not None:
+                table = read_table(_need(t.source.path))
+            else:
+                table = sweep_table(sweep_points(sweeps[t.sweep].points)[0])
+        except MissingInput as e:
+            notes.append(f"skipped table {t.title!r}: {e}")
+            continue
+        title = t.title
+        if "{n_runs}" in title and "ppo" in table:
+            title = title.replace("{n_runs}", str(int(table["ppo"]["n_seeds"])))
+        sections.append(table_markdown(title, table, COLUMNS[t.columns], first=t.first or "policy"))
+    return sections, notes
+
+
+def render_manifest(manifest: Manifest, out_dir: Path) -> tuple[list[Path], list[str]]:
+    """Write every figure (PNG) and the table view into ``out_dir``. A figure or table whose
+    inputs are missing is skipped with a note; anything else wrong is an error."""
+    apply_style()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    colors = assign_colors(manifest.figures)
+    made: list[Path] = []
+    notes: list[str] = []
+    for spec in manifest.figures:
+        for warning in eval_mismatch([a.to_arm() for a in spec.arms]):
+            if f"warning: {warning}" not in notes:  # ad-hoc figures share their arms: say it once
+                notes.append(f"warning: {warning}")
+        try:
+            fig = render_figure(spec, colors)
+        except MissingInput as e:
+            notes.append(f"skipped {spec.name}: {e}")
+            continue
+        made.append(_save(fig, out_dir, spec.name))
+    sections, table_notes = render_tables(manifest)
+    notes += table_notes
+    if sections:
+        path = out_dir / "results_tables.md"
+        path.write_text("\n".join(sections), encoding="utf-8")
+        made.append(path)
+    return made, notes
+
+
+# --- Command line ---------------------------------------------------------------------
+GOLDEN = Path("results/golden/manifest.toml")
+PLOTS = Path("runs/plots")
+DEFAULT_KINDS = {"goto_target": ("goto", "diagnostics")}  # any other scenario: keep-away's kinds
+KEEPAWAY_KINDS = ("curves", "final", "diagnostics")
+
+
+def _arm_arg(text: str) -> tuple[str, str]:
+    label, sep, pattern = text.partition("=")
+    if not sep or not label or not pattern:
+        raise argparse.ArgumentTypeError(f"expected LABEL=GLOB, got {text!r}")
+    return label, pattern
+
+
+def _default_kinds(pattern: str) -> tuple[str, ...]:
+    """By the scenario in the first matching run's config.json (keep-away if unknown)."""
+    first = Arm("", pattern).dirs()[0]
+    scenario = ((run_config(first) or {}).get("shared") or {}).get("scenario")
+    return DEFAULT_KINDS.get(scenario, KEEPAWAY_KINDS)
+
+
+def clear_outputs(out: Path) -> None:
+    """Remove what a render writes (PNGs + the table view), so dropped figures don't linger."""
+    for path in [*out.glob("*.png"), out / "results_tables.md"]:
+        path.unlink(missing_ok=True)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="Make the report figures from finished runs (step 11).")
-    ap.add_argument("--keepaway", default="runs/keepaway_1v1_seed*", help="glob of keep-away run directories")
-    ap.add_argument("--goto", default="runs/goto_target_seed*", help="glob of goto_target run directories")
-    ap.add_argument("--pbrs", default="runs/keepaway_1v1_pbrs_seed*", help="glob of the PBRS-ablation run directories")
-    ap.add_argument("--sweep", nargs="+", default=list(SWEEP_DEFAULT),
-                    help="per-run evaluation CSVs of the PBRS coefficient pilot (globs allowed)")
-    ap.add_argument("--calibration", type=Path, default=Path("runs/calibration_keepaway_1v1.csv"))
-    ap.add_argument("--config", type=Path, default=Path("configs/keepaway_1v1.toml"),
-                    help="keep-away config (for the chosen red speed and the carrier speed)")
-    ap.add_argument("--out", type=Path, default=Path("runs/figures"))
+    ap = argparse.ArgumentParser(
+        description="Render a results record (default: the golden record) or ad-hoc plots of any runs.",
+        epilog='ad hoc: plot.py --arm "new reward=runs/new_reward_seed*" [--arm ...] [--kind curves ...]',
+    )
+    ap.add_argument("--manifest", type=Path, help=f"record manifest to render (default: {GOLDEN})")
+    ap.add_argument("--arm", action="append", type=_arm_arg, metavar="LABEL=GLOB",
+                    help="an ad-hoc arm: a label and a glob of its run directories (repeatable, up to 9)")
+    ap.add_argument("--kind", nargs="+", choices=ARM_KINDS,
+                    help="ad-hoc figure kinds (default: curves final diagnostics; goto diagnostics for goto_target)")
+    ap.add_argument("--baselines", metavar="LABEL", help="ad hoc: the arm whose table supplies the gray scripted lines")
+    ap.add_argument("--name", default="adhoc", help="ad hoc: output folder and figure-name prefix (default: adhoc)")
+    ap.add_argument("--title", help="ad hoc: figure title")
+    ap.add_argument("--out", type=Path, help="output folder (default: runs/plots/<name>/)")
+    ap.add_argument("--overwrite", action="store_true", help="replace the figures in a non-empty output folder")
     args = ap.parse_args(argv)
+    if args.arm and args.manifest:
+        ap.error("give either --manifest or --arm, not both")
+    if not args.arm and (args.kind or args.baselines or args.title):
+        ap.error("--kind, --baselines and --title go with --arm (a manifest sets them per figure)")
 
-    apply_style()
-    args.out.mkdir(parents=True, exist_ok=True)
-    made: list[Path] = []
-    notes: list[str] = []
-    tables_md: list[str] = []
-
-    keep = _dirs(args.keepaway)
-    if keep:
-        made.append(fig_diagnostics(train_curves(keep), args.out))
-        tpath = table_path_for(keep)
-        if tpath.exists():
-            table = read_table(tpath)
-            made.append(fig_keepaway_curves(eval_curves(keep), table, args.out))
-            made.append(fig_keepaway_final(table, args.out))
-            tables_md.append(table_markdown(f"Keep-away ({len(keep)} runs; mean episode length, control steps)", table,
-                                            KEEPAWAY_COLUMNS))
-        else:
-            notes.append(f"skipped keep-away curves/results: run `python scripts/evaluate.py {' '.join(keep)}` first")
+    if args.arm:
+        kinds = args.kind or _default_kinds(args.arm[0][1])
+        manifest = ad_hoc_manifest(args.name, args.arm, list(kinds), args.baselines, args.title)
+        exempt = False
     else:
-        notes.append(f"no keep-away runs match {args.keepaway!r}")
+        path = args.manifest or GOLDEN
+        if not path.is_file():
+            print(f"[plot] no manifest at {path}; pass --manifest PATH, or --arm for ad-hoc plots", file=sys.stderr)
+            return 1
+        manifest = load_manifest(path)
+        exempt = args.out is None  # a record's own default folder: pure re-derivation from its data
+    out = args.out or PLOTS / manifest.name
 
-    pbrs, chosen = _dirs(args.pbrs), None
-    if pbrs and keep and table_path_for(pbrs).exists() and table_path_for(keep).exists():
-        ppath = table_path_for(pbrs)
-        chosen = _arm_coef(ppath)
-        made.append(fig_pbrs_curves(eval_curves(keep), eval_curves(pbrs), read_table(table_path_for(keep)), chosen, args.out))
-        tables_md.append(table_markdown(
-            f"Keep-away + PBRS acquisition shaping, coef {chosen:g} ({len(pbrs)} runs; mean episode length, control steps)",
-            read_table(ppath), KEEPAWAY_COLUMNS))
-    elif pbrs:
-        notes.append(f"skipped the PBRS comparison: run `python scripts/evaluate.py {' '.join(pbrs)}` "
-                     "(and on the keep-away runs) first")
-
-    sweep = sorted({p for pattern in args.sweep for p in glob.glob(pattern)})
-    if sweep:
-        rows, flee = sweep_rows(sweep)
-        made.append(fig_pbrs_sweep(rows, flee, chosen, args.out))
-        tables_md.append(table_markdown("PBRS coefficient pilot (PPO, stochastic eval; lengths in control steps)",
-                                        sweep_table(rows), SWEEP_COLUMNS, first="PBRS coef"))
-
-    goto = _dirs(args.goto)
-    gpath = table_path_for(goto) if goto else None
-    if goto and gpath.exists():
-        gtable = read_table(gpath)
-        made.append(fig_goto(eval_curves(goto), gtable, args.out))
-        tables_md.append(table_markdown(f"goto_target ({len(goto)} runs; mean reward = minus mean distance, m)", gtable,
-                                        (("mean_reward", "mean reward (-m)"),)))
-    elif goto:
-        notes.append(f"skipped goto_target curve: run `python scripts/evaluate.py {' '.join(goto)}` first")
-
-    if args.calibration.exists():
-        cfg = load_config(args.config).shared
-        made.append(fig_calibration(read_csv(args.calibration), cfg.red_max_speed, cfg.max_speed * cfg.carry_speed_factor, args.out))
-    else:
-        notes.append(f"skipped calibration curve: {args.calibration} not found (run scripts/calibrate.py)")
-
-    if tables_md:
-        (args.out / "results_tables.md").write_text("\n".join(tables_md), encoding="utf-8")
+    if out.exists() and any(out.iterdir()) and not (exempt or args.overwrite):
+        print(f"[plot] {out} already holds files; pass --overwrite to replace them", file=sys.stderr)
+        return 1
+    if out.exists():
+        clear_outputs(out)
+    made, notes = render_manifest(manifest, out)
+    if not args.arm and (unfrozen := manifest.unfrozen()):
+        n = len(unfrozen)
+        notes.append(f"warning: {n} input{'s' if n != 1 else ''} not frozen yet; "
+                     f"run `python scripts/freeze.py {manifest.root.name}` to copy them into the record")
     for path in made:
         print(f"[plot] {path}")
     for note in notes:
