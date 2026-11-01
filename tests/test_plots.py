@@ -16,6 +16,8 @@
 #     schedules share a figure, label-stable colors, no baselines means no
 #     gray lines, sweep points. The synthetic-run helpers and the mark tests
 #     are kept.
+#   - 2026-11-01: Added tests for the demo fixes (stacked close labels, early
+#     ends labeled to the right, single-seed labels and legends).
 # Prompt summary: Implement Phase 3 step 11 of the issue #7 plan (plots for the
 #   midterm from the 5-seed keep-away runs); later, task 2's plotting refactor.
 # Human review:   Pending review
@@ -382,3 +384,31 @@ def test_close_line_ends_get_labels_on_opposite_sides():
     plt.close(fig)
     # the close pair splits (higher above); the lone end steps away from the reference just below it
     assert va == {"low": "top", "high": "bottom", "alone": "bottom"}
+
+
+def test_three_close_ends_stack_and_early_ends_label_to_the_right():
+    # Found in the task 2 demo: arms of different budgets end at different x, and three
+    # finals near 94 overlapped; early-ending labels ran left over the y axis.
+    fig, ax = plt.subplots()
+    ax.set_xlim(0, 1.0)
+    ax.set_ylim(0, 100)
+    _end_labels(ax, [(1.0, 94.0, "long"), (0.1, 94.2, "short a"), (0.1, 93.9, "short b"), (1.0, 93.8, "long b")],
+                refs=[])
+    texts = {t.get_text(): t for t in ax.texts}
+    offsets = {name: t.xyann[1] for name, t in texts.items()}
+    plt.close(fig)
+    # The right half keeps the split (higher above, lower below); the left half, where the
+    # reference-line labels sit below their lines, stacks upward from the lowest end.
+    assert offsets["long"] > 0 > offsets["long b"]
+    assert offsets["short a"] > offsets["short b"] > 0
+    assert texts["long"].get_ha() == "right" and texts["short a"].get_ha() == "left"
+
+
+def test_single_seed_arms_show_no_spread_and_legends_count_seeds_correctly(tmp_path):
+    one = [Series("solo", PALETTE[0], eval_curves([fake_run(tmp_path, "solo_seed0", 0)]))]
+    fig = fig_curves(one)
+    labels = [t.get_text() for t in fig.axes[0].texts]
+    legend = [t.get_text() for t in fig.legends[0].texts]
+    plt.close(fig)
+    assert any(lb.startswith("solo ") and "±" not in lb for lb in labels)
+    assert legend == ["solo: mean over 1 seed"]

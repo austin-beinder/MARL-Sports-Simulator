@@ -26,6 +26,9 @@
 #     scenario), the --overwrite guard (record renders to their default folder
 #     exempt), and warnings for mismatched eval episodes and unfrozen record
 #     inputs (task 2, step 4).
+#   - 2026-11-01: Demo fixes: close line-end labels stack in rows, early
+#     ends are labeled to their right, single-seed arms show no "± 0" and
+#     legends say "1 seed" (task 2, step 7).
 # Prompt summary: Implement Phase 3 step 11 of the issue #7 plan (plots for the
 #   midterm from the 5-seed keep-away runs); later, the task 2 plotting
 #   refactor (records, manifests, N-arm figures).
@@ -231,21 +234,44 @@ def _end_label(ax, x: float, y: float, text: str, refs: Sequence[float], series:
     )
 
 
+# AI CITATION: Claude Code (Claude Opus 5.5) | 2026-10-14 | JC Stinson III (LifeHackerIII)
+# Usage: Wrote the function (two close ends split above/below; a lone end avoids references).
+# Modified: 2026-11-01 - Close ends now stack in rows (3+ no longer overlap), and ends in the
+#   left half of the axes are labeled to their right, stacking upward clear of the
+#   reference-line labels there (found in the task 2 demo: arms with different budgets end
+#   early, and their labels ran over the y axis and each other).
 def _end_labels(ax, ends: Sequence[tuple[float, float, str]], refs: Sequence[float]) -> None:
-    """Direct-label several line ends at once. Two ends closer than 8% of the y-range
-    split: the higher label goes above its line, the lower one below. A lone end avoids
-    a nearby reference line (else goes above). Call after the y-limits are final."""
+    """Direct-label several line ends at once. Each half of the axes is handled apart
+    (labels on opposite halves can't collide). Ends closer than 8% of the y-range form a
+    group. Right half (labels to the left of the end): the group's highest label goes
+    above its line, the others stack in rows below. Left half (labels to the right of the
+    end): the group stacks upward from its lowest end, clear of the reference-line labels
+    drawn below their lines at the left. A lone end avoids a nearby reference line (else
+    goes above). Call after the x- and y-limits are final."""
     lo, hi = ax.get_ylim()
+    x0, x1 = ax.get_xlim()
     near = 0.08 * (hi - lo)
-    for k, (x, y, text) in enumerate(ends):
-        rivals = [(e[1], j) for j, e in enumerate(ends) if j != k and abs(e[1] - y) < near]
-        if rivals:
-            above = (y, k) > max(rivals)
-        else:
-            close = [r for r in refs if abs(r - y) < near]
-            above = not close or min(close, key=lambda r: abs(r - y)) < y
-        ax.annotate(text, xy=(x, y), xytext=(-8, 9 if above else -9), textcoords="offset points", ha="right",
-                    va="bottom" if above else "top", fontsize=9.5, fontweight="semibold", color=INK)
+    for right in (True, False):
+        side = [k for k, e in enumerate(ends) if (e[0] > x0 + 0.5 * (x1 - x0)) == right]
+        # high to low on the right (row 0 = the highest); low to high on the left (row 0 = the lowest)
+        order = sorted(side, key=lambda k: (ends[k][1], k), reverse=right)
+        for i, k in enumerate(order):
+            x, y, text = ends[k]
+            row = 0  # position within its group of close ends
+            while i - row - 1 >= 0 and abs(ends[order[i - row - 1]][1] - ends[order[i - row]][1]) < near:
+                row += 1
+            grouped = row > 0 or (i + 1 < len(order) and abs(y - ends[order[i + 1]][1]) < near)
+            if not grouped:
+                close = [r for r in refs if abs(r - y) < near]
+                above = not close or min(close, key=lambda r: abs(r - y)) < y
+                dy = 9 if above else -9
+            elif right:
+                above, dy = row == 0, 9 if row == 0 else -9 - 12 * (row - 1)
+            else:
+                above, dy = True, 9 + 12 * row
+            ax.annotate(text, xy=(x, y), xytext=(-8 if right else 8, dy), textcoords="offset points",
+                        ha="right" if right else "left", va="bottom" if above else "top", fontsize=9.5,
+                        fontweight="semibold", color=INK)
 
 
 def _label_ends(ax, ends: Sequence[tuple[float, float, str, np.ndarray]], refs: Sequence[float]) -> None:
@@ -264,7 +290,8 @@ def _suptitle(fig, text: str, fontsize: float = 12) -> None:
 def _series_legend(fig, series: Sequence[Series], context: str | None = None) -> None:
     handles: list = [(Patch(facecolor=s.color, alpha=BAND_ALPHA, linewidth=0), Line2D([], [], color=s.color, linewidth=2))
                      for s in series]
-    labels = [f"{s.label}: mean, shaded ± 1 std over {s.n} seeds" for s in series]
+    labels = [f"{s.label}: mean, shaded ± 1 std over {s.n} seeds" if s.n > 1 else f"{s.label}: mean over 1 seed"
+              for s in series]
     if context:
         handles.append(Line2D([], [], color=CONTEXT, linewidth=1.5))
         labels.append(context)
@@ -310,7 +337,7 @@ def fig_curves(series: Sequence[Series], baselines: dict[str, dict[str, float]] 
             x = s.curves["env_steps"] / 1e6
             m, sd = _mean_band(ax, x, s.curves[key], s.color)
             _end_dot(ax, x[-1], m[-1], s.color)
-            ends.append((x[-1], m[-1], f"{s.label} {m[-1]:.0f} ± {sd[-1]:.0f}", m))
+            ends.append((x[-1], m[-1], f"{s.label} {m[-1]:.0f}" + (f" ± {sd[-1]:.0f}" if s.n > 1 else ""), m))
         pending.append((ax, ends, refs))
         ax.set_title(panel)
         ax.set_xlabel("Environment steps (millions)")
@@ -365,8 +392,8 @@ def fig_final(arms: Sequence[tuple[str, str, dict[str, dict[str, float]]]],
         ax.set_title(panel)
     _suptitle(fig, title or "Keep-away: final evaluation (same fixed episodes for every policy)")
     handles = [Patch(color=color) for _, color, _ in arms]
-    labels = [f"{label} (learned); error bars ± 1 std over {int(table['ppo']['n_seeds'])} seeds"
-              for label, _, table in arms]
+    labels = [f"{label} (learned); error bars ± 1 std over {n} seeds" if (n := int(table["ppo"]["n_seeds"])) > 1
+              else f"{label} (learned); 1 seed" for label, _, table in arms]
     if baselines is not None:
         handles.append(Patch(color=CONTEXT))
         labels.append("baselines")
@@ -435,9 +462,9 @@ def fig_goto(series: Sequence[Series], baselines: dict[str, dict[str, float]] | 
         x = s.curves["env_steps"] / 1e3
         m, sd = _mean_band(ax, x, -s.curves["mean_reward"], s.color)  # reward = -distance (m)
         _end_dot(ax, x[-1], m[-1], s.color)
-        ends.append((x[-1], m[-1], f"{s.label} {m[-1]:.2f} ± {sd[-1]:.2f} m", m))
-    _label_ends(ax, ends, refs)
+        ends.append((x[-1], m[-1], f"{s.label} {m[-1]:.2f}" + (f" ± {sd[-1]:.2f}" if s.n > 1 else "") + " m", m))
     ax.set_xlim(0, max(e[0] for e in ends) * 1.02)
+    _label_ends(ax, ends, refs)
     ax.set_xlabel("Environment steps (thousands)")
     ax.set_ylabel("Mean distance to target (m), lower is better")
     ax.set_title(title or "goto_target sanity check")
@@ -460,7 +487,7 @@ def fig_diagnostics(series: Sequence[Series], title: str | None = None, window: 
     for ax in axes[1]:
         ax.set_xlabel("Environment steps (millions)")
     counts = {s.n for s in series}
-    seeds = f"{counts.pop()} seeds" if len(counts) == 1 else "each arm's seeds"
+    seeds = f"{(n := counts.pop())} seed{'s' if n != 1 else ''}" if len(counts) == 1 else "each arm's seeds"
     _suptitle(fig, f"{title or 'PPO training diagnostics'} (mean ± 1 std over {seeds}; {window}-iteration moving average)",
               fontsize=11)
     if len(series) > 1:
