@@ -8,6 +8,8 @@
 #     command line (ad-hoc --arm plots, default kinds per scenario, the
 #     --overwrite guard and its record-render exemption, the eval-mismatch
 #     and unfrozen-input warnings) for backlog task 2, step 4.
+#   - 2026-11-01: Added a test for the demo-found bug: a record render must
+#     not clear ad-hoc output that shares its folder (task 2, step 7).
 # Prompt summary: Implement step 4 of the task 2 plotting-refactor plan (the
 #   plot command line), tests first.
 # Human review:   Pending review
@@ -119,6 +121,18 @@ def test_record_renders_overwrite_their_default_folder_and_warn_about_unfrozen_i
     out = capsys.readouterr().out
     assert "1 input not frozen yet" in out and "scripts/freeze.py" in out
     assert pngs(runs / "runs/plots/rec") == ["diag.png"]
+
+
+def test_a_record_render_never_clears_another_render_in_its_default_folder(runs, capsys):
+    # Found in the task 2 demo: ad-hoc `--name rec` and the record "rec" share runs/plots/rec/,
+    # and the record render (exempt from the guard) deleted the ad-hoc figures.
+    assert main(["--arm", "a=runs/new_seed*", "--kind", "diagnostics", "--name", "rec"]) == 0
+    manifest = make_record(runs)
+    assert main(["--manifest", str(manifest)]) == 1  # the folder holds someone else's figures
+    assert (runs / "runs/plots/rec/rec_diagnostics.png").exists()
+    assert "--overwrite" in capsys.readouterr().err
+    assert main(["--manifest", str(manifest), "--overwrite"]) == 0
+    assert main(["--manifest", str(manifest)]) == 0  # now the folder is this record's own render: exempt
 
 
 def test_a_record_rendered_to_an_explicit_folder_is_guarded(runs, capsys):

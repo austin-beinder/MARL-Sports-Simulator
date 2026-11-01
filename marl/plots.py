@@ -29,6 +29,9 @@
 #   - 2026-11-01: Demo fixes: close line-end labels stack in rows, early
 #     ends are labeled to their right, single-seed arms show no "± 0" and
 #     legends say "1 seed" (task 2, step 7).
+#   - 2026-11-01: Demo fix: the guard exemption for record renders now needs
+#     a .rendered_from marker naming the same manifest, so a record render
+#     never clears ad-hoc output that shares its folder name (task 2, step 7).
 # Prompt summary: Implement Phase 3 step 11 of the issue #7 plan (plots for the
 #   midterm from the 5-seed keep-away runs); later, the task 2 plotting
 #   refactor (records, manifests, N-arm figures).
@@ -722,6 +725,7 @@ def render_manifest(manifest: Manifest, out_dir: Path) -> tuple[list[Path], list
 # --- Command line ---------------------------------------------------------------------
 GOLDEN = Path("results/golden/manifest.toml")
 PLOTS = Path("runs/plots")
+RENDER_MARKER = ".rendered_from"  # in a record's render folder: the manifest it was rendered from
 DEFAULT_KINDS = {"goto_target": ("goto", "diagnostics")}  # any other scenario: keep-away's kinds
 KEEPAWAY_KINDS = ("curves", "final", "diagnostics")
 
@@ -777,8 +781,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"[plot] no manifest at {path}; pass --manifest PATH, or --arm for ad-hoc plots", file=sys.stderr)
             return 1
         manifest = load_manifest(path)
-        exempt = args.out is None  # a record's own default folder: pure re-derivation from its data
     out = args.out or PLOTS / manifest.name
+    marker = out / RENDER_MARKER
+    # Exempt from the guard: a record re-rendering its own default folder (pure re-derivation
+    # from its data). The marker proves the folder holds only that record's render; ad-hoc
+    # output under the same name is guarded (found in the task 2 demo).
+    exempt = (not args.arm and args.out is None and marker.is_file()
+              and marker.read_text(encoding="utf-8") == str(manifest.path))
 
     if out.exists() and any(out.iterdir()) and not (exempt or args.overwrite):
         print(f"[plot] {out} already holds files; pass --overwrite to replace them", file=sys.stderr)
@@ -786,6 +795,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     if out.exists():
         clear_outputs(out)
     made, notes = render_manifest(manifest, out)
+    if args.arm:
+        marker.unlink(missing_ok=True)  # the folder no longer holds (only) a record's render
+    else:
+        marker.write_text(str(manifest.path), encoding="utf-8")
     if not args.arm and (unfrozen := manifest.unfrozen()):
         n = len(unfrozen)
         notes.append(f"warning: {n} input{'s' if n != 1 else ''} not frozen yet; "
