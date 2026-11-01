@@ -20,16 +20,18 @@ python example.py
 <!--
 AI CITATION: Claude Code (Claude Opus 5.5) | 2026-11-01 | JC Stinson III (LifeHackerIII)
 Usage: Wrote the "Results & plots" section (backlog task 2: results records and ad-hoc plots).
+Modified: 2026-11-01 - Run names now carry the env (`_pybullet_`/`_mock_`); PyBullet is the default (backlog task 3).
 -->
 # Results & plots
-Training writes each run to `runs/` (gitignored): `config.json`, `train.csv`, `eval.csv`, `checkpoints/`.
+Training writes each run to `runs/<config>_<env>_seed<N>/` (gitignored): `config.json`, `train.csv`,
+`eval.csv`, `checkpoints/`. The env is PyBullet unless you pass `--env mock`.
 
 **Look at new runs (ad hoc).** Figures go to `runs/plots/<name>/`:
 
 ```shell
-python scripts/evaluate.py "runs/new_reward_seed*"     # evaluation table (needed for final bars + baseline lines)
-python scripts/plot.py --name new_reward --arm "new reward=runs/new_reward_seed*" --baselines "new reward"
-python scripts/plot.py --name vs_golden --arm "golden=results/golden/data/Old_mock_env/keepaway_1v1_seed*" --arm "new reward=runs/new_reward_seed*"
+python scripts/evaluate.py "runs/new_reward_pybullet_seed*"     # evaluation table (needed for final bars + baseline lines)
+python scripts/plot.py --name new_reward --arm "new reward=runs/new_reward_pybullet_seed*" --baselines "new reward"
+python scripts/plot.py --name vs_golden --arm "golden=results/golden/data/Old_mock_env/keepaway_1v1_seed*" --arm "new reward=runs/new_reward_pybullet_seed*"
 ```
 
 Each `--arm` is `LABEL=GLOB` (one arm = the seeds of one config; up to 9 arms per figure). Writing into a
@@ -41,7 +43,7 @@ their arms and the table sections; `data/` (frozen CSV + config copies, no check
 `runs/plots/golden/`.
 
 To add an experiment to a record, add an arm to its manifest pointing at the runs
-(`runs = "../../runs/new_reward_seed*"`), then freeze. That copies those files into the record, rewrites
+(`runs = "../../runs/new_reward_pybullet_seed*"`), then freeze. That copies those files into the record, rewrites
 the path, notes the date and commit, and renders the figures:
 
 ```shell

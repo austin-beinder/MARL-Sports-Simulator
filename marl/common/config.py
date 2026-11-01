@@ -10,6 +10,9 @@
 #   - 2026-10-11: Set the red_max_speed default to the calibrated 1.8 (step 10).
 #   - 2026-10-18: Added run.env ("mock" | "pybullet") to pick the env
 #     train/report/calibrate use. (Austin Beinder)
+#   - 2026-11-01: run.env now defaults to "pybullet" (the mock is opt-in), and
+#     saved_config_from_dict loads saved runs from before run.env existed as
+#     mock (backlog task 3).
 # Prompt summary: Implement Phase 3 step 1 of the issue #7 plan (config +
 #   validation) following the student's design decisions.
 # Human review:   Pending review
@@ -155,8 +158,9 @@ class RunConfig:
     out_dir: str = "runs"
     ### AI GENERATED
     # Which env implementation to train/evaluate on (marl.envs.make_env). Not shared config: the
-    # env side doesn't need it, and both envs implement the same ICD.
-    env: str = "mock"
+    # env side doesn't need it, and both envs implement the same ICD. PyBullet is the real
+    # experimental env; the mock is opt-in (--env mock), e.g. for fast tests (2026-11-01).
+    env: str = "pybullet"
     ### END AI GENERATED
 
 
@@ -185,6 +189,20 @@ def config_from_dict(data: dict[str, Any]) -> Config:
     cfg = _build(Config, data, "config")
     validate(cfg)
     return cfg
+
+
+### AI GENERATED
+# AI CITATION: Claude Code (Claude Opus 5.5) | 2026-11-01 | JC Stinson III (LifeHackerIII)
+# Usage: Wrote this function (backlog task 3: legacy runs keep loading as mock).
+def saved_config_from_dict(data: dict[str, Any]) -> Config:
+    """Like ``config_from_dict``, for a config saved with a run (a checkpoint's or a
+    ``config.json``). One with no ``run.env`` predates that key (2026-10-18), when the mock
+    was the only env, so it loads as ``"mock"`` rather than today's default."""
+    run = data.get("run", {})
+    if "env" not in run:
+        data = {**data, "run": {**run, "env": "mock"}}
+    return config_from_dict(data)
+### END AI GENERATED
 
 
 def config_to_dict(cfg: Config) -> dict[str, Any]:

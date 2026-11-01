@@ -12,6 +12,9 @@
 #     use a physics_dt mismatch for the worker setup error (2v2 now works).
 #   - 2026-10-31: PyBullet evaluates in-process too; added tests that several
 #     PyBullet envs run side by side in one process.
+#   - 2026-11-01: PyBullet is the default env and run dirs always name their
+#     env: updated the default, out-dir and --render tests (backlog task 3;
+#     Claude Code (Claude Opus 5.5), prompted by JC Stinson III).
 # Prompt summary: Add an env selector to train/report/calibrate and run
 #   evaluation in its own process for the shared pybullet simulation.
 # Human review:   Pending review
@@ -47,8 +50,8 @@ def test_make_env_follows_run_env():
     assert isinstance(make_env(small("pybullet")), PyBulletEnv)
 
 
-def test_default_env_is_mock_and_unknown_env_is_rejected():
-    assert config_from_dict({}).run.env == "mock"
+def test_default_env_is_pybullet_and_unknown_env_is_rejected():
+    assert config_from_dict({}).run.env == "pybullet"  # 2026-11-01: was "mock" (task 3)
     with pytest.raises(ValueError, match="run.env|env="):
         config_from_dict({"run": {"env": "bogus"}})
 
@@ -95,12 +98,14 @@ def test_training_on_pybullet_runs_end_to_end(tmp_path, shared, rl):
     assert res.final_eval_deterministic["episodes"] == 3
 
 
-def test_cli_env_flag_sets_run_env_and_out_dir(tmp_path, monkeypatch):
+# 2026-11-01 (task 3): no flag means PyBullet, and every run dir names its env.
+@pytest.mark.parametrize("flag, env", [([], "pybullet"), (["--env", "pybullet"], "pybullet"), (["--env", "mock"], "mock")])
+def test_cli_env_flag_sets_run_env_and_out_dir(tmp_path, monkeypatch, flag, env):
     seen = {}
     monkeypatch.setattr("marl.rl.train.train", lambda cfg, out_dir, **kw: seen.update(cfg=cfg, out_dir=out_dir))
-    main(["--config", "configs/keepaway_1v1.toml", "--env", "pybullet", "--set", f"run.out_dir={tmp_path.as_posix()}"])
-    assert seen["cfg"].run.env == "pybullet"
-    assert seen["out_dir"].name == "keepaway_1v1_pybullet_seed0"
+    main(["--config", "configs/keepaway_1v1.toml", *flag, "--set", f"run.out_dir={tmp_path.as_posix()}"])
+    assert seen["cfg"].run.env == env
+    assert seen["out_dir"].name == f"keepaway_1v1_{env}_seed0"
 
 
 def test_cli_debug_and_render_flags(tmp_path, monkeypatch):
@@ -111,8 +116,10 @@ def test_cli_debug_and_render_flags(tmp_path, monkeypatch):
     assert seen["render"] and seen["print_collisions"]
     main(base + ["--env", "pybullet"])
     assert not seen["render"] and not seen["print_collisions"]
+    main(base + ["--render"])  # 2026-11-01: PyBullet is the default, so no --env is needed (task 3)
+    assert seen["render"]
     with pytest.raises(SystemExit):  # the mock has no GUI
-        main(base + ["--render"])
+        main(base + ["--env", "mock", "--render"])
 
 
 # --- Several PyBullet envs in one process (2026-10-31) -------------------------------------

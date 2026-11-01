@@ -753,7 +753,7 @@ def clear_outputs(out: Path) -> None:
 def main(argv: Sequence[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         description="Render a results record (default: the golden record) or ad-hoc plots of any runs.",
-        epilog='ad hoc: plot.py --arm "new reward=runs/new_reward_seed*" [--arm ...] [--kind curves ...]',
+        epilog='ad hoc: plot.py --arm "new reward=runs/new_reward_pybullet_seed*" [--arm ...] [--kind curves ...]',
     )
     ap.add_argument("--manifest", type=Path, help=f"record manifest to render (default: {GOLDEN})")
     ap.add_argument("--arm", action="append", type=_arm_arg, metavar="LABEL=GLOB",
