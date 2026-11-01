@@ -8,16 +8,20 @@
 #     place (manifest-driven copy mirrored under data/, only the unfrozen path
 #     strings rewritten, provenance, validation before any write, the
 #     --overwrite guard) for backlog task 2, step 6.
+#   - 2026-11-01: Added a test for the demo-found provenance bug (untracked
+#     files must not count as uncommitted changes) (task 2, step 7).
 # Prompt summary: Implement step 6 of the task 2 plotting-refactor plan
 #   (marl/record.py + scripts/freeze.py), tests first.
 # Human review:   Pending review
 # ==============================================================================
 import json
+import shutil
+import subprocess
 
 import pytest
 
 from marl.manifest import load_manifest
-from marl.record import freeze, main
+from marl.record import freeze, git_revision, main
 from marl.results import table_path_for
 from tests.test_plots import fake_run, fake_table
 
@@ -155,6 +159,27 @@ def test_a_missing_arm_table_is_only_a_note(ws):
     result = do_freeze(ws)
     assert any("no evaluation table" in n for n in result.notes)
     assert any(n.startswith("skipped cmp") for n in result.notes)  # the figure that needs it says so too
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="needs git")
+def test_git_revision_ignores_untracked_files_like_the_record_being_frozen(tmp_path, monkeypatch):
+    # Found in the task 2 demo: the not-yet-committed record itself made every first freeze
+    # report "+ uncommitted changes".
+    def git(*args):
+        subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True)
+
+    git("init", "-q")
+    git("config", "user.email", "t@example.com")
+    git("config", "user.name", "t")
+    (tmp_path / "code.py").write_text("x = 1\n", encoding="utf-8")
+    git("add", "code.py")
+    git("commit", "-q", "-m", "c")
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "results").mkdir()
+    (tmp_path / "results" / "manifest.toml").write_text("name = 'r'\n", encoding="utf-8")  # untracked
+    assert "uncommitted" not in git_revision()
+    (tmp_path / "code.py").write_text("x = 2\n", encoding="utf-8")  # a tracked change
+    assert git_revision().endswith("+ uncommitted changes")
 
 
 def test_cli_takes_a_record_name(ws, monkeypatch, capsys):

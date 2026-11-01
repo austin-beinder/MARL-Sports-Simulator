@@ -9,6 +9,8 @@
 #     runs/; rewrite only those path strings in the manifest's text; append
 #     provenance; render the record's figures), validated before any write,
 #     plus its command line (backlog task 2, step 6).
+#   - 2026-11-01: Demo fix: git_revision ignores untracked files (the record
+#     being frozen is untracked until committed) (task 2, step 7).
 # Prompt summary: Implement step 6 of the task 2 plotting-refactor plan: a
 #   freeze that keeps the manifest's comments and never half-updates a record.
 # Human review:   Pending review
@@ -158,10 +160,12 @@ def freeze(manifest_path: str | Path, runs_root: str | Path = RUNS, overwrite: b
 
 
 def git_revision() -> str:
-    """The short commit hash, plus a marker if the working tree has uncommitted changes."""
+    """The short commit hash, plus a marker if tracked files have uncommitted changes.
+    Untracked files don't count: the record being frozen is usually one of them."""
     try:
         head = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True, check=True)
-        dirty = subprocess.run(["git", "status", "--porcelain"], capture_output=True, text=True, check=True)
+        dirty = subprocess.run(["git", "status", "--porcelain", "--untracked-files=no"], capture_output=True, text=True,
+                               check=True)
     except (OSError, subprocess.CalledProcessError):
         return "unknown (not a git checkout)"
     return head.stdout.strip() + (" + uncommitted changes" if dirty.stdout.strip() else "")
