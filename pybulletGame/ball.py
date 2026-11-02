@@ -1,6 +1,8 @@
 """
-Many cited parts of entity.py were AI generated. 
+Many cited parts of entity.py were AI generated.
 This file was largely copy pasted from entity.py and player.py
+AI edits 2026-10-31 (Claude Code, Austin Beinder): physics_client on every pybullet call, the
+teammate handoff switch, and a per-ball random generator for steals. See the markers.
 """
 
 import numpy as np
@@ -21,14 +23,15 @@ class Ball(Entity):
                  height=0.1, 
                  mass=1.0,
                  initial_position=np.array([0.0, 0.0, 0.0]),
-                 maxJointVelocity=3.0):
+                 maxJointVelocity=3.0,
+                 physics_client=0):  # AI GENERATED (which pybullet simulation, see Entity)
 
         rgbaColor=[1, 1, 1, 1]
 
         ### AI GENERATED
         # Apply a soccer ball texture to the visible link (link 2, the yaw link that holds the shape)
         texture_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../", "textures", "soccer_ball.png")
-        texture_id = p.loadTexture(texture_path)
+        texture_id = p.loadTexture(texture_path, physicsClientId=physics_client)
         ### AI GENERATED
 
         self.possession = Team.NONE
@@ -47,6 +50,14 @@ class Ball(Entity):
 
         # Space left between the kicker's edge and the ball's edge when the ball is kicked
         self.KICK_GAP = 0.02
+
+        # Whether a teammate touching the ball takes it from the carrier (2026-10-31). KeepAwayEnv sets
+        # this from KeepAwayConfig.teammate_handoff, which is off: the ICD only lets a kick release the ball.
+        self.allow_teammate_handoff = True
+
+        # What rolls for steals (2026-10-31). Python's random module by default; KeepAwayEnv gives
+        # each game its own seeded random.Random, so games in one process don't share a sequence.
+        self.rng = random
         ### END AI GENERATED
 
         super().__init__(
@@ -56,20 +67,23 @@ class Ball(Entity):
             initial_position=initial_position,
             rgbaColor=rgbaColor,
             maxJointVelocity=maxJointVelocity,
+            physics_client=physics_client,  # AI GENERATED
         )
         self.is_ball = True
 
         # This creates some friction so it doesn't slide or spin forever or accelerate super quickly
         # Found by googling how to add drag in pybullet.
-        p.changeDynamics(self.body_id, 0, linearDamping=1.25, angularDamping=10.05, maxJointVelocity=maxJointVelocity)
-        p.changeDynamics(self.body_id, 1, linearDamping=1.25, angularDamping=10.05, maxJointVelocity=maxJointVelocity)
-        p.changeVisualShape(self.body_id, 2, textureUniqueId=texture_id)  # AI GENERATED
+        p.changeDynamics(self.body_id, 0, linearDamping=1.25, angularDamping=10.05, maxJointVelocity=maxJointVelocity,
+                         physicsClientId=self.client)  # AI GENERATED (physicsClientId)
+        p.changeDynamics(self.body_id, 1, linearDamping=1.25, angularDamping=10.05, maxJointVelocity=maxJointVelocity,
+                         physicsClientId=self.client)  # AI GENERATED (physicsClientId)
+        p.changeVisualShape(self.body_id, 2, textureUniqueId=texture_id, physicsClientId=self.client)  # AI GENERATED
 
     ### AI GENERATED
     def sync_from_pybullet(self):
         # Called once per stepSimulation, so advance the sim clock by one physics step
         # before collisions (and therefore on_new_collision) are processed.
-        self.sim_time += p.getPhysicsEngineParameters()["fixedTimeStep"]
+        self.sim_time += p.getPhysicsEngineParameters(physicsClientId=self.client)["fixedTimeStep"]
         super().sync_from_pybullet()
     ### END AI GENERATED
 
@@ -78,12 +92,12 @@ class Ball(Entity):
         previous_collided_entities = self.collided_entities
         self.collided_entities = []
         seen_body_ids = set()
-        for contact in p.getContactPoints(bodyA=self.body_id):
+        for contact in p.getContactPoints(bodyA=self.body_id, physicsClientId=self.client):  # AI GENERATED (physicsClientId)
             other_body_id = contact[2]
             if other_body_id in seen_body_ids:
                 continue
             seen_body_ids.add(other_body_id)
-            other_entity = Entity._registry.get(other_body_id)
+            other_entity = Entity._registry.get((self.client, other_body_id))  # AI GENERATED (keyed by client too)
             if other_entity is not None:
                 self.collided_entities.append(other_entity)
                 if not (other_entity in previous_collided_entities):
@@ -119,7 +133,8 @@ class Ball(Entity):
             ### AI GENERATED
             # Physically hand the ball to the teammate. The team keeps possession,
             # so changed_possession stays False.
-            self._player_takes_possession(collided_entity)
+            if self.allow_teammate_handoff:  # 2026-10-31: the handoff can be switched off
+                self._player_takes_possession(collided_entity)
             ### END AI GENERATED
         elif self.possession != Team.NONE and self.possession != collided_entity.team:
             # We must have collided with a player of an opposing team
@@ -131,7 +146,7 @@ class Ball(Entity):
                 return changed_possession
             ### END AI GENERATED
 
-            num = random.randint(1, 100)
+            num = self.rng.randint(1, 100)  # AI GENERATED (self.rng, was the random module)
 
             # 50% chance of possession flip on collision with another team
             if num > (100 - self.possession_flip_percentage):
@@ -159,19 +174,20 @@ class Ball(Entity):
         self._release()  # drop any existing hold
 
         # Lift the whole ball (base, and with it the joint chain) to carry height
-        bx, by, _ = p.getBasePositionAndOrientation(self.body_id)[0]
-        p.resetBasePositionAndOrientation(self.body_id, [bx, by, self.CARRY_HEIGHT], [0, 0, 0, 1])
+        c = self.client
+        bx, by, _ = p.getBasePositionAndOrientation(self.body_id, physicsClientId=c)[0]
+        p.resetBasePositionAndOrientation(self.body_id, [bx, by, self.CARRY_HEIGHT], [0, 0, 0, 1], physicsClientId=c)
 
         # Snap the ball's x/y joints so it starts directly above the player.
         # Joint positions are relative to the base, which is why bx/by are subtracted.
         px, py = player.position[0], player.position[1]
-        p.resetJointState(self.body_id, 0, targetValue=px - bx, targetVelocity=0)
-        p.resetJointState(self.body_id, 1, targetValue=py - by, targetVelocity=0)
+        p.resetJointState(self.body_id, 0, targetValue=px - bx, targetVelocity=0, physicsClientId=c)
+        p.resetJointState(self.body_id, 1, targetValue=py - by, targetVelocity=0, physicsClientId=c)
 
         # Pin ball link 2 to a point above player link 2
         self.carry_constraint = p.createConstraint(
             player.body_id, 2, self.body_id, 2, p.JOINT_POINT2POINT, [0, 0, 0],
-            parentFramePosition=[0, 0, self.CARRY_HEIGHT], childFramePosition=[0, 0, 0])
+            parentFramePosition=[0, 0, self.CARRY_HEIGHT], childFramePosition=[0, 0, 0], physicsClientId=c)
         # self.carry_steps_left = 240  # "for a while": 1 s at 240 Hz
 
         # Record possession on both the ball and the player, for every way a player can get the ball
@@ -183,10 +199,10 @@ class Ball(Entity):
     ### AI GENERATED
     def _release(self):
         if getattr(self, "carry_constraint", None) is not None:
-            p.removeConstraint(self.carry_constraint)
+            p.removeConstraint(self.carry_constraint, physicsClientId=self.client)
             self.carry_constraint = None
-            bx, by, _ = p.getBasePositionAndOrientation(self.body_id)[0]
-            p.resetBasePositionAndOrientation(self.body_id, [bx, by, 0], [0, 0, 0, 1])
+            bx, by, _ = p.getBasePositionAndOrientation(self.body_id, physicsClientId=self.client)[0]
+            p.resetBasePositionAndOrientation(self.body_id, [bx, by, 0], [0, 0, 0, 1], physicsClientId=self.client)
         ### END AI GENERATED
         
         if self.possession_player:
@@ -213,13 +229,14 @@ class Ball(Entity):
         if kicker is not None and speed > 0:
             direction = np.array([x, y]) / speed
             # Read the kicker's live position; kicker.position is only as fresh as its last sync
-            kicker_xy = np.array(p.getLinkState(kicker.body_id, 2)[0][:2])
+            c = self.client
+            kicker_xy = np.array(p.getLinkState(kicker.body_id, 2, physicsClientId=c)[0][:2])
             target_x, target_y = kicker_xy + direction * (kicker.radius + self.radius + self.KICK_GAP)
 
             # Joint positions are relative to the base, which is why bx/by are subtracted
-            bx, by, _ = p.getBasePositionAndOrientation(self.body_id)[0]
-            p.resetJointState(self.body_id, 0, targetValue=target_x - bx, targetVelocity=0)
-            p.resetJointState(self.body_id, 1, targetValue=target_y - by, targetVelocity=0)
+            bx, by, _ = p.getBasePositionAndOrientation(self.body_id, physicsClientId=c)[0]
+            p.resetJointState(self.body_id, 0, targetValue=target_x - bx, targetVelocity=0, physicsClientId=c)
+            p.resetJointState(self.body_id, 1, targetValue=target_y - by, targetVelocity=0, physicsClientId=c)
         ### END AI GENERATED
 
         self.apply_velocity(x, y)

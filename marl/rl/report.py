@@ -6,6 +6,8 @@
 # Usage:
 #   - 2026-10-18: Envs come from run.env via make_env; runs on different
 #     envs count as different tasks. (Austin Beinder)
+#   - 2026-10-31: Fixed the baseline rows passing SharedConfig to make_env,
+#     which crashed evaluate_runs. (Austin Beinder)
 #   - 2026-10-11: Generated this entire file: the final evaluation table
 #     (trained runs, stochastic + deterministic; the untrained initial
 #     policy; scripted baselines), all on the fixed evaluation episodes, with
@@ -112,7 +114,7 @@ def evaluate_runs(
     for name in baselines_for(cfg0.shared.scenario):
         policy = make_baseline(name, cfg0.shared, seed=cfg0.run.eval_seed)
         tracker = RaceTracker(cfg0)
-        records = run_episodes(make_env(cfg0.shared), policy, cfg0, reward_fn, seeds, tracker)
+        records = run_episodes(make_env(cfg0), policy, cfg0, reward_fn, seeds, tracker)  # AI GENERATED (was cfg0.shared)
         per_run.append({"policy": name, "seed": nan, "run": "", "pbrs_coef": nan, "env_steps": nan,
                                 **summarize(records), **summarize_races(tracker.records)})
     return per_run, aggregate(per_run, cfg0.shared.max_episode_steps)

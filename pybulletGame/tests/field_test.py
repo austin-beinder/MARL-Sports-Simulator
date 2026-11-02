@@ -80,7 +80,7 @@ class TestFieldConstruction(unittest.TestCase):
 
         for name, wall in field.walls.items():
             self.assertIsInstance(wall, Wall)
-            self.assertIs(Entity._registry[wall.body_id], wall)
+            self.assertIs(Entity._registry[(wall.client, wall.body_id)], wall)  # keyed by client too (2026-10-31)
             self.assertTrue(wall.is_wall)
             self.assertFalse(wall.is_ball)
             self.assertEqual(wall.team, Team.NONE)

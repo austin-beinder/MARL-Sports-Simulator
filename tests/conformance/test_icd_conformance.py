@@ -10,6 +10,8 @@
 #     parametrized over env factories so the real env can be plugged in.
 #   - 2026-10-14: Added the returned-states-are-snapshots test (the PBRS reward
 #     reads Phi(s) after step(), so an env must not mutate a returned state).
+#   - 2026-10-31: Ran the step-counter, snapshot and determinism tests at 1v1
+#     as well as 2v2, and added a keep-away truncation test. (Austin Beinder)
 # Prompt summary: Implement Phase 3 step 3 of the issue #7 plan (mock env +
 #   ICD conformance tests).
 # Human review:   Pending review
@@ -109,32 +111,37 @@ def test_reset_state_format(make_env, shared):
     assert_plain(info, "info")
 
 
-def test_step_counter_and_plain_types(make_env):
-    env, sc = make_env({"shared": {"n_blue": 2, "n_red": 2}})
+TEAMS = [{}, {"n_blue": 2, "n_red": 2}]  # AI GENERATED (1v1 and 2v2)
+
+
+@pytest.mark.parametrize("shared", TEAMS)  # AI GENERATED
+def test_step_counter_and_plain_types(make_env, shared):
+    env, sc = make_env({"shared": shared})  # AI GENERATED
     env.reset(seed=1, options=sc.start.to_reset_options())
     rng = np.random.default_rng(0)
     for t in range(1, 6):
-        s, term, trunc, info = env.step(random_actions(rng, 2))
+        s, term, trunc, info = env.step(random_actions(rng, sc.n_blue))  # AI GENERATED (sc.n_blue)
         assert_plain(s, "s")
         assert_plain(info, "info")
         assert type(term) is bool and type(trunc) is bool
-        assert len(info["kick_applied"]) == 2
+        assert len(info["kick_applied"]) == sc.n_blue  # AI GENERATED (sc.n_blue)
         if term or trunc:
             break
         assert s["step"] == t
 
 
-def test_returned_states_are_never_mutated_later(make_env):
+@pytest.mark.parametrize("shared", TEAMS)  # AI GENERATED
+def test_returned_states_are_never_mutated_later(make_env, shared):
     # ICD §5: a returned s is a snapshot. The RL side keeps s while it steps the env: the
     # PBRS reward reads Phi(s) AFTER step() returns s' (marl/rl/reward.py). An env that
     # updated a returned dict in place would silently corrupt that.
-    env, sc = make_env({"shared": {"n_blue": 2, "n_red": 2}})
+    env, sc = make_env({"shared": shared})  # AI GENERATED
     options = sc.start.to_reset_options()
     s, _ = env.reset(seed=3, options=options)
     kept = [(s, copy.deepcopy(s))]
     rng = np.random.default_rng(1)
     for _ in range(20):
-        s, term, trunc, _ = env.step(random_actions(rng, 2))
+        s, term, trunc, _ = env.step(random_actions(rng, sc.n_blue))  # AI GENERATED (sc.n_blue)
         kept.append((s, copy.deepcopy(s)))
         if term or trunc:
             break
@@ -144,13 +151,14 @@ def test_returned_states_are_never_mutated_later(make_env):
 
 
 # --- Determinism (ICD §2) ---------------------------------------------------------
-def test_same_seed_same_episode(make_env):
+@pytest.mark.parametrize("shared", TEAMS)  # AI GENERATED
+def test_same_seed_same_episode(make_env, shared):
     def episode(seed):
-        env, sc = make_env({"shared": {"n_blue": 2, "n_red": 2}})
+        env, sc = make_env({"shared": shared})  # AI GENERATED
         out = [env.reset(seed=seed, options=sc.start.to_reset_options())]
         rng = np.random.default_rng(99)
         for _ in range(80):
-            step = env.step(random_actions(rng, 2))
+            step = env.step(random_actions(rng, sc.n_blue))  # AI GENERATED (sc.n_blue)
             out.append(step)
             if step[1] or step[2]:
                 break
@@ -226,6 +234,18 @@ def test_truncation_at_max_episode_steps(make_env):
     env.reset(seed=0, options=sc.start.to_reset_options())
     s, term, trunc, info, steps = run_until_done(env, lambda: zero_actions(1))
     assert trunc and not term and steps == 50 and s["step"] == 50
+
+
+### AI GENERATED
+def test_keepaway_truncation_at_max_episode_steps(make_env):
+    # Free-ball start, blue stands still: red spawns >= min_red_ball_dist (3 m) from the ball and
+    # covers ~0.45 m in 5 steps, so the time limit hits first.
+    env, sc = make_env({"shared": {"max_episode_steps": 5, "start": {"start_mix": 0.0}}})
+    env.reset(seed=0, options=sc.start.to_reset_options())
+    s, term, trunc, info, steps = run_until_done(env, lambda: zero_actions(sc.n_blue))
+    assert trunc and not term and steps == 5 and s["step"] == 5
+    assert not any(e["has_possession"] for e in s["blue"] + s["red"])
+### END AI GENERATED
 
 
 # --- Kicks (ICD §3, §6) ---------------------------------------------------------------

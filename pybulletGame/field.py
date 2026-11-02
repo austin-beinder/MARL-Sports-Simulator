@@ -12,6 +12,9 @@ It has three parts:
 
 It also answers "where are the walls relative to me?" for a player at a given position,
 in either the static x/y frame or a frame that turns with the player's velocity.
+
+AI edit 2026-10-31 (Claude Code, Austin Beinder): physics_client, so a field can be built in any
+pybullet simulation, not just the default connection.
 """
 
 ### AI GENERATED
@@ -57,14 +60,15 @@ class Wall:
     collision code reads: body_id, is_ball, is_wall and team.
     """
 
-    def __init__(self, name: str, body_id: int, normal: np.ndarray):
+    def __init__(self, name: str, body_id: int, normal: np.ndarray, physics_client: int = 0):
         self.name = name
         self.body_id = body_id
+        self.client = physics_client  # 2026-10-31: the simulation the wall lives in (see Entity._registry)
         self.normal = normal  # unit vector pointing into the field
         self.is_ball = False
         self.is_wall = True
         self.team = Team.NONE
-        Entity._registry[body_id] = self
+        Entity._registry[(physics_client, body_id)] = self
 
 
 class Field:
@@ -76,12 +80,15 @@ class Field:
                  wall_thickness: float = 0.5,
                  line_width: float = 0.08,
                  grass_tile_size: float = 2.0,
-                 grass_texture_path: str = GRASS_TEXTURE_PATH):
+                 grass_texture_path: str = GRASS_TEXTURE_PATH,
+                 physics_client: int = 0):
         """
         length: size along x, in metres. The default is a fifth of a real pitch.
         width: size along y, in metres.
         grass_tile_size: metres covered by one repeat of the grass texture (one light and one dark stripe).
+        physics_client: which pybullet simulation to build the field in (0 = the default connection).
         """
+        self.client = physics_client
         self.length = length
         self.width = width
         self.wall_height = wall_height
@@ -112,10 +119,13 @@ class Field:
         offset = math.ceil(self.length / tile_size) + 1
         uvs = [[x / tile_size + offset, y / tile_size + offset] for x, y in corners]
 
+        c = self.client
         visual = p.createVisualShape(p.GEOM_MESH, vertices=vertices, indices=[0, 1, 2, 0, 2, 3],
-                                     uvs=uvs, normals=[[0, 0, 1]] * 4, rgbaColor=[1, 1, 1, 1])
-        floor_id = p.createMultiBody(baseMass=0, baseCollisionShapeIndex=-1, baseVisualShapeIndex=visual)
-        p.changeVisualShape(floor_id, -1, textureUniqueId=p.loadTexture(texture_path))
+                                     uvs=uvs, normals=[[0, 0, 1]] * 4, rgbaColor=[1, 1, 1, 1], physicsClientId=c)
+        floor_id = p.createMultiBody(baseMass=0, baseCollisionShapeIndex=-1, baseVisualShapeIndex=visual,
+                                     physicsClientId=c)
+        p.changeVisualShape(floor_id, -1, textureUniqueId=p.loadTexture(texture_path, physicsClientId=c),
+                            physicsClientId=c)
         return floor_id
 
     def _create_lines(self) -> int:
@@ -181,8 +191,10 @@ class Field:
             arc(spot_x, 0, REAL_CENTRE_CIRCLE_RADIUS * s, facing - half_angle, facing + half_angle, 12)
 
         visual = p.createVisualShape(p.GEOM_MESH, vertices=vertices, indices=indices,
-                                     normals=[[0, 0, 1]] * len(vertices), rgbaColor=[1, 1, 1, 1])
-        return p.createMultiBody(baseMass=0, baseCollisionShapeIndex=-1, baseVisualShapeIndex=visual)
+                                     normals=[[0, 0, 1]] * len(vertices), rgbaColor=[1, 1, 1, 1],
+                                     physicsClientId=self.client)
+        return p.createMultiBody(baseMass=0, baseCollisionShapeIndex=-1, baseVisualShapeIndex=visual,
+                                 physicsClientId=self.client)
 
     def _create_walls(self) -> Dict[str, Wall]:
         t = self.wall_thickness
@@ -199,11 +211,13 @@ class Field:
 
         walls = {}
         for name, (position, half_extents, normal) in specs.items():
-            collision = p.createCollisionShape(p.GEOM_BOX, halfExtents=half_extents)
-            visual = p.createVisualShape(p.GEOM_BOX, halfExtents=half_extents, rgbaColor=[0.85, 0.85, 0.82, 1])
+            c = self.client
+            collision = p.createCollisionShape(p.GEOM_BOX, halfExtents=half_extents, physicsClientId=c)
+            visual = p.createVisualShape(p.GEOM_BOX, halfExtents=half_extents, rgbaColor=[0.85, 0.85, 0.82, 1],
+                                         physicsClientId=c)
             body_id = p.createMultiBody(baseMass=0, baseCollisionShapeIndex=collision,
-                                        baseVisualShapeIndex=visual, basePosition=position)
-            walls[name] = Wall(name, body_id, normal)
+                                        baseVisualShapeIndex=visual, basePosition=position, physicsClientId=c)
+            walls[name] = Wall(name, body_id, normal, physics_client=c)
         return walls
 
     # ---------- Wall distances for players ----------
