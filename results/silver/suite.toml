@@ -7,6 +7,7 @@
 #   - 2026-11-02: Wrote this suite: the silver record's regression cases
 #     (every config x env that runs today), reserved seeds and budget, from
 #     the student's design decisions (backlog task 4, step 6).
+#   - 2026-11-03: Added goto_target on PyBullet (supported since #26).
 # Prompt summary: Freeze silver v1, the first regression baseline.
 # Human review:   Pending review
 # ==============================================================================
@@ -37,4 +38,4 @@ envs   = ["mock", "pybullet"]
 
 [[case]]                      # the RL sanity check
 config = "configs/goto_target.toml"
-envs   = ["mock"]             # PyBullet: add once goto_target runs there (Austin's #26, after the stack rebase)
+envs   = ["mock", "pybullet"] # PyBullet runs goto_target since Austin's #26

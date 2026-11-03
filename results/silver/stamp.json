@@ -1,8 +1,8 @@
 {
   "suite": "silver",
-  "frozen": "2026-11-02",
-  "commit": "dd2ae63",
-  "reason": "silver v1: the first regression baseline (task stack 1-4 on main 8ccdd58, before Austin's #26)",
+  "frozen": "2026-11-03",
+  "commit": "1e945de + uncommitted changes",
+  "reason": "add goto_target on PyBullet (runs there since Austin's #26)",
   "environment": {
     "python": "3.14.7",
     "numpy": "2.5.3",
@@ -26,13 +26,19 @@
     "keepaway_1v1_pybullet",
     "keepaway_1v1_pbrs_mock",
     "keepaway_1v1_pbrs_pybullet",
-    "goto_target_mock"
+    "goto_target_mock",
+    "goto_target_pybullet"
   ],
   "updates": [
     {
       "date": "2026-11-02",
       "commit": "dd2ae63",
       "reason": "silver v1: the first regression baseline (task stack 1-4 on main 8ccdd58, before Austin's #26)"
+    },
+    {
+      "date": "2026-11-03",
+      "commit": "1e945de + uncommitted changes",
+      "reason": "add goto_target on PyBullet (runs there since Austin's #26)"
     }
   ]
 }

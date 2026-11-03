@@ -8,6 +8,8 @@
 #     marl.rl.train.main.
 #   - 2026-11-01: Docstring: PyBullet is the default env, --env mock opts in to
 #     the mock, and run dirs name their env (backlog task 3).
+#   - 2026-11-03: goto_target runs on PyBullet since Austin's #26; dropped the
+#     "mock only" note (backlog task 4, after the stack rebase).
 # Prompt summary: Implement Phase 3 step 8 of the issue #7 plan (PPO update +
 #   training loop).
 # Human review:   Pending review
@@ -17,7 +19,7 @@
     python scripts/train.py --config configs/keepaway_1v1.toml --seed 1
     python scripts/train.py --config configs/keepaway_1v1.toml --set shared.red_max_speed=1.6
     python scripts/train.py --config configs/keepaway_1v1.toml --env mock   # the fast mock env
-    python scripts/train.py --config configs/goto_target.toml --env mock    # mock only, for now
+    python scripts/train.py --config configs/goto_target.toml               # the RL sanity check
 
 Outputs go to runs/<config name>_<env>_seed<seed>/ (config.json, train.csv, eval.csv,
 checkpoints/). See ``python scripts/train.py --help`` for every option.
