@@ -1,0 +1,40 @@
+# ==============================================================================
+# AI CITATION
+# Tool:    Claude Code (Claude Opus 5.5)
+# Date:    2026-11-02
+# Author:  JC Stinson III (LifeHackerIII)
+# Usage:
+#   - 2026-11-02: Wrote this suite: the silver record's regression cases
+#     (every config x env that runs today), reserved seeds and budget, from
+#     the student's design decisions (backlog task 4, step 6).
+# Prompt summary: Freeze silver v1, the first regression baseline.
+# Human review:   Pending review
+# ==============================================================================
+# The regression suite (the silver record). Run:   python scripts/regress.py
+# Unchanged code must reproduce results/silver/data/ exactly. After an intended
+# change:  python scripts/regress.py --update --reason "..."  and commit this folder.
+#
+# A case = one config x one env, trained once per seed. Config paths are relative
+# to the repo root. To cover a new config, add a [[case]] (the harness notes any
+# configs/*.toml that no case uses).
+
+name      = "silver"
+seeds     = [90, 91]          # the testing range is 90-99; for-score runs use 0-9
+eval_seed = 20261101          # reserved: never the for-score 20261019
+
+[budget]                      # overrides run.* for every case; all other settings are the config's own
+total_steps   = 6144          # 3 PPO iterations of 2048 steps
+eval_every    = 1
+eval_episodes = 10
+
+[[case]]                      # milestone 1: survival reward
+config = "configs/keepaway_1v1.toml"
+envs   = ["mock", "pybullet"]
+
+[[case]]                      # + PBRS ball-acquisition shaping (coef 4)
+config = "configs/keepaway_1v1_pbrs.toml"
+envs   = ["mock", "pybullet"]
+
+[[case]]                      # the RL sanity check
+config = "configs/goto_target.toml"
+envs   = ["mock"]             # PyBullet: add once goto_target runs there (Austin's #26, after the stack rebase)

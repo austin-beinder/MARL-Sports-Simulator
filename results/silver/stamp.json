@@ -1,0 +1,38 @@
+{
+  "suite": "silver",
+  "frozen": "2026-11-02",
+  "commit": "dd2ae63",
+  "reason": "silver v1: the first regression baseline (task stack 1-4 on main 8ccdd58, before Austin's #26)",
+  "environment": {
+    "python": "3.14.7",
+    "numpy": "2.5.3",
+    "torch": "2.14.1+cpu",
+    "pybullet": "3.2.7",
+    "platform": "Windows-10-10.0.19045-SP0",
+    "processor": "AMD64 Family 25 Model 97 Stepping 2, AuthenticAMD"
+  },
+  "seeds": [
+    90,
+    91
+  ],
+  "eval_seed": 20261101,
+  "budget": {
+    "total_steps": 6144,
+    "eval_every": 1,
+    "eval_episodes": 10
+  },
+  "cases": [
+    "keepaway_1v1_mock",
+    "keepaway_1v1_pybullet",
+    "keepaway_1v1_pbrs_mock",
+    "keepaway_1v1_pbrs_pybullet",
+    "goto_target_mock"
+  ],
+  "updates": [
+    {
+      "date": "2026-11-02",
+      "commit": "dd2ae63",
+      "reason": "silver v1: the first regression baseline (task stack 1-4 on main 8ccdd58, before Austin's #26)"
+    }
+  ]
+}
