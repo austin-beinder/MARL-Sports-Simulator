@@ -19,11 +19,15 @@
 #     --rtol/--update rules, exit codes, and one end-to-end run through the
 #     real train.py/evaluate.py subprocesses (task 4, step 4).
 #   - 2026-11-02: Added a test for the report's hints under --update.
+#   - 2026-11-02: Added tests for the tracked report (results/silver/report.md):
+#     written by full exact runs only, with the run's date and commit, the
+#     --update reason, and relative log paths.
 # Prompt summary: Implement steps 1-5 of the task 4 regression-harness plan
 #   (marl/regression.py), tests first.
 # Human review:   Pending review
 # ==============================================================================
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -503,6 +507,8 @@ def test_a_failed_run_fails_its_case_only(repo, tmp_path):
     failures = run_suite(suite, list(suite.cases), tmp_path / "r", parallel=2, runner=fake, log=lambda _m: None)
     assert list(failures) == ["keep_mock"]
     assert "keep_mock_seed91: exit 1" in failures["keep_mock"] and "Traceback: boom" in failures["keep_mock"]
+    # the report is shared through git, so it names the log relative to the regression folder
+    assert "end of logs/keep_mock_seed91.log" in failures["keep_mock"] and str(tmp_path) not in failures["keep_mock"]
     evaluated = [cmd[2:] for cmd, _ in fake.calls if "--out-dir" not in cmd]
     assert evaluated == [["goto_mock_seed90", "goto_mock_seed91"]]  # never evaluate a half-trained case
 
@@ -583,6 +589,40 @@ def test_a_failed_job_exits_2_and_never_freezes(frozen, capsys):
     assert (suite.path.parent / "stamp.json").read_text(encoding="utf-8") == before
 
 
+RUN_LINE = r"Run: \d{4}-\d{2}-\d{2} at commit unknown \(not a git checkout\)"  # tmp_path isn't a git repo
+
+
+def test_a_full_exact_run_writes_the_tracked_report(frozen, capsys):
+    suite, runs = frozen
+    tracked = suite.path.parent / "report.md"
+    cli(suite, runs, runner=FakeRunner())
+    text = tracked.read_text(encoding="utf-8")
+    assert text == (runs / "report.md").read_text(encoding="utf-8")  # the same report as the scratch copy
+    lines = text.splitlines()
+    assert lines[0] == "```" and lines[1].startswith("Regression check: 2 cases") and re.fullmatch(RUN_LINE, lines[2])
+    assert "tracked report -> results/silver/report.md" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("extra", [["--no-run"], ["--no-run", "--rtol", "1e-6"], ["--only", "goto_*"]])
+def test_partial_tolerant_or_no_run_checks_leave_the_tracked_report_alone(frozen, capsys, extra):
+    suite, runs = frozen
+    tracked = suite.path.parent / "report.md"
+    tracked.write_text("the committed report\n", encoding="utf-8")
+    cli(suite, runs, *extra, runner=FakeRunner())
+    assert tracked.read_text(encoding="utf-8") == "the committed report\n"
+    assert "results/silver/report.md not updated (only full, exact runs write it)" in capsys.readouterr().out
+    assert re.search(RUN_LINE, (runs / "report.md").read_text(encoding="utf-8"))  # the scratch copy still has it
+
+
+def test_an_update_that_cannot_freeze_exits_2_and_writes_no_tracked_report(frozen, capsys):
+    suite, runs = frozen  # FakeRunner trains but writes no evaluation tables, so freezing must refuse
+    before = (suite.path.parent / "stamp.json").read_text(encoding="utf-8")
+    assert cli(suite, runs, "--update", "--reason", "x", runner=FakeRunner()) == 2
+    assert "not freezing: missing" in capsys.readouterr().err
+    assert (suite.path.parent / "stamp.json").read_text(encoding="utf-8") == before
+    assert not (suite.path.parent / "report.md").exists()
+
+
 @pytest.mark.parametrize("args, match", [
     (["--update"], "--update needs --reason"),
     (["--reason", "x"], "--reason only goes with --update"),
@@ -645,6 +685,10 @@ def test_end_to_end_freeze_then_reproduce_in_fresh_processes(tmp_path, capsys):
     assert "sps" not in (data / "tiny_mock_seed90" / "train.csv").read_text(encoding="utf-8").splitlines()[0]
     per_run = (data / "eval_tiny_mock_seed90_per_run.csv").read_text(encoding="utf-8")
     assert ",tiny_mock_seed91," in per_run and "\\" not in per_run  # bare run names, no paths
+    tracked = (tmp_path / "results" / "silver" / "report.md").read_text(encoding="utf-8")
+    assert "Re-frozen by this run: tiny v1" in tracked and "NEW        tiny_mock  (not in the record yet; this freeze adds it)" in tracked
     capsys.readouterr()
     assert regress_main(base, repo_root=tmp_path) == 0
     assert "IDENTICAL  tiny_mock" in capsys.readouterr().out
+    tracked = (tmp_path / "results" / "silver" / "report.md").read_text(encoding="utf-8")
+    assert "IDENTICAL  tiny_mock" in tracked and "Re-frozen" not in tracked and re.search(RUN_LINE, tracked)

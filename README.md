@@ -55,6 +55,7 @@ python scripts/freeze.py golden     # then commit results/golden/
 <!--
 AI CITATION: Claude Code (Claude Opus 5.5) | 2026-11-02 | JC Stinson III (LifeHackerIII)
 Usage: Wrote the "Regression tests (silver record)" section (backlog task 4: the regression harness).
+Modified: 2026-11-02 - The tracked report (results/silver/report.md) and its review workflow.
 -->
 # Regression tests (silver record)
 `results/silver/` is the **regression record**: short training runs on reserved seeds whose outputs are
@@ -67,7 +68,8 @@ python scripts/regress.py        # ~1 min; exit 0 = all identical, 1 = deltas, 2
 
 It trains every case of `results/silver/suite.toml` (a config x an env; seeds 90-91, 6144 steps each, the
 config's own PPO settings) into `runs/regression/`, evaluates them, and compares every output with the
-record. The report (also saved to `runs/regression/report.md`) gives one line per case:
+record. The report gives one line per case, under a header naming the date and the commit that was checked
+(`+ uncommitted changes` means that commit plus your working changes, the normal case before you commit):
 
 | Status | Meaning |
 |---|---|
@@ -77,17 +79,25 @@ record. The report (also saved to `runs/regression/report.md`) gives one line pe
 | `NEW` / `STALE` | A suite case with no record yet / a record entry no suite case produces. |
 | `FAILED` | A run crashed; the end of its log is shown (full logs in `runs/regression/logs/`). |
 
+**The report is tracked: commit it with your work.** Every full run (no `--only`, `--no-run` or `--rtol`)
+writes `results/silver/report.md`, so a PR shows its reviewer that the regression check ran, on which commit,
+and what it found. (A scratch copy of every report, partial runs included, goes to `runs/regression/report.md`.)
+
 **A change that shouldn't affect results** (a refactor, cleanup, docs) must come back all `IDENTICAL`.
-Anything else is a bug to find before merging.
+Commit the report with the change. Anything else is a bug to find before merging.
 
 **A change that should affect results** (physics, rewards, RL settings): run it, check that the deltas are
-the ones you expect, then re-freeze and commit the record together with the change, so the git history
-shows why the baseline moved:
+the ones you expect, then re-freeze. The report then shows the deltas against the old record plus your
+reason, and you commit it and the record together with the change, so the reviewer and the git history
+both see why the baseline moved:
 
 ```shell
 python scripts/regress.py --update --reason "red keeps full speed near blue (fix-speed)"
-git add results/silver   # in the same commit (or PR) as the change
+git add results/silver   # the record + report, in the same commit (or PR) as the change
 ```
+
+If two branches both changed `report.md`, a merge conflicts there. It's generated, so after merging, rerun
+`python scripts/regress.py` and commit the fresh report.
 
 Other options: `--only "*_mock"` (a subset of cases), `--no-run` (re-compare the last run without
 retraining), `--rtol 1e-9` (forgive tiny numeric drift, e.g. on another machine), `--parallel-runs N`

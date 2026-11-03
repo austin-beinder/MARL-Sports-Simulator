@@ -20,6 +20,10 @@
 #     (task 4, step 4).
 #   - 2026-11-02: Under --update, the NEW/STALE hints say what the freeze
 #     does instead of suggesting --update (the student's polish request).
+#   - 2026-11-02: Full, exact runs also write the tracked results/silver/
+#     report.md (headed with the run's date and commit, and the --update
+#     reason) as review evidence; failed-job log paths are relative; a freeze
+#     that can't complete exits 2 (the student's design).
 # Prompt summary: Implement steps 1-5 of the task 4 regression-harness plan: a
 #   tracked suite file listing the regression cases (config x env), the
 #   comparison of new runs against the frozen record, freezing it, and the
@@ -413,6 +417,7 @@ def _final_len(root: Path, runs: Sequence[str]) -> float | None:
 
 # --- Fingerprint, environment stamp, freezing --------------------------------------------
 STAMP = "stamp.json"
+REPORT = "report.md"  # the tracked report, next to the suite (runs/regression/ keeps a scratch copy)
 
 
 def weights_fingerprint(checkpoint: Path) -> dict[str, Any]:
@@ -570,7 +575,8 @@ def run_suite(suite: Suite, cases: Sequence[Case], out_root: Path, parallel: int
 
     def failed(case: Case, name: str, why: str, path: Path) -> None:
         lines = path.read_text(encoding="utf-8", errors="replace").splitlines() if path.is_file() else []
-        failures.setdefault(case.name, "\n".join([f"{name}: {why}; end of {path}:"] + lines[-LOG_TAIL:]))
+        # relative: the report is shared through git (results/silver/report.md)
+        failures.setdefault(case.name, "\n".join([f"{name}: {why}; end of logs/{path.name}:"] + lines[-LOG_TAIL:]))
         log(f"[regress] FAILED {name} ({why}; see {path})")
 
     with ThreadPoolExecutor(max_workers=parallel) as pool:
@@ -677,19 +683,38 @@ def main(argv: Sequence[str] | None = None, *, repo_root: Path = REPO, runner: R
     stamp = load_stamp(record)
     env = environment_diffs(stamp["environment"], environment_stamp()) if stamp else []
     shown = record.relative_to(repo_root).as_posix() if record.is_relative_to(repo_root) else str(record)
-    title = f"Regression check: {len(suite.cases)} cases x seeds {list(suite.seeds)} vs {shown}"
+    # The tracked report is evidence for reviewers: which commit was checked and when. The report
+    # itself doesn't count as an uncommitted change (every run rewrites it).
+    tracked = record / REPORT
+    from marl.record import git_revision  # marl.record imports matplotlib (via marl.plots)
+
+    revision = git_revision(ignore=[f"{shown}/{REPORT}"], cwd=repo_root)
+    today = datetime.date.today().isoformat()
+    title = (f"Regression check: {len(suite.cases)} cases x seeds {list(suite.seeds)} vs {shown}\n"
+             f"Run: {today} at commit {revision}" + (f"\nRe-frozen by this run: {args.reason}" if args.update else ""))
     text = format_report(results, tol, env, stale, title, updating=args.update)
+    report = f"```\n{text}\n```\n"
     print("\n" + text)
-    (runs_dir / "report.md").write_text(f"```\n{text}\n```\n", encoding="utf-8")
+    (runs_dir / "report.md").write_text(report, encoding="utf-8")
     print(f"\n[regress] report -> {runs_dir / 'report.md'}")
     if args.update:
         if failures:
             print("[regress] not freezing: a job failed (see above)", file=sys.stderr)
             return 2
-        written = freeze_silver(suite, runs_dir, reason=args.reason)
-        print(f"[regress] froze {len(written)} files into {data}; commit {shown} together with the change")
-        return 0
-    return exit_code(results, stale)
+        try:
+            written = freeze_silver(suite, runs_dir, reason=args.reason, today=today, commit=revision)
+        except ValueError as e:
+            print(f"[regress] error: {e}", file=sys.stderr)
+            return 2
+        print(f"[regress] froze {len(written)} files into {data}")
+    # Only a full, exact, freshly trained run is the verdict on the code (--no-run re-checks old outputs).
+    if not (args.only or args.no_run) and tol.exact:
+        tracked.write_text(report, encoding="utf-8")
+        print(f"[regress] tracked report -> {shown}/{REPORT}: commit it (with {shown}/ after --update) "
+              "together with your change")
+    else:
+        print(f"[regress] {shown}/{REPORT} not updated (only full, exact runs write it)")
+    return 0 if args.update else exit_code(results, stale)
 
 
 def _version(pkg: str) -> str:
