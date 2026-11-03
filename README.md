@@ -16,3 +16,36 @@ https://visualstudio.microsoft.com/visual-cpp-build-tools/
 ```shell
 python example.py
 ```
+
+<!--
+AI CITATION: Claude Code (Claude Opus 5.5) | 2026-11-01 | JC Stinson III (LifeHackerIII)
+Usage: Wrote the "Results & plots" section (backlog task 2: results records and ad-hoc plots).
+-->
+# Results & plots
+Training writes each run to `runs/` (gitignored): `config.json`, `train.csv`, `eval.csv`, `checkpoints/`.
+
+**Look at new runs (ad hoc).** Figures go to `runs/plots/<name>/`:
+
+```shell
+python scripts/evaluate.py "runs/new_reward_seed*"     # evaluation table (needed for final bars + baseline lines)
+python scripts/plot.py --name new_reward --arm "new reward=runs/new_reward_seed*" --baselines "new reward"
+python scripts/plot.py --name vs_golden --arm "golden=results/golden/data/Old_mock_env/keepaway_1v1_seed*" --arm "new reward=runs/new_reward_seed*"
+```
+
+Each `--arm` is `LABEL=GLOB` (one arm = the seeds of one config; up to 9 arms per figure). Writing into a
+folder that already has figures needs `--overwrite`.
+
+**Results records** live in `results/<record>/` (git-tracked): a `manifest.toml` that lists the figures,
+their arms and the table sections; `data/` (frozen CSV + config copies, no checkpoints); and `figures/`.
+`results/golden/` holds the for-score results, and plain `python scripts/plot.py` renders it to
+`runs/plots/golden/`.
+
+To add an experiment to a record, add an arm to its manifest pointing at the runs
+(`runs = "../../runs/new_reward_seed*"`), then freeze. That copies those files into the record, rewrites
+the path, notes the date and commit, and renders the figures:
+
+```shell
+python scripts/freeze.py golden     # then commit results/golden/
+```
+
+`tests/test_golden.py` checks that the golden record still re-renders exactly from its own data.
