@@ -11,6 +11,9 @@ Usage:
     the limits, the expected test skips and the dynamics test file.
   2026-10-31: Replaced the one-simulation-per-process constraint: every env
     has its own pybullet connection.
+  2026-11-01: (Claude Code (Claude Opus 5.5), prompted by JC Stinson III)
+    PyBullet is now the default run.env; updated the Configuration notes, the
+    run-name convention and the command examples (backlog task 3).
 Prompt summary: Update AGENTS.md with the current state of the repo.
 Human review:   Pending review
 -->
@@ -71,7 +74,8 @@ configs/*.toml -> marl.common.config.Config
   slows as it nears the ball. So the same policy survives longer there than in
   the mock. That difference is accepted.
 - `MockEnv` implements the same ICD in numpy. It's fast, so most tests and quick
-  experiments use it. The ICD conformance tests run against both envs.
+  experiments use it (tests set `run.env = "mock"` explicitly, since the default
+  is PyBullet). The ICD conformance tests run against both envs.
 
 ## Hard constraints
 
@@ -104,8 +108,18 @@ configs/*.toml -> marl.common.config.Config
 - Loading is strict: unknown keys or option values raise `ValueError`; options
   that exist in the interface but aren't built yet raise `NotImplementedError`
   (see `OPTIONS` in `config.py`).
-- `run.env` defaults to `"mock"`. Pass `--env pybullet` (or set it) to train on
-  the real sim. Override any key with `--set section.key=value`.
+- `run.env` defaults to `"pybullet"`, the real sim. Pass `--env mock` (or set
+  `run.env = "mock"`) for the fast stand-in. Override any key with
+  `--set section.key=value`.
+- Run directories always name their env: `runs/<config>_<env>_seed<N>/`
+  (e.g. `keepaway_1v1_pybullet_seed0`, `keepaway_1v1_mock_seed0`), and
+  calibration tables are `calibration_<config>_<env>.csv`. Runs from before
+  2026-11-01 (e.g. `runs/Old_mock_env/`, `results/golden/`) have the old names:
+  no suffix for the mock.
+- A saved run whose config has no `run.env` (saved before 2026-10-18, when the
+  mock was the only env) loads as the mock: `saved_config_from_dict` in
+  `config.py`, used by `load_actor`, so `evaluate.py`/`watch.py` on old runs
+  rebuild the env they trained on.
 - `KeepAwayConfig`'s own defaults (21 × 13.6 m field, blue 3.0 m/s, etc.)
   are only used when running `keep_away_env.py` directly. Training uses
   `SharedConfig` values (16 × 10 m, 2.0 m/s, `control_k = 12`). Red's
@@ -119,12 +133,13 @@ configs/*.toml -> marl.common.config.Config
 Run from the repo root with the venv active.
 
 ```bash
-python scripts/train.py --config configs/keepaway_1v1.toml --env pybullet --seed 0
-python scripts/train.py --config configs/goto_target.toml          # mock env (add --env pybullet for the sim)
+python scripts/train.py --config configs/keepaway_1v1.toml --seed 0   # PyBullet (the default)
+python scripts/train.py --config configs/keepaway_1v1.toml --env mock --seed 0
+python scripts/train.py --config configs/goto_target.toml
 python scripts/evaluate.py runs/keepaway_1v1_pybullet_seed0
 python scripts/watch.py runs/keepaway_1v1_pybullet_seed0           # newest checkpoint in the GUI
 python scripts/watch.py --baseline flee
-python scripts/calibrate.py --config configs/keepaway_1v1.toml
+python scripts/calibrate.py --config configs/keepaway_1v1.toml     # -> runs/calibration_keepaway_1v1_pybullet.csv
 python scripts/plot.py
 python pybulletGame/keep_away_env.py                               # play blue with the on-screen joystick
 ```

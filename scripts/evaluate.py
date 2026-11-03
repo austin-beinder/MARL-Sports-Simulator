@@ -12,8 +12,8 @@
 # ==============================================================================
 """Evaluate trained runs + baselines on the fixed evaluation episodes (design #23). Run from the repo root with the venv active:
 
-    python scripts/evaluate.py runs/keepaway_1v1_seed0 runs/keepaway_1v1_seed1 runs/keepaway_1v1_seed2
-    python scripts/evaluate.py "runs/keepaway_1v1_seed*"     # same; the glob is expanded here, sorted
+    python scripts/evaluate.py runs/keepaway_1v1_pybullet_seed0 runs/keepaway_1v1_pybullet_seed1 runs/keepaway_1v1_pybullet_seed2
+    python scripts/evaluate.py "runs/keepaway_1v1_pybullet_seed*"     # same; the glob is expanded here, sorted
 """
 
 import sys

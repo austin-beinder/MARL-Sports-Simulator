@@ -7,6 +7,8 @@
 #   - 2026-10-11: Generated this entire file: calibration tests (selection
 #     rule, speed parsing, a small real sweep, dedicated calibration seeds,
 #     the CLI).
+#   - 2026-11-01: Pinned run.env = "mock" (PyBullet is the default now) and
+#     added a test of the default table name, which carries the env (task 3).
 # Prompt summary: Implement Phase 3 step 10 of the issue #7 plan (baselines,
 #   evaluation, calibration).
 # Human review:   Pending review
@@ -21,6 +23,8 @@ from marl.common.config import config_from_dict
 from marl.rl.evaluate import eval_env_seeds
 
 ROOT = Path(__file__).resolve().parents[1]
+# The mock, not the default PyBullet: fast, and the survival bands are the mock's (task 3).
+MOCK = {"run": {"env": "mock"}}
 
 
 def flee_rows(pairs):
@@ -53,7 +57,7 @@ def test_parse_speeds():
 
 
 def test_small_sweep_survival_falls_as_red_gets_faster():
-    rows = survival_table(config_from_dict({}), [1.5, 2.2], episodes=6)
+    rows = survival_table(config_from_dict(MOCK), [1.5, 2.2], episodes=6)
     assert [(r["red_max_speed"], r["policy"]) for r in rows] == [
         (1.5, "flee"), (1.5, "random"), (1.5, "still"), (2.2, "flee"), (2.2, "random"), (2.2, "still")
     ]
@@ -73,7 +77,17 @@ def test_rejects_goto_target():
 
 def test_cli_writes_the_table_and_recommends(tmp_path, capsys):
     out = tmp_path / "cal.csv"
-    assert main(["--config", str(ROOT / "configs" / "keepaway_1v1.toml"), "--speeds", "1.7,1.8", "--episodes", "4", "--out", str(out)]) == 0
+    assert main(["--config", str(ROOT / "configs" / "keepaway_1v1.toml"), "--env", "mock",
+                 "--speeds", "1.7,1.8", "--episodes", "4", "--out", str(out)]) == 0
     with open(out, newline="", encoding="utf-8") as fh:
         assert len(list(csv.DictReader(fh))) == 6
     assert "recommended red_max_speed" in capsys.readouterr().out
+
+
+# AI CITATION: Claude Code (Claude Opus 5.5) | 2026-11-01 | JC Stinson III (LifeHackerIII)
+# Usage: Wrote this test (backlog task 3: the default table name always names its env).
+def test_cli_default_table_name_carries_the_env(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)  # run.out_dir is "runs", relative to the working directory
+    assert main(["--config", str(ROOT / "configs" / "keepaway_1v1.toml"), "--env", "mock",
+                 "--speeds", "1.7,1.8", "--episodes", "4"]) == 0
+    assert [p.name for p in (tmp_path / "runs").iterdir()] == ["calibration_keepaway_1v1_mock.csv"]

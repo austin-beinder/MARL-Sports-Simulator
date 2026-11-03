@@ -16,7 +16,7 @@
     python scripts/freeze.py golden --overwrite   # replace files already in results/golden/data/
 
 Copies the inputs the record's manifest still reads from runs/ (paths like
-"../../runs/new_reward_seed*") into results/<record>/data/, rewrites those path
+"../../runs/new_reward_pybullet_seed*") into results/<record>/data/, rewrites those path
 strings in the manifest (your comments stay), appends a provenance comment, and
 renders the record's figures into results/<record>/figures/. With nothing left to
 copy, it just re-renders the figures. Commit the record afterwards.
