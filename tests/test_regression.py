@@ -18,6 +18,7 @@
 #     configs, the job commands (fake runner), failures, --no-run/--only/
 #     --rtol/--update rules, exit codes, and one end-to-end run through the
 #     real train.py/evaluate.py subprocesses (task 4, step 4).
+#   - 2026-11-02: Added a test for the report's hints under --update.
 # Prompt summary: Implement steps 1-5 of the task 4 regression-harness plan
 #   (marl/regression.py), tests first.
 # Human review:   Pending review
@@ -329,6 +330,14 @@ def test_report_lists_statuses_config_first_and_a_summary(tmp_path):
     assert "deltas may come from the machine, not the code" in text and "torch: 2.14.1+cpu -> 2.15.0+cpu" in text
     assert "Comparison: exact" in text
     assert lines[-1] == "Summary: 1 changed, 1 new, 1 stale"
+
+
+def test_report_under_update_says_what_the_freeze_does(tmp_path):
+    fresh = compare_case(CASE, SEEDS, tmp_path / "x", tmp_path / "y", EXACT)
+    text = format_report([fresh], EXACT, stale=["old_mock_seed90"], updating=True)
+    assert "NEW        keep_mock  (not in the record yet; this freeze adds it)" in text
+    assert "STALE      old_mock_seed90  (in the record, not in the suite; this freeze removes it)" in text
+    assert "--update" not in text
 
 
 # --- Step 3: fingerprint, environment stamp, freezing -----------------------------------

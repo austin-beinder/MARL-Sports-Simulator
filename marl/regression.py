@@ -18,6 +18,8 @@
 #     subprocesses, fingerprints, failure capture), --only/--no-run case
 #     selection, the uncovered-config note, exit codes and the CLI main
 #     (task 4, step 4).
+#   - 2026-11-02: Under --update, the NEW/STALE hints say what the freeze
+#     does instead of suggesting --update (the student's polish request).
 # Prompt summary: Implement steps 1-5 of the task 4 regression-harness plan: a
 #   tracked suite file listing the regression cases (config x env), the
 #   comparison of new runs against the frozen record, freezing it, and the
@@ -348,8 +350,9 @@ def stale_entries(cases: Sequence[Case], seeds: tuple[int, ...], silver_root: Pa
 
 
 def format_report(results: Sequence[CaseResult], tol: Tolerance, env_diffs: Sequence[tuple[str, str, str]] = (),
-                  stale: Sequence[str] = (), title: str = "") -> str:
-    """The report: a line per case, the differing files under it (config first), and a summary."""
+                  stale: Sequence[str] = (), title: str = "", updating: bool = False) -> str:
+    """The report: a line per case, the differing files under it (config first), and a summary.
+    ``updating``: the report comes before an --update freeze, so the hints say what it will do."""
     lines = [title] if title else []
     lines.append(f"Comparison: {tol}")
     if env_diffs:
@@ -361,12 +364,13 @@ def format_report(results: Sequence[CaseResult], tol: Tolerance, env_diffs: Sequ
         if r.status in (CHANGED, SCHEMA) and r.headline:
             line += f"  (final len_mean {r.headline[0]:g} -> {r.headline[1]:g})"
         elif r.status == NEW:
-            line += "  (not in the record yet; freeze it with --update)"
+            line += f"  (not in the record yet; {'this freeze adds it' if updating else 'freeze it with --update'})"
         lines.append(line)
         lines += [f"{'':<11}{m}" for m in r.message.splitlines()]
         shown = sorted((f for f in r.files if f.status != IDENTICAL), key=lambda f: not f.file.endswith("config.json"))
         lines += [f"{'':<11}{f.file}: {f.detail}" for f in shown]
-    lines += [f"{STALE:<10} {s}  (in the record, not in the suite)" for s in stale]
+    gone = "; this freeze removes it" if updating else ""
+    lines += [f"{STALE:<10} {s}  (in the record, not in the suite{gone})" for s in stale]
     counts = [(n, s.lower()) for s in (IDENTICAL, CHANGED, SCHEMA, NEW, FAILED, SKIPPED)
               if (n := sum(r.status == s for r in results))]
     counts += [(len(stale), "stale")] if stale else []
@@ -674,7 +678,7 @@ def main(argv: Sequence[str] | None = None, *, repo_root: Path = REPO, runner: R
     env = environment_diffs(stamp["environment"], environment_stamp()) if stamp else []
     shown = record.relative_to(repo_root).as_posix() if record.is_relative_to(repo_root) else str(record)
     title = f"Regression check: {len(suite.cases)} cases x seeds {list(suite.seeds)} vs {shown}"
-    text = format_report(results, tol, env, stale, title)
+    text = format_report(results, tol, env, stale, title, updating=args.update)
     print("\n" + text)
     (runs_dir / "report.md").write_text(f"```\n{text}\n```\n", encoding="utf-8")
     print(f"\n[regress] report -> {runs_dir / 'report.md'}")

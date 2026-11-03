@@ -51,3 +51,50 @@ python scripts/freeze.py golden     # then commit results/golden/
 ```
 
 `tests/test_golden.py` checks that the golden record still re-renders exactly from its own data.
+
+<!--
+AI CITATION: Claude Code (Claude Opus 5.5) | 2026-11-02 | JC Stinson III (LifeHackerIII)
+Usage: Wrote the "Regression tests (silver record)" section (backlog task 4: the regression harness).
+-->
+# Regression tests (silver record)
+`results/silver/` is the **regression record**: short training runs on reserved seeds whose outputs are
+frozen in git. Fixed seeds on unchanged code reproduce them **bit for bit**, so after any change, one
+command tells you whether it touched simulation or training results:
+
+```shell
+python scripts/regress.py        # ~1 min; exit 0 = all identical, 1 = deltas, 2 = a run failed
+```
+
+It trains every case of `results/silver/suite.toml` (a config x an env; seeds 90-91, 6144 steps each, the
+config's own PPO settings) into `runs/regression/`, evaluates them, and compares every output with the
+record. The report (also saved to `runs/regression/report.md`) gives one line per case:
+
+| Status | Meaning |
+|---|---|
+| `IDENTICAL` | Bit-identical to the record. |
+| `CHANGED` | A value differs. Under it: the files that differ, **config differences first** (they usually explain the rest), then the first differing cell and the largest delta. |
+| `SCHEMA` | Only columns/keys were added or removed; every shared value is identical. |
+| `NEW` / `STALE` | A suite case with no record yet / a record entry no suite case produces. |
+| `FAILED` | A run crashed; the end of its log is shown (full logs in `runs/regression/logs/`). |
+
+**A change that shouldn't affect results** (a refactor, cleanup, docs) must come back all `IDENTICAL`.
+Anything else is a bug to find before merging.
+
+**A change that should affect results** (physics, rewards, RL settings): run it, check that the deltas are
+the ones you expect, then re-freeze and commit the record together with the change, so the git history
+shows why the baseline moved:
+
+```shell
+python scripts/regress.py --update --reason "red keeps full speed near blue (fix-speed)"
+git add results/silver   # in the same commit (or PR) as the change
+```
+
+Other options: `--only "*_mock"` (a subset of cases), `--no-run` (re-compare the last run without
+retraining), `--rtol 1e-9` (forgive tiny numeric drift, e.g. on another machine), `--parallel-runs N`
+(default: half your logical cores). **Results are exact only on the same software and hardware**: the
+record's `stamp.json` notes the machine it was frozen on, and the report warns when yours differs.
+
+**To cover a new config**, add a `[[case]]` to `suite.toml` (the harness lists any `configs/*.toml` no case
+uses), then `--update`. **Seeds:** 0-9 are for-score runs; 90-99 are for testing (regression 90-91,
+smoke tests 99). The suite's `eval_seed` (20261101) differs from the for-score one (20261019), so a
+regression run can't be mixed into a for-score table by accident.
