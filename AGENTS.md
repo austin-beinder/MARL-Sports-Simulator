@@ -14,6 +14,8 @@ Usage:
   2026-11-01: (Claude Code (Claude Opus 5.5), prompted by JC Stinson III)
     PyBullet is now the default run.env; updated the Configuration notes, the
     run-name convention and the command examples (backlog task 3).
+  2026-11-03: (Claude Code (Claude Opus 5.5), prompted by JC Stinson III)
+    Added scripts/regress.py and the regression-record rule (backlog task 4).
 Prompt summary: Update AGENTS.md with the current state of the repo.
 Human review:   Pending review
 -->
@@ -141,6 +143,7 @@ python scripts/watch.py runs/keepaway_1v1_pybullet_seed0           # newest chec
 python scripts/watch.py --baseline flee
 python scripts/calibrate.py --config configs/keepaway_1v1.toml     # -> runs/calibration_keepaway_1v1_pybullet.csv
 python scripts/plot.py
+python scripts/regress.py                                          # regression check vs results/silver (~1 min)
 python pybulletGame/keep_away_env.py                               # play blue with the on-screen joystick
 ```
 
@@ -163,6 +166,12 @@ python -m pytest
 python -m unittest discover -s pybulletGame/tests -p "*_test.py" -t pybulletGame
 ```
 
+- **Regression record:** `python scripts/regress.py` retrains the cases in
+  `results/silver/suite.toml` (seeds 90-91, short runs) and compares them with the
+  frozen outputs bit for bit. A change that shouldn't affect results must come back
+  all `IDENTICAL`; commit the rewritten `results/silver/report.md` with it. For an
+  intended change, `--update --reason "..."` and commit `results/silver/`. See the
+  README's "Regression tests (silver record)".
 - `pytest` covers `tests/` only (`pyproject.toml`). It takes about 2 minutes.
   The 2 skips are expected: the kick-with-possession conformance test, on
   each env, since neither implements kicking yet.
