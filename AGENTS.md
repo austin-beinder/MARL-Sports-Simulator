@@ -67,9 +67,10 @@ configs/*.toml -> marl.common.config.Config
   releases the ball, ICD §8), and for `goto_target` an untouchable, immobile
   ball (`KeepAwayConfig.ball_is_target`).
 - Possession in PyBullet is contact-based (player touching the ball, or an
-  opponent touching the carrier), not `possession_radius`; red's controller
-  slows as it nears the ball. So the same policy survives longer there than in
-  the mock. That difference is accepted.
+  opponent touching the carrier), not `possession_radius`. So the same policy
+  survives longer there than in the mock. That difference is accepted. Red's
+  P-controller (`KeepAwayConfig.red_gain = 20`) only slows within 9 cm of the
+  ball, so in practice it chases at full speed, like the mock's red.
 - `MockEnv` implements the same ICD in numpy. It's fast, so most tests and quick
   experiments use it. The ICD conformance tests run against both envs.
 

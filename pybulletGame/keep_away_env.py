@@ -3,6 +3,7 @@ This file was AI generated, see the ### AI GENERATED markers.
 AI edits 2026-10-31 (Claude Code, Austin Beinder): teams of any size (n_blue, n_red), the
 goto_target mode (ball_is_target), the teammate_handoff switch, red_max_speed 2.0 -> 1.8, and a
 pybullet connection plus steal-roll generator per game (several games per process).
+AI edit 2026-11-02 (Claude Code, Austin Beinder): red_gain 2.0 -> 20.0.
 
 The "gym" layer for the keep away game. It owns the pybullet simulation and is the only thing
 the RL code needs to talk to:
@@ -56,7 +57,7 @@ class KeepAwayConfig:
     # Players
     blue_max_speed: float = 3.0
     red_max_speed: float = 1.8  # slower than blue with the ball (3.0 * 0.75 = 2.25), so blue can escape. AI GENERATED (2.0 -> 1.8, matches marl's SharedConfig)
-    red_gain: float = 2.0  # red's P-controller gain: commanded speed per metre of distance to the ball
+    red_gain: float = 240.0  # red's P-controller gain: commanded speed per metre of distance to the ball. AI GENERATED (2.0 -> 240.0: red only slows within red_max_speed / red_gain = ~0.009 m, inside touching distance, so it chases at full speed like the mock's red)
     possession_speed_multiplier: float = 0.75  # blue's speed is scaled by this while it holds the ball
     ### AI GENERATED
     player_radius: float = 0.3
