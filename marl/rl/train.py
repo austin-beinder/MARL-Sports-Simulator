@@ -30,6 +30,7 @@
 #   - 2026-11-01: PyBullet is the default env; run dirs always carry the env
 #     (<config>_<env>_seed<N>), and the --env/--render help and errors say so
 #     (backlog task 3).
+#   - 2026-11-07: Logs kicks_per_step to train.csv. (Austin Beinder)
 # Prompt summary: Implement Phase 3 step 8 of the issue #7 plan (PPO update +
 #   training loop).
 # Human review:   Pending review
@@ -177,6 +178,7 @@ def train(
                     # reward includes it; the evaluation metric (episode length) never does.
                     "reward_shaping_mean_unscaled": stats.mean_shaping,
                     "commanded_speed": stats.mean_commanded_speed,
+                    "kicks_per_step": stats.kicks_per_step,  # AI GENERATED (0 without kick heads)
                     "adv_std_raw": float(buf.advantages.std()),  # before per-minibatch normalization (#23)
                     "explained_variance": explained_variance(buf.values, buf.returns),
                 }

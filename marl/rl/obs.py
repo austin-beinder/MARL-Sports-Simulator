@@ -7,6 +7,8 @@
 #   - 2026-10-11: Generated this entire file: the RL-side actor observation
 #     builder o_i = f(s, i) (self-first, mixed frame, per-type blocks with
 #     possession + visible flags, distance ordering), design #13.
+#   - 2026-11-07: Named the own-possession index (OWN_POSSESSION), which the
+#     actor's kick masks read. (Austin Beinder)
 # Prompt summary: Implement Phase 3 step 4 of the issue #7 plan (state
 #   flattener + obs builder).
 # Human review:   Pending review
@@ -41,6 +43,7 @@ from marl.rl.state import StateArrays
 
 SELF_DIM = 5
 SLOT_DIM = 6
+OWN_POSSESSION = 4  # index of "I hold the ball" in o_i; the actor's kick masks read it  # AI GENERATED
 
 
 class ObsBuilder:

@@ -15,6 +15,7 @@
 #     starts (RaceTracker, summarize_races: pickup rate, closing speed,
 #     alignment), moved from Claude's pilot-analysis scripts at the student's
 #     request.
+#   - 2026-11-07: actor_policy sends the kick heads' actions too. (Austin Beinder)
 # Prompt summary: Implement Phase 3 step 8 of the issue #7 plan (PPO update +
 #   training loop); evaluation is called by the loop.
 # Human review:   Pending review
@@ -47,8 +48,8 @@ import torch
 
 from marl.common.config import Config
 from marl.common.spawn import START_FREE_BALL, START_POSSESSION, START_TARGET
-from marl.rl.actions import to_env_actions
-from marl.rl.networks import MOVE, Actor
+from marl.rl.actions import actions_from_samples  # AI GENERATED (kick heads too)
+from marl.rl.networks import Actor
 from marl.rl.reward import RewardModule, effective_terminal
 from marl.rl.rollout import EpisodeRecord, Featurizer, start_type_of
 
@@ -66,7 +67,7 @@ def actor_policy(actor: Actor, featurizer: Featurizer, deterministic: bool = Fal
     def policy(s: dict) -> dict:
         obs, _ = featurizer(s)
         samples, _ = actor.act(torch.from_numpy(obs), deterministic=deterministic)
-        return to_env_actions(samples[MOVE].numpy())
+        return actions_from_samples(samples)  # AI GENERATED
 
     return policy
 

@@ -12,6 +12,8 @@
 #     reads Phi(s) after step(), so an env must not mutate a returned state).
 #   - 2026-10-31: Ran the step-counter, snapshot and determinism tests at 1v1
 #     as well as 2v2, and added a keep-away truncation test. (Austin Beinder)
+#   - 2026-11-07: The PyBullet env kicks now: the kick test also checks the
+#     kick event and the release (the mock still skips it). (Austin Beinder)
 # Prompt summary: Implement Phase 3 step 3 of the issue #7 plan (mock env +
 #   ICD conformance tests).
 # Human review:   Pending review
@@ -262,8 +264,12 @@ def test_kick_with_possession_is_applied(make_env):
     try:
         s, term, trunc, info = env.step({"blue": [{"move": [0.0, 0.0], "kick_trigger": 1, "kick_vec": [1.0, 0.0]}]})
     except NotImplementedError:
-        pytest.skip("this env doesn't implement kicking yet (milestone 1 is movement-only)")
+        pytest.skip("this env doesn't implement kicking (the mock has no ball physics)")  # AI GENERATED
     assert info["kick_applied"] == [True]
+    ### AI GENERATED (2026-11-07)
+    assert info["events"][0] == {"type": "kick", "agent": ("blue", 0)}  # the kick comes first (ICD §6)
+    assert {"type": "possession_change", "from": ("blue", 0), "to": None} in info["events"]
+    ### END AI GENERATED
 
 
 # --- Spawning (ICD §8, §9) ------------------------------------------------------------

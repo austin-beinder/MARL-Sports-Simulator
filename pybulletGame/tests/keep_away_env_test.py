@@ -190,6 +190,68 @@ class TestCommands(KeepAwayEnvTestCase):
         self.assertAlmostEqual(observation["blue"]["velocity"]["y"], 3.0 * 0.75, delta=0.1)
 
 
+class TestKicks(KeepAwayEnvTestCase):
+    # 2026-11-07: kicking. Red stands still far away, and blue starts with the ball on the west side.
+    config = KeepAwayConfig(red_gain=0.0)
+
+    def setUp(self):
+        super().setUp()
+        self.observation, self.info = self.env.reset(
+            options={"blue_position": (-8, 0), "red_position": (8, 5), "blue_has_ball": True})
+
+    def test_nobody_has_kicked_at_the_start(self):
+        self.assertEqual(self.info["kicks"], [False])
+
+    def test_kick_releases_the_ball_in_the_kick_direction(self):
+        observation, reward, terminated, truncated, info = self.env.step([0, 0], kicks=[(4.0, 0.0)])
+
+        self.assertEqual(info["kicks"], [True])
+        self.assertIsNone(self.env.ball.possession_player)
+        self.assertGreater(observation["ball"]["velocity"]["x"], 3.5)
+        self.assertAlmostEqual(observation["ball"]["velocity"]["y"], 0.0, delta=0.05)
+        self.assertGreater(observation["ball"]["position"]["x"], observation["blue"]["position"]["x"] + 0.45)
+
+    def test_no_kick_without_the_ball(self):
+        self.env.reset(options={"blue_position": (-8, 0), "red_position": (8, 5), "ball_position": (0, -3)})
+        ball = np.array([0.0, -3.0])
+        observation, reward, terminated, truncated, info = self.env.step([0, 3.0], kicks=[(4.0, 0.0)])
+
+        self.assertEqual(info["kicks"], [False])
+        self.assertTrue(np.allclose(xy(observation["ball"], "position"), ball, atol=0.01))
+
+    def test_kick_speed_is_capped(self):
+        observation, *_ = self.env.step([0, 0], kicks=[(20.0, 0.0)])
+
+        speed = np.linalg.norm(xy(observation["ball"], "velocity"))
+        self.assertLessEqual(speed, 6.0)
+        self.assertGreater(speed, 5.0)  # it has slowed a little during the step
+
+    def test_ball_slows_down_the_way_ball_damping_says(self):
+        # dv/dt = -d v (1 + v), so after t seconds a ball kicked at v0 has rolled
+        # ln((A - e^(-d t)) / (A - 1)) / d metres, where A = 1 + 1 / v0
+        start = -8 + 0.3 + 0.15 + 0.02  # where kick_ball puts it: just in front of blue
+        observation, *_ = self.env.step([0, 0], kicks=[(3.0, 0.0)])
+        for _ in range(59):  # 60 steps of 8 / 240 s = 2 s
+            observation, *_ = self.env.step([0, 0])
+
+        d, v0, t = 0.2, 3.0, 2.0
+        a = 1 + 1 / v0
+        expected = math.log((a - math.exp(-d * t)) / (a - 1)) / d  # about 3.44 m
+        self.assertAlmostEqual(observation["ball"]["position"]["x"] - start, expected, delta=0.15)
+
+    def test_kicker_can_pick_the_ball_straight_back_up(self):
+        # No cooldown: a soft kick while running the same way is caught again at once
+        self.env.step([3.0, 0.0], kicks=[(1.0, 0.0)])
+        for _ in range(3):
+            self.env.step([3.0, 0.0])
+
+        self.assertIs(self.env.ball.possession_player, self.env.blue)
+
+    def test_one_kick_per_blue_player(self):
+        with self.assertRaises(ValueError):
+            self.env.step([0, 0], kicks=[None, None])
+
+
 class TestRedPolicy(KeepAwayEnvTestCase):
 
     def test_chase_velocity_points_at_target(self):

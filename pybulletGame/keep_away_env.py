@@ -4,6 +4,8 @@ AI edits 2026-10-31 (Claude Code, Austin Beinder): teams of any size (n_blue, n_
 goto_target mode (ball_is_target), the teammate_handoff switch, red_max_speed 2.0 -> 1.8, and a
 pybullet connection plus steal-roll generator per game (several games per process).
 AI edit 2026-11-02 (Claude Code, Austin Beinder): red_gain 2.0 -> 20.0.
+AI edit 2026-11-07 (Claude Code, Austin Beinder): kicking (step's kicks argument, max_kick_speed,
+ball_damping) and a space-bar kick on the joystick.
 
 The "gym" layer for the keep away game. It owns the pybullet simulation and is the only thing
 the RL code needs to talk to:
@@ -21,6 +23,8 @@ Rules of keep away:
 - Blue is the learner, red follows a fixed policy that chases the ball. Each team has n_blue / n_red
   players (1 each by default); every red runs the same policy.
 - Only an opponent can take the ball from its carrier, unless teammate_handoff is on.
+- A blue player holding the ball can kick it (step's kicks). Whether they hold it is checked at
+  the start of the step. The kicker can touch the ball again straight away; there is no cooldown.
 - Red wins if it holds the ball for red_win_time (0.3 s) in a row.
 - Blue wins if it holds the ball for blue_win_time (20 s) in a row.
 - If nobody has won after max_game_time, the game is cut off (truncated) with no winner.
@@ -61,6 +65,13 @@ class KeepAwayConfig:
     possession_speed_multiplier: float = 0.75  # blue's speed is scaled by this while it holds the ball
     ### AI GENERATED
     player_radius: float = 0.3
+    ### END AI GENERATED
+
+    ### AI GENERATED
+    # Ball (2026-11-07). A kick's speed is capped at max_kick_speed, which is also the ball's top speed.
+    # A ball sent off at v m/s rolls about ln(1 + v) / ball_damping metres: 9.7 m at 6 m/s, 6.9 m at 3 m/s.
+    max_kick_speed: float = 6.0
+    ball_damping: float = 0.2
     ### END AI GENERATED
 
     # Rules
@@ -191,7 +202,8 @@ class KeepAwayEnv:
                              maxJointVelocity=cfg.blue_max_speed, physics_client=c) for start in blue_starts]
         self.reds = [Player(team=Team.RED, radius=cfg.player_radius, initial_position=start,
                             maxJointVelocity=cfg.red_max_speed, physics_client=c) for start in red_starts]
-        self.ball = Ball(initial_position=ball_start, physics_client=c)
+        self.ball = Ball(initial_position=ball_start, maxJointVelocity=cfg.max_kick_speed,
+                         linear_damping=cfg.ball_damping, physics_client=c)
         self.ball.rng = self.rng
         self.ball.allow_teammate_handoff = cfg.teammate_handoff
         if cfg.ball_is_target:
@@ -215,6 +227,8 @@ class KeepAwayEnv:
         # gained and lost within one step() is still recorded.
         self.possession_events = []
         self._last_holder = self.ball.possession_player
+        # Which blue players kicked during the last step() call
+        self.kicks_applied = [False] * len(self.blues)
         ### END AI GENERATED
 
         if self.render_mode == "human":
@@ -227,12 +241,17 @@ class KeepAwayEnv:
 
         return self.get_observation(), self._info()
 
-    def step(self, action):
+    def step(self, action, kicks=None):
         """
         action: blue's desired velocity (vx, vy) in m/s. Its length is capped at blue_max_speed, and
         it is scaled by possession_speed_multiplier while blue has the ball.
         ### AI GENERATED
         With more than one blue player, action is one (vx, vy) per player, in index order.
+
+        kicks: None (nobody kicks), or one entry per blue player: None for no kick, or the ball's
+        velocity (kx, ky) in m/s, capped at max_kick_speed. A kick only happens if that player holds
+        the ball at the start of the step. (0, 0) just drops the ball where it is.
+        info["kicks"] says which players actually kicked.
         ### END AI GENERATED
 
         Returns (observation, reward, terminated, truncated, info):
@@ -249,7 +268,19 @@ class KeepAwayEnv:
         if commands.ndim != 2 or commands.shape[0] != len(self.blues) or commands.shape[1] < 2:
             raise ValueError(f"expected one (vx, vy) per blue player ({len(self.blues)}), got shape {commands.shape}")
         blue_commands = [self._clip_speed(command[:2], self.config.blue_max_speed) for command in commands]
+        if kicks is None:
+            kicks = [None] * len(self.blues)
+        if len(kicks) != len(self.blues):
+            raise ValueError(f"expected one kick (or None) per blue player ({len(self.blues)}), got {len(kicks)}")
         self.possession_events = []
+
+        # Kicks happen before the physics steps, so "holds the ball" means at the start of the step
+        self.kicks_applied = [False] * len(self.blues)
+        for i, (player, kick) in enumerate(zip(self.blues, kicks)):
+            if kick is not None and self.ball.possession_player is player:
+                kick_velocity = self._clip_speed(np.asarray(kick, dtype=float)[:2], self.config.max_kick_speed)
+                self.ball.kick_ball(kick_velocity[0], kick_velocity[1])
+                self.kicks_applied[i] = True
         ### END AI GENERATED
 
         for _ in range(self.config.action_repeat):
@@ -488,6 +519,7 @@ class KeepAwayEnv:
             "winner": self.winner,
             "game_time": self.game_steps * self.time_step,
             "blue_total_possession_time": self.blue_total_hold_steps * self.time_step,
+            "kicks": list(self.kicks_applied),
         }
 
     @staticmethod
@@ -502,6 +534,7 @@ if __name__ == "__main__":
 
     # Play keep away as blue with an on-screen joystick. The joystick produces exactly the action
     # the RL layer would: blue's desired velocity. Every observation is printed each frame.
+    # Press space to kick the ball the way the joystick points; pushing the knob further kicks harder.
     import tkinter as tk
     from joystick import Joystick
 
@@ -516,18 +549,30 @@ if __name__ == "__main__":
     status.pack(padx=10, pady=(0, 10))
 
     window_open = True
+    kick_requested = False
 
     def on_close():
         global window_open
         window_open = False
 
+    def on_space(event=None):
+        global kick_requested
+        kick_requested = True
+
     root.protocol("WM_DELETE_WINDOW", on_close)
+    root.bind("<space>", on_space)
 
     while window_open and p.isConnected(env.client):
         frame_start = time.time()
 
+        # The knob's offset as a fraction of full speed sets the kick's direction and strength
+        kicks = None
+        if kick_requested:
+            kicks = [joystick.velocity / env.config.blue_max_speed * env.config.max_kick_speed]
+            kick_requested = False
+
         try:
-            observation, reward, terminated, truncated, info = env.step(joystick.velocity)
+            observation, reward, terminated, truncated, info = env.step(joystick.velocity, kicks=kicks)
         except p.error:
             break  # the pybullet window was closed mid-step
         print(KeepAwayEnv.format_observation(observation))
@@ -540,7 +585,8 @@ if __name__ == "__main__":
         game = observation["game"]
         status.config(text=f"time   {game['time']:5.1f} s\n"
                            f"blue   {game['blue_possession_time']:5.2f} / {game['blue_possession_time_to_win']:.1f} s\n"
-                           f"red    {game['red_possession_time']:5.2f} / {game['red_possession_time_to_win']:.1f} s")
+                           f"red    {game['red_possession_time']:5.2f} / {game['red_possession_time_to_win']:.1f} s\n"
+                           f"space  kick")
         root.update()
 
         # Run in real time: one step covers control_dt seconds of simulation

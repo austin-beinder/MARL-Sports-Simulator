@@ -3,6 +3,8 @@ Many cited parts of entity.py were AI generated.
 This file was largely copy pasted from entity.py and player.py
 AI edits 2026-10-31 (Claude Code, Austin Beinder): physics_client on every pybullet call, the
 teammate handoff switch, and a per-ball random generator for steals. See the markers.
+AI edit 2026-11-07 (Claude Code, Austin Beinder): the linear_damping parameter (was a fixed 1.25),
+so KeepAwayEnv can tune how far a kick rolls.
 """
 
 import numpy as np
@@ -24,6 +26,7 @@ class Ball(Entity):
                  mass=1.0,
                  initial_position=np.array([0.0, 0.0, 0.0]),
                  maxJointVelocity=3.0,
+                 linear_damping=1.25,  # AI GENERATED (how quickly a loose ball slows down, see below)
                  physics_client=0):  # AI GENERATED (which pybullet simulation, see Entity)
 
         rgbaColor=[1, 1, 1, 1]
@@ -73,10 +76,14 @@ class Ball(Entity):
 
         # This creates some friction so it doesn't slide or spin forever or accelerate super quickly
         # Found by googling how to add drag in pybullet.
-        p.changeDynamics(self.body_id, 0, linearDamping=1.25, angularDamping=10.05, maxJointVelocity=maxJointVelocity,
+        ### AI GENERATED (linear_damping, was 1.25)
+        # pybullet slows the ball by dv/dt = -linear_damping * v * (1 + |v|) (measured 2026-11-07), so a
+        # ball sent off at v m/s rolls about ln(1 + v) / linear_damping metres in total.
+        p.changeDynamics(self.body_id, 0, linearDamping=linear_damping, angularDamping=10.05, maxJointVelocity=maxJointVelocity,
                          physicsClientId=self.client)  # AI GENERATED (physicsClientId)
-        p.changeDynamics(self.body_id, 1, linearDamping=1.25, angularDamping=10.05, maxJointVelocity=maxJointVelocity,
+        p.changeDynamics(self.body_id, 1, linearDamping=linear_damping, angularDamping=10.05, maxJointVelocity=maxJointVelocity,
                          physicsClientId=self.client)  # AI GENERATED (physicsClientId)
+        ### END AI GENERATED
         p.changeVisualShape(self.body_id, 2, textureUniqueId=texture_id, physicsClientId=self.client)  # AI GENERATED
 
     ### AI GENERATED

@@ -13,6 +13,8 @@
 #   - 2026-11-01: run.env now defaults to "pybullet" (the mock is opt-in), and
 #     saved_config_from_dict loads saved runs from before run.env existed as
 #     mock (backlog task 3).
+#   - 2026-11-07: Kicking: rl.kick_enabled is built (PyBullet only), added
+#     shared.ball_damping, and max_kick_speed is now used. (Austin Beinder)
 # Prompt summary: Implement Phase 3 step 1 of the issue #7 plan (config +
 #   validation) following the student's design decisions.
 # Human review:   Pending review
@@ -94,7 +96,12 @@ class SharedConfig:
     max_speed: float = 2.0
     red_max_speed: float = 1.8  # calibrated 2026-10-11: flee survives 50% of max steps (#22)
     carry_speed_factor: float = 0.75
-    max_kick_speed: float = 6.0  # unused at milestone 1
+    ### AI GENERATED
+    max_kick_speed: float = 6.0  # kick speed cap (ICD §6); also the ball's top speed in the sim
+    # How fast a loose ball slows down in the sim: dv/dt = -ball_damping * v * (1 + |v|), so a ball
+    # kicked at v m/s rolls about ln(1 + v) / ball_damping metres (9.7 m at 6 m/s). PyBullet only.
+    ball_damping: float = 0.2
+    ### END AI GENERATED
     possession_radius: float = 0.5
     player_radius: float = 0.25
     start: StartConfig = field(default_factory=StartConfig)
@@ -327,6 +334,7 @@ def _validate_shared(s: SharedConfig) -> None:
     for name in ("max_speed", "red_max_speed", "max_kick_speed", "possession_radius", "player_radius"):
         _require(getattr(s, name) > 0, f"shared.{name} must be > 0")
     _require(0 < s.carry_speed_factor <= 1, "shared.carry_speed_factor must be in (0, 1]")
+    _require(s.ball_damping >= 0, "shared.ball_damping must be >= 0")  # AI GENERATED
     _require(
         all(L > 2 * s.player_radius for L in s.field_size),
         "shared.field_size must exceed the player diameter on both axes",
@@ -347,8 +355,10 @@ def _validate_rl(cfg: Config) -> None:
     rl, s = cfg.rl, cfg.shared
     for name in ("critic_input", "horizon_mode", "obs_ordering", "obs_mode"):
         _check_option(name, getattr(rl, name))
-    if rl.kick_enabled:
-        raise NotImplementedError("rl.kick_enabled=true: the kick heads come after milestone 1 (#21)")
+    ### AI GENERATED (2026-11-07: kicking is built, in the PyBullet env only)
+    if rl.kick_enabled and cfg.run.env != "pybullet":
+        raise NotImplementedError("rl.kick_enabled=true needs run.env = 'pybullet': the mock env has no ball physics")
+    ### END AI GENERATED
     _require(rl.horizon_seconds > 0, "rl.horizon_seconds must be > 0")
     _require(
         s.dt_control < rl.horizon_seconds,

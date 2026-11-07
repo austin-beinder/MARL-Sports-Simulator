@@ -28,9 +28,10 @@ MARL-Sports-Simulator is a WashU CSE 5106 (Multi-Agent Systems) course project:
 multi-agent reinforcement learning on a PyBullet soccer-style simulation.
 
 Milestone 1, the current state: **keep-away, 1 blue (learner) vs 1 scripted
-red, movement only (no kicking)**, trained with PPO / MAPPO-style centralized
-critic. Both envs also run N blue vs M red and the `goto_target` sanity check.
-Kicking is in the interface but not implemented in either env yet.
+red, movement only**, trained with PPO / MAPPO-style centralized critic. Both
+envs also run N blue vs M red and the `goto_target` sanity check. Kicking is
+built in the PyBullet env only (`rl.kick_enabled = true`, which needs
+`run.env = "pybullet"`); the mock has no ball physics.
 
 ## Layout
 
@@ -70,7 +71,16 @@ configs/*.toml -> marl.common.config.Config
   `marl.common.spawn.sample_spawn`, red possession terminal after one tick,
   blue's "hold for 20 s" win switched off, teammate handoff off (only a kick
   releases the ball, ICD §8), and for `goto_target` an untouchable, immobile
-  ball (`KeepAwayConfig.ball_is_target`).
+  ball (`KeepAwayConfig.ball_is_target`). Kicks: `kick_vec` → the ball's
+  velocity (`max_kick_speed`-capped), passed as `KeepAwayEnv.step(action,
+  kicks=...)`. No re-grab cooldown.
+- The loose ball slows by `dv/dt = -ball_damping · v · (1 + |v|)` (pybullet's
+  link damping), so a kick at `v` rolls `ln(1 + v) / ball_damping` m. Walls
+  stop it dead.
+- Kick heads (`marl/rl/networks.py`): a Bernoulli `kick_trigger` (starts at
+  ~5% per step) and a Beta `kick_vec`. They are masked by the agent's own
+  possession flag in `o_i` and by the trigger, so heads that can't affect the
+  env add nothing to the PPO ratio.
 - Possession in PyBullet is contact-based (player touching the ball, or an
   opponent touching the carrier), not `possession_radius`. So the same policy
   survives longer there than in the mock. That difference is accepted. Red's
@@ -127,9 +137,10 @@ configs/*.toml -> marl.common.config.Config
   are only used when running `keep_away_env.py` directly. Training uses
   `SharedConfig` values (16 × 10 m, 2.0 m/s, `control_k = 12`). Red's
   1.8 m/s is the same in both.
-- Both envs support `keepaway` and `goto_target`, any team sizes the config
-  allows, and only `kick_trigger = 0`. `PyBulletEnv` also needs
-  `physics_dt = 1/240` (pybullet's fixed time step).
+- Both envs support `keepaway` and `goto_target` and any team sizes the config
+  allows. Only `PyBulletEnv` kicks; `MockEnv` raises on a kick it would have
+  to apply. `PyBulletEnv` also needs `physics_dt = 1/240` (pybullet's fixed
+  time step).
 
 ## Common commands
 
@@ -174,8 +185,8 @@ python -m unittest discover -s pybulletGame/tests -p "*_test.py" -t pybulletGame
   intended change, `--update --reason "..."` and commit `results/silver/`. See the
   README's "Regression tests (silver record)".
 - `pytest` covers `tests/` only (`pyproject.toml`). It takes about 2 minutes.
-  The 2 skips are expected: the kick-with-possession conformance test, on
-  each env, since neither implements kicking yet.
+  The 1 skip is expected: the kick-with-possession conformance test on the
+  mock, which doesn't kick.
 - `tests/test_env_dynamics.py` checks the game rules both envs share, through
   each env's `set_state_for_testing` hook; `tests/test_mock_env.py` pins the
   mock's exact kinematics.

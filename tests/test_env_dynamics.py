@@ -8,6 +8,8 @@
 #     must share (speed cap, carry slowdown, walls, possession, termination,
 #     teammates, goto_target), run on the mock and on PyBullet through their
 #     set_state_for_testing hooks.
+#   - 2026-11-07: The PyBullet env kicks now, so the kick test accepts a
+#     real kick there and still checks the mock's clean refusal. (Austin Beinder)
 # Prompt summary: Close the PyBullet integration gaps: test coverage for the
 #   behaviour the mock's own tests (test_mock_env.py) only check on the mock.
 # Human review:   Pending review
@@ -186,12 +188,20 @@ def test_no_auto_reset_and_step_before_reset(make):
         env.step(act((0.0, 0.0)))
 
 
-def test_kick_with_possession_not_implemented_and_state_untouched(make):
+### AI GENERATED (2026-11-07: PyBullet kicks, the mock refuses)
+def test_kick_with_possession_is_applied_or_refused_cleanly(make):
     env, cfg = make()
     before = env.set_state_for_testing(blue_pos=[[0, 0]], red_pos=[[7, 4]], holder=("blue", 0))
-    with pytest.raises(NotImplementedError):
-        env.step({"blue": [{"move": [1.0, 0.0], "kick_trigger": 1, "kick_vec": [1.0, 0.0]}]})
-    assert env._state() == before
+    try:
+        s, term, trunc, info = env.step({"blue": [{"move": [1.0, 0.0], "kick_trigger": 1, "kick_vec": [1.0, 0.0]}]})
+    except NotImplementedError:  # the mock has no ball physics; a refused kick must not change the state
+        assert env._state() == before
+        return
+    # A full kick (6 m/s) outruns the kicker (2 m/s), so the ball is loose after the step
+    assert info["kick_applied"] == [True]
+    assert not s["blue"][0]["has_possession"]
+    assert s["ball"]["pos"][0] > s["blue"][0]["pos"][0] + cfg.player_radius
+### END AI GENERATED
 
 
 def test_unknown_reset_option_and_bad_seed(make):

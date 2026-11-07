@@ -14,6 +14,8 @@
 #   - 2026-10-14: The rollout now reports the mean shaping reward per step
 #     (RolloutStats.mean_shaping), and an episode's mean_reward counts the base
 #     (task) reward only, so shaping never leaks into it (PBRS ablation).
+#   - 2026-11-07: Actions come from all of the actor's heads (kick heads too),
+#     and the rollout counts kicks per step. (Austin Beinder)
 # Prompt summary: Implement Phase 3 step 7 of the issue #7 plan (buffer +
 #   GAE); the rollout collector moved here from step 8 because it owns the
 #   next_value contract that GAE depends on.
@@ -47,7 +49,7 @@ import torch
 
 from marl.common.config import Config
 from marl.common.spawn import START_FREE_BALL, START_POSSESSION, START_TARGET
-from marl.rl.actions import commanded_speed_fraction, to_env_actions
+from marl.rl.actions import actions_from_samples, commanded_speed_fraction  # AI GENERATED (actions_from_samples)
 from marl.rl.buffer import RolloutBuffer
 from marl.rl.networks import MOVE, Actor, Critic, critic_input, critic_input_dim
 from marl.rl.obs import ObsBuilder
@@ -98,6 +100,7 @@ class RolloutStats:
     episodes: list[EpisodeRecord]  # episodes that ENDED during this rollout
     mean_commanded_speed: float  # KL-1 symptom metric (#23)
     mean_shaping: float  # unscaled shaping reward per step (0.0 without shaping terms)
+    kicks_per_step: float = 0.0  # kicks the env applied, per step, summed over agents  # AI GENERATED
 
 
 def make_buffer(cfg: Config, featurizer: Featurizer, actor: Actor) -> RolloutBuffer:
@@ -130,6 +133,7 @@ class RolloutCollector:
         self._value = None
         episodes: list[EpisodeRecord] = []
         speed = shaping = 0.0
+        kicks = 0  # AI GENERATED
         for _ in range(buf.n_steps):
             if self._s is None:
                 self._begin_episode()
@@ -138,10 +142,11 @@ class RolloutCollector:
                 samples, log_prob = self.actor.act(torch.from_numpy(obs))
                 value = self._value if self._value is not None else self.critic(torch.from_numpy(cin))
             move = samples[MOVE].numpy()
-            actions = to_env_actions(move)
+            actions = actions_from_samples(samples)  # AI GENERATED (kick heads too)
             speed += float(commanded_speed_fraction(move).mean())
 
             s_next, terminated, truncated, info = self.env.step(actions)
+            kicks += sum(info["kick_applied"])  # AI GENERATED
             eff = effective_terminal(terminated, truncated, self.cfg.rl.horizon_mode)
             parts = self.reward_fn.parts(s, actions, s_next, eff, truncated, info)
             shaping += parts.shaping
@@ -178,7 +183,7 @@ class RolloutCollector:
             else:
                 self._s, self._obs, self._cin = s_next, obs_next, cin_next
                 self._value = next_value  # V(s_{t+1}) is the next step's V(s_t)
-        return RolloutStats(episodes, speed / buf.n_steps, shaping / buf.n_steps)
+        return RolloutStats(episodes, speed / buf.n_steps, shaping / buf.n_steps, kicks / buf.n_steps)  # AI GENERATED (kicks)
 
     def _begin_episode(self) -> None:
         seed = int(self._seed_rng.integers(0, 2**31 - 1))

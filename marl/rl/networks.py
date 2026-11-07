@@ -10,6 +10,9 @@
 #     inputs (design #1, #4, #5, #9, #10, #18, #21; PPO defaults D).
 #   - 2026-10-11: Added seeded_networks, the one seeded init shared by training
 #     and by the evaluation script's "untrained policy" baseline.
+#   - 2026-11-07: The kick heads behind kick_enabled: a Bernoulli kick_trigger
+#     and a Beta kick_vec, masked by possession (read from o_i) and by the
+#     trigger. (Austin Beinder)
 # Prompt summary: Implement Phase 3 step 6 of the issue #7 plan (actor/critic
 #   + Beta movement head + action adapter).
 # Human review:   Pending review
@@ -17,10 +20,24 @@
 """Actor and critic networks.
 
 Actor (#4, #9, #21): ONE actor shared by all blue agents (parameter sharing),
-built as a tanh MLP trunk + a dict of heads. Milestone 1 builds only the
-movement head. The kick-vector and trigger heads join later behind
-``kick_enabled``; a movement checkpoint warm-starts them via
-``load_state_dict(strict=False)``, so the new heads keep their fresh init.
+built as a tanh MLP trunk + a dict of heads. The movement head is always there.
+``kick_enabled`` adds the kick heads (2026-11-07); a movement checkpoint
+warm-starts them via ``load_state_dict(strict=False)``, so the new heads keep
+their fresh init.
+
+Kick heads (ICD §6):
+
+* ``kick_trigger``: a Bernoulli. Its bias starts at logit(KICK_PRIOR), so an
+  untrained holder kicks about once a second (20 Hz control) instead of every
+  other step.
+* ``kick_vec``: an independent Beta per component, like the movement head,
+  mapped the same way (2x - 1).
+* Masks (#10): the trigger only matters when the agent holds the ball, and the
+  kick vector only when it also kicks. A head that can't affect the env adds
+  nothing to the joint log-prob (and its entropy isn't rewarded), so it adds no
+  noise to the PPO ratio. Possession is read from o_i (``OWN_POSSESSION``),
+  which is the possession at the START of the step, the same one the env uses
+  to decide whether a kick happens (ICD §3).
 
 Movement head (#18): an independent Beta per component (mx, my), with
 alpha, beta = softplus(.) + 1 >= 1, so every density is unimodal (no U-shape
@@ -50,12 +67,18 @@ from collections.abc import Sequence
 import numpy as np
 import torch
 from torch import nn
-from torch.distributions import Beta
+from torch.distributions import Bernoulli, Beta, Distribution  # AI GENERATED (Bernoulli, Distribution)
 from torch.nn import functional as F
 
 from marl.common.config import Config
+from marl.rl.obs import OWN_POSSESSION  # AI GENERATED
 
 MOVE = "move"  # head name (matches the ICD §6 action key)
+### AI GENERATED
+KICK_TRIGGER = "kick_trigger"  # head names = the ICD §6 action keys
+KICK_VEC = "kick_vec"
+KICK_PRIOR = 0.05  # the untrained policy's chance of kicking on a step where it holds the ball
+### END AI GENERATED
 CRITIC_INPUTS = ("global", "local")
 
 
@@ -90,18 +113,46 @@ class BetaHead(nn.Module):
         return Beta(F.softplus(alpha_raw) + 1.0, F.softplus(beta_raw) + 1.0)
 
 
+### AI GENERATED
+class BernoulliHead(nn.Module):
+    """One yes/no decision (the kick trigger). Samples are 0.0 or 1.0, shape [B, 1]."""
+
+    def __init__(self, in_dim: int, prior: float):
+        super().__init__()
+        self.action_dim = 1
+        # Small weights + bias = logit(prior): the untrained head says "yes" with probability ~prior
+        self.linear = layer_init(nn.Linear(in_dim, 1), gain=0.01)
+        nn.init.constant_(self.linear.bias, math.log(prior / (1.0 - prior)))
+
+    def forward(self, h: torch.Tensor) -> Bernoulli:
+        return Bernoulli(logits=self.linear(h))
+### END AI GENERATED
+
+
 class Actor(nn.Module):
     """Shared policy for all blue agents: obs [B, obs_dim] -> per-head distributions."""
 
-    def __init__(self, obs_dim: int, hidden_sizes: Sequence[int] = (64, 64), beta_eps: float = 1e-6):
+    def __init__(
+        self,
+        obs_dim: int,
+        hidden_sizes: Sequence[int] = (64, 64),
+        beta_eps: float = 1e-6,
+        kick_enabled: bool = False,  # AI GENERATED
+    ):
         super().__init__()
         if not 0.0 < beta_eps < 0.5:
             raise ValueError(f"beta_eps must be in (0, 0.5), got {beta_eps}")
         self.beta_eps = beta_eps
         self.trunk = mlp(obs_dim, hidden_sizes)
         self.heads = nn.ModuleDict({MOVE: BetaHead(hidden_sizes[-1], action_dim=2)})
+        ### AI GENERATED
+        self.kick_enabled = kick_enabled
+        if kick_enabled:
+            self.heads[KICK_TRIGGER] = BernoulliHead(hidden_sizes[-1], KICK_PRIOR)
+            self.heads[KICK_VEC] = BetaHead(hidden_sizes[-1], action_dim=2)
+        ### END AI GENERATED
 
-    def distributions(self, obs: torch.Tensor) -> dict[str, Beta]:
+    def distributions(self, obs: torch.Tensor) -> dict[str, Distribution]:  # AI GENERATED (Distribution)
         h = self.trunk(obs)
         return {name: head(h) for name, head in self.heads.items()}
 
@@ -113,14 +164,19 @@ class Actor(nn.Module):
 
         Returns the clamped [0, 1] samples per head (exactly what the buffer
         stores) and their joint log-prob [B]. ``deterministic`` uses the Beta
-        mean (the secondary eval diagnostic, #23).
+        mean (the secondary eval diagnostic, #23) and the more likely trigger value.
         """
         dists = self.distributions(obs)
         samples = {}
         for name, d in dists.items():
+            ### AI GENERATED (the trigger is 0/1, not a clamped Beta sample)
+            if isinstance(d, Bernoulli):
+                samples[name] = (d.probs > 0.5).float() if deterministic else d.sample()
+                continue
+            ### END AI GENERATED
             x = d.mean if deterministic else d.sample()
             samples[name] = x.clamp(self.beta_eps, 1.0 - self.beta_eps)
-        return samples, _joint_log_prob(dists, samples)
+        return samples, _joint_log_prob(dists, samples, _head_masks(obs, samples))  # AI GENERATED (masks)
 
     def evaluate(
         self, obs: torch.Tensor, samples: dict[str, torch.Tensor]
@@ -129,22 +185,46 @@ class Actor(nn.Module):
 
         Returns the joint log-prob [B], the analytic entropy [B] (per state; it
         doesn't depend on the samples) and the per-head entropies (for logging).
+        The kick heads' entropies count only in states where the agent holds the ball.
         """
         dists = self.distributions(obs)
-        head_entropy = {name: d.entropy().sum(-1) for name, d in dists.items()}
+        ### AI GENERATED (kick-head entropy gated by possession, #10)
+        holds = (obs[..., OWN_POSSESSION] > 0.5).float()
+        head_entropy = {name: d.entropy().sum(-1) * (1.0 if name == MOVE else holds) for name, d in dists.items()}
+        ### END AI GENERATED
         entropy = torch.stack(list(head_entropy.values())).sum(0)
-        return _joint_log_prob(dists, samples), entropy, head_entropy
+        return _joint_log_prob(dists, samples, _head_masks(obs, samples)), entropy, head_entropy  # AI GENERATED (masks)
 
 
-def _joint_log_prob(dists: dict[str, Beta], samples: dict[str, torch.Tensor]) -> torch.Tensor:
+### AI GENERATED
+def _head_masks(obs: torch.Tensor, samples: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+    """Per-head [B] masks: 1 where the head's sample can affect the env (#10).
+
+    The trigger matters only if the agent holds the ball at the start of the step, and the kick
+    vector only if it also kicks. The movement head always matters (no mask).
+    """
+    if KICK_TRIGGER not in samples:
+        return {}
+    holds = (obs[..., OWN_POSSESSION] > 0.5).float()
+    return {KICK_TRIGGER: holds, KICK_VEC: holds * samples[KICK_TRIGGER].squeeze(-1)}
+
+
+def _joint_log_prob(
+    dists: dict[str, Distribution], samples: dict[str, torch.Tensor], masks: dict[str, torch.Tensor]
+) -> torch.Tensor:
     """Sum of log-probs over every head and component (independent factors).
 
-    One joint log-prob per (t, i) -> one PPO ratio per (t, i) (#20). Milestone 1:
-    the movement head is always counted; the kick-head masks (#10) join here.
+    One joint log-prob per (t, i) -> one PPO ratio per (t, i) (#20). The movement head is
+    always counted; a masked kick head (#10) adds 0 where it can't affect the env.
     """
     if set(samples) != set(dists):
         raise ValueError(f"samples have heads {sorted(samples)}, the actor has {sorted(dists)}")
-    return torch.stack([dists[name].log_prob(samples[name]).sum(-1) for name in dists]).sum(0)
+    terms = []
+    for name in dists:
+        logp = dists[name].log_prob(samples[name]).sum(-1)
+        terms.append(logp * masks[name] if name in masks else logp)
+    return torch.stack(terms).sum(0)
+### END AI GENERATED
 
 
 class Critic(nn.Module):
@@ -183,7 +263,7 @@ def critic_input(mode: str, obs: np.ndarray, state_flat: np.ndarray) -> np.ndarr
 def build_networks(cfg: Config, obs_dim: int, state_dim: int) -> tuple[Actor, Critic]:
     """Actor + critic sized from the config. Seed torch first for a reproducible init."""
     hidden = cfg.rl.ppo.hidden_sizes
-    actor = Actor(obs_dim, hidden, cfg.rl.beta_eps)
+    actor = Actor(obs_dim, hidden, cfg.rl.beta_eps, kick_enabled=cfg.rl.kick_enabled)  # AI GENERATED (kick_enabled)
     critic = Critic(critic_input_dim(cfg.rl.critic_input, obs_dim, state_dim), hidden)
     return actor, critic
 

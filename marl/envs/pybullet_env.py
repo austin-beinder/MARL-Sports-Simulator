@@ -12,6 +12,8 @@
 #     off (ICD §8), and the set_state_for_testing hook (same as MockEnv's).
 #   - 2026-10-31: Each env now has its own simulation, so the one-env-mid-
 #     episode guard is gone.
+#   - 2026-11-07: Kicking (ICD §6): kick_vec -> the ball's velocity, kick
+#     events and kick_applied; max_kick_speed and ball_damping passed through.
 # Prompt summary: Integrate the MARL layer with the PyBullet env through an
 #   adapter with MockEnv's reset/step interface.
 # Human review:   Pending review
@@ -23,6 +25,7 @@ It has the same ``reset(seed, options)`` / ``step(actions)`` interface as ``Mock
 and translates in both directions:
 
 * actions: ICD ``move`` in [-1, 1] (2-norm capped) x ``max_speed`` -> each blue's velocity in m/s;
+  ``kick_vec`` -> the ball's velocity ``max_kick_speed x kick_vec / max(1, |kick_vec|)`` (ICD §6);
 * state: the game's players and ball -> ICD ``s`` (``step``, ``blue``, ``red``, ``ball``);
 * rewards are dropped: the RL layer computes its own (ICD §4);
 * spawns come from ``sample_spawn``, like the mock, so both envs start from the same states;
@@ -31,8 +34,8 @@ and translates in both directions:
 * only an opponent can take the ball from its carrier (teammate handoff off, ICD §8);
 * goto_target: no red, and the ball is an immobile target nobody can touch or hold (§9).
 
-Limits: no kicking yet. Possession is contact-based in the sim (player edge touching ball edge,
-or an opponent touching the carrier), not ``possession_radius``.
+Possession is contact-based in the sim (player edge touching ball edge, or an opponent touching
+the carrier), not ``possession_radius``. A kicker can touch the ball again at once (no cooldown).
 
 Each instance has its own pybullet simulation (``KeepAwayEnv`` opens a connection per game), so
 any number can be mid-episode in one process. Only one can render (pybullet allows one GUI).
@@ -79,6 +82,8 @@ class PyBulletEnv:
                 n_blue=cfg.n_blue,
                 n_red=cfg.n_red,
                 teammate_handoff=False,  # only a kick releases the ball (ICD §8)
+                max_kick_speed=cfg.max_kick_speed,  # also the ball's top speed
+                ball_damping=cfg.ball_damping,
                 ball_is_target=cfg.scenario == "goto_target",  # immobile, untouchable target (ICD §9)
             ),
             render_mode=render_mode,
@@ -115,25 +120,27 @@ class PyBulletEnv:
     def step(self, actions: dict[str, Any]) -> tuple[dict, bool, bool, dict]:
         if not self._ready:
             raise RuntimeError("call reset() before step(); there is no auto-reset (ICD §4)")
-        move, triggers = parse_actions(actions, self.n_blue)
-        # Start-of-step rule (ICD §3): kicks use possession at the start of the block.
-        for player, trig in zip(self._game.blues, triggers):
-            if trig == 1 and self._game.ball.possession_player is player:
-                raise NotImplementedError(
-                    "the PyBullet adapter doesn't implement kicking yet (deferred with kick_enabled, #21); "
-                    "the RL side sends kick_trigger = 0 at milestone 1"
-                )
+        move, triggers, kick_vecs = parse_actions(actions, self.n_blue)
+        # ICD §6: release velocity = max_kick_speed * kick_vec / max(1, |kick_vec|). The game applies a
+        # kick only if that player holds the ball at the start of the step (ICD §3).
+        kicks = [
+            self.cfg.max_kick_speed * kv / max(1.0, float(np.linalg.norm(kv))) if trig == 1 else None
+            for trig, kv in zip(triggers, kick_vecs)
+        ]
 
-        _, _, terminated, _, _ = self._game.step(move * self.cfg.max_speed)
+        _, _, terminated, _, game_info = self._game.step(move * self.cfg.max_speed, kicks=kicks)
         self._step += 1
         truncated = (not terminated) and self._step >= self.cfg.max_episode_steps
         if terminated or truncated:
             self._ready = False  # no auto-reset; the returned state is the true final state
-        events = [
+        kick_applied = [bool(k) for k in game_info["kicks"]]
+        # The kick happens before the first physics tick, so its event comes first
+        events = [{"type": "kick", "agent": ("blue", i)} for i, kicked in enumerate(kick_applied) if kicked]
+        events += [
             {"type": "possession_change", "from": self._holder_id(old), "to": self._holder_id(new)}
             for _, old, new in self._game.possession_events
         ]
-        return self._state(), bool(terminated), truncated, self._info(events)
+        return self._state(), bool(terminated), truncated, self._info(events, kick_applied)
 
     def close(self) -> None:
         """Disconnects this env's own pybullet simulation; other envs keep running."""
@@ -205,6 +212,6 @@ class PyBulletEnv:
             "ball": {"pos": xy(game.ball.position), "vel": xy(game.ball.velocity)},
         }
 
-    def _info(self, events: list[dict]) -> dict:
-        return {"events": events, "kick_applied": [False] * self.n_blue}
+    def _info(self, events: list[dict], kick_applied: list[bool] | None = None) -> dict:
+        return {"events": events, "kick_applied": kick_applied or [False] * self.n_blue}
 ### END AI GENERATED

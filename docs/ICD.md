@@ -15,6 +15,9 @@ Usage:
     scenario, reset/info details, action types, and conformance tests.
   2026-10-14: Added the returned-state snapshot rule (§5) and its conformance
     test (§11). The PBRS reward term needs them; the student approved the change.
+  2026-11-07: Kicking is built in the PyBullet env (the mock stays movement-only):
+    §6 kick semantics, §8 release rule (no cooldown), §10 max_kick_speed and the
+    new ball_damping. Decisions by Austin Beinder.
 Prompt summary: Draft the Gym/RL interface control document (issue #11) from
   the student's issue #7 design decisions, for teammates to review.
 Human review:   Pending review (student added the axis convention, 2026-10-10)
@@ -154,8 +157,11 @@ actions = {
   the step (§3). The ball's release velocity is `max_kick_speed × kick_vec / max(1, ‖kick_vec‖)`, so
   the speed is capped at `max_kick_speed`, and a zero vector simply drops the ball at zero speed.
   Otherwise `kick_vec` is ignored.
-- **Milestone 1 is movement-only:** the RL side always sends `kick_trigger = 0`, `kick_vec = [0, 0]`.
-  The env needs no special mode; the format is the same before and after kicking is added.
+- **Who kicks (2026-11-07):** the PyBullet env implements kicks; the mock does not, and raises
+  `NotImplementedError` for a kick it would have to apply. Without `rl.kick_enabled` the RL side
+  always sends `kick_trigger = 0`, `kick_vec = [0, 0]`. The format is the same either way.
+- **Kick order:** the kick happens before the step's first physics tick, so its `kick` event comes
+  before the `possession_change` (kicker → `None`) it causes.
 - Red agents aren't in `actions`; red is scripted inside the env.
 - Malformed actions (wrong length, NaN, out of range, wrong type) should **raise an error**, not be
   silently fixed. (The RL side guarantees valid ranges and types; an error means a bug.)
@@ -183,8 +189,11 @@ RL side.
   `possession_radius` of a loose ball **or of the blue carrier's ball** gains possession → `terminated`.)
 - **Carrying:** while possessed, the ball **follows the carrier** (it takes the carrier's x, y; the real
   env may put it on top of the carrier in z). The carrier moves at `carry_speed_factor × max_speed`.
-- **Release:** only by a kick (§6). The release/cooldown details (can the kicker immediately
-  re-possess?) are **deferred until kicking is enabled**; any cooldown would be hidden state (§5).
+- **Release:** only by a kick (§6). The kicked ball starts just in front of the kicker. **There is no
+  cooldown (2026-11-07):** anyone, the kicker included, who touches the loose ball takes it, so a
+  soft kick ahead and a chase is a legal dribble. (A cooldown would be hidden state, §5.)
+- **Loose ball (PyBullet):** it slows down by `dv/dt = -ball_damping · v · (1 + |v|)`, so a ball
+  released at `v` m/s rolls about `ln(1 + v) / ball_damping` m. Walls stop it dead (no bounce).
 - **Collisions:** the mock has **no player-player collisions** (players pass through each other). The
   real env's collision rule is [OPEN]; it's an expected mock-vs-sim difference.
 - **Spawning:** a "blue possession" start places the ball on a blue player (possessed at step 0). A
@@ -248,7 +257,8 @@ teammate's call. Both sides validate the config **at load**.
 | `max_speed`                         | [OPEN]        | blue's top speed (m/s)                                   |
 | `red_max_speed`                     | [OPEN]        | red's top speed; a **calibration knob** (see below)      |
 | `carry_speed_factor`                | [OPEN]        | carrier speed = factor × `max_speed`                     |
-| `max_kick_speed`                    | [OPEN]        | unused at milestone 1                                    |
+| `max_kick_speed`                    | 6.0 m/s       | kick speed cap (§6); also the ball's top speed in the sim |
+| `ball_damping`                      | 0.2           | loose-ball slowdown (§8): a 6 m/s kick rolls ~9.7 m, 3 m/s ~6.9 m |
 | `possession_radius`                 | [OPEN]        | §8                                                       |
 | start-distribution options          | see §9        |                                                          |
 
@@ -277,6 +287,6 @@ The RL side will write a test suite against this ICD that can run on **both** th
 2. Speed cap: 2-norm (proposed) vs. per-component (§6).
 3. Possession details, the collision rule and walls in the real env (§7, §8).
 4. Hidden env state that must go into `s` (§5).
-5. Field size, speeds, `possession_radius`, kick speed (§10).
+5. Field size, speeds, `possession_radius` (§10). Kick speed and ball damping were set 2026-11-07.
 6. Config format and ownership (§10).
 7. Who owns this document going forward (issue #11 is currently unassigned).
