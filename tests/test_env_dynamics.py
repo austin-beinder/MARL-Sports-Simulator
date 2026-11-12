@@ -10,6 +10,7 @@
 #     set_state_for_testing hooks.
 #   - 2026-11-07: The PyBullet env kicks now, so the kick test accepts a
 #     real kick there and still checks the mock's clean refusal. (Austin Beinder)
+#   - 2026-11-08: free_speed_factor (blue's speed without the ball). (Austin Beinder)
 # Prompt summary: Close the PyBullet integration gaps: test coverage for the
 #   behaviour the mock's own tests (test_mock_env.py) only check on the mock.
 # Human review:   Pending review
@@ -102,6 +103,18 @@ def test_carry_slowdown_and_the_ball_follows_the_carrier(make):
     assert b["has_possession"]
     assert speed(b) == pytest.approx(cfg.carry_speed_factor * cfg.max_speed, rel=REL)
     assert s["ball"]["pos"] == pytest.approx(b["pos"], abs=0.02)
+
+
+def test_free_speed_factor_slows_blue_only_without_the_ball(make):
+    # 2026-11-08: free_speed_factor scales blue's speed without the ball; with the ball it's still
+    # carry_speed_factor x max_speed (the two don't stack)
+    env, cfg = make(shared={"n_blue": 2, "free_speed_factor": 0.875})
+    env.set_state_for_testing(blue_pos=[[0, 0], [0, 3]], red_pos=[[7, -4]], holder=("blue", 0))
+    s, *_ = steps(env, act((-1.0, 0.0), (-1.0, 0.0)), 2)  # both away from red
+    carrier, free = s["blue"]
+    assert carrier["has_possession"] and not free["has_possession"]
+    assert speed(carrier) == pytest.approx(cfg.carry_speed_factor * cfg.max_speed, rel=REL)
+    assert speed(free) == pytest.approx(cfg.free_speed_factor * cfg.max_speed, rel=REL)
 
 
 def test_walls_stop_players(make):

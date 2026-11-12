@@ -8,6 +8,8 @@
 #     (random, stand-still, a lookahead flee heuristic) and the goto_target
 #     oracle, all usable through the shared evaluation protocol (design #22,
 #     #23).
+#   - 2026-11-08: passing_drill offers only random and still. (Austin Beinder)
+#   - 2026-11-09: So do pass_practice and pass_practice_moving. (Austin Beinder)
 # Prompt summary: Implement Phase 3 step 10 of the issue #7 plan (baselines,
 #   evaluation, calibration).
 # Human review:   Pending review
@@ -49,6 +51,10 @@ BASELINES = ("random", "still", "flee", "oracle")
 
 
 def baselines_for(scenario: str) -> tuple[str, ...]:
+    ### AI GENERATED (2026-11-08: passing_drill's blues can't move, so flee means nothing there)
+    if scenario in ("passing_drill", "pass_practice", "pass_practice_moving"):  # 2026-11-09: pass practice too
+        return ("random", "still")
+    ### END AI GENERATED
     return ("random", "still", "flee") if scenario == "keepaway" else ("random", "still", "oracle")
 
 

@@ -9,6 +9,8 @@
 #     (design #11).
 #   - 2026-10-11: Changed the flattener to scale ALL velocities (incl. red) by
 #     max_speed, a student-approved amendment to #11.
+#   - 2026-11-07: state_blocks, the flattening spec as blocks, so a warm start
+#     can grow the critic's first layer when the team sizes change. (Austin Beinder)
 # Prompt summary: Implement Phase 3 step 4 of the issue #7 plan (state
 #   flattener + obs builder).
 # Human review:   Pending review
@@ -85,6 +87,13 @@ def parse_state(s: Any, n_blue: int, n_red: int) -> StateArrays:
         ball_pos=_vec2(ball["pos"], "s['ball']['pos']"),
         ball_vel=_vec2(ball["vel"], "s['ball']['vel']"),
     )
+
+
+### AI GENERATED
+def state_blocks(n_blue: int, n_red: int) -> list[tuple[str, int, int]]:
+    """The flattening spec above as (block, numbers per slot, slots), in order."""
+    return [("blues", 5, n_blue), ("reds", 5, n_red), ("ball", 4, 1)]
+### END AI GENERATED
 
 
 class StateFlattener:

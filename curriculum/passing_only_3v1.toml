@@ -1,0 +1,335 @@
+# ==============================================================================
+# AI CITATION
+# Tool:    Claude Code (Claude Opus 5.5)
+# Date:    2026-11-08
+# Author:  Austin Beinder
+# Usage:
+#   - 2026-11-08: Created this file: a 3v1 passing curriculum. A goto_target
+#     warm-up, then a passing drill (frozen blues) against a red that gets
+#     faster stage by stage, then normal 3v1 keep-away.
+#   - 2026-11-08: The hold reward now grows with each catch (header comment).
+#   - 2026-11-09: Three pass_practice stages (catch_close, catch_mid,
+#     catch_far) after free_ball: one kick to a frozen teammate, no red, the
+#     teammates further away each stage.
+#   - 2026-11-09: catch_moving after catch_far: the same pass practice with the
+#     blues free to move (pass_practice_moving).
+#   - 2026-11-10: catch_moving_long after catch_moving: the same, but a pass
+#     has to go 1 m and longer catches pay a bit more.
+# Prompt summary: A 3v1 passing drill against a slow red with the blues frozen
+#   in range of each other: a small reward for kicking toward a teammate, a big
+#   one for lasting, nothing before the first pass; in a new curriculum TOML.
+# Human review:   Pending review
+# ==============================================================================
+# Monkey in the middle, 3v1. The goal is blues that keep the ball away from red by passing round
+# it, not by running. (See the docstring in runner.py for how stages and gates work.)
+#   1. go_to_target: no red; the ball is a fixed target and the reward is minus the distance to
+#      it. Teaches movement, which the drill doesn't use but the last stage does.
+#   free_ball, then catch_close / catch_mid / catch_far (2026-11-09): pass practice, one kick
+#      to a frozen teammate with no red, the teammates 1.5, 2.75 and 3.9 m away (see the stages).
+#   catch_moving (2026-11-09): the same at 3.9 m, but the blues can move (see the stage).
+#   catch_moving_long (2026-11-10): catch_moving again, but short passes don't count (see the stage).
+#   2-4. drill_*: the passing_drill scenario. The three blues are frozen on a circle (~2 m
+#      radius, so passes of about 3-4 m) round red, and one of them starts with the ball. Their
+#      move actions are ignored and masked out of PPO, so passing is the only way to keep the
+#      ball, and the movement skill from stage 1 is left alone. Red gets faster each stage:
+#      0.6, then 1.2, then 1.8 m/s (full speed). Each stage moves on once its gate passes.
+#      The drill's own reward (marl/rl/reward.py) replaces survival in these stages only:
+#        - passing_drill (base): each step a blue holds the ball pays the number of passes
+#          completed so far (1 after the first catch, 2 after the second, ...). The opening
+#          hold and a loose ball earn nothing.
+#        - pass_progress (coef 1): per metre the ball gets closer to the nearest other blue
+#          while a kick is in play (negative if it rolls away).
+#        - pass_completed (coef 3): once per pass, when a different blue picks it up.
+#   5. keepaway_3v1: normal keep-away with the survival reward, everyone free to move. Blue is
+#      slower than red all the time (as in keepaway_1v1's slow_two_v_one: 1.75 m/s without the
+#      ball, 1.5 m/s with it, against red's 1.8), so running away doesn't work and passing has
+#      to carry over. The critic starts fresh here (different scenario and reward).
+#
+# The thresholds and shaping coefs are guesses. A pass of ~3 m with a full kick takes ~1.2 s, in
+# which red covers 0.7 m at 0.6 m/s but 2.2 m at 1.8 m/s, so the full-speed drill may never pass
+# its gate; it then trains to its step cap and moves on. Check train.csv's gate_mean / gate_lower.
+
+name = "passing_3v1"
+config = "configs/keepaway_1v1.toml"  # the base experiment config (repo-relative); stages override it
+env = "pybullet"                      # PyBullet only: the mock can't kick
+
+[overrides.rl]
+kick_enabled = true
+
+[[stage]]
+name = "go_to_target"
+total_steps = 200_000     # no threshold = no gate: always runs this many steps
+[stage.overrides.shared]
+scenario = "goto_target"
+n_red = 0
+[stage.overrides.rl.reward]
+base = "goto_target"
+
+[[stage]]
+name = "free_ball"
+total_steps = 1_500_000
+option = "max_ball_dist"
+levels = [1.0, 2.0, 3.0]  # metres from blue
+threshold = 0.5          # lower than possession: blue has to get to the ball before red does
+confidence = 2.0
+window = 50
+stop_when_passed = true   # move on to 2v1 once it passes at 3 m (or at the step cap)
+
+[stage.overrides.shared.start]
+start_mix = 0.0           # every episode starts with a loose ball
+max_ball_dist = 3.0       # the stage's real task, which eval.csv measures: the ball within 3 m
+
+### AI GENERATED (2026-11-09: pass practice, three distances)
+# catch_*: the pass_practice scenario. Three frozen blues, no red; one holds the ball and gets
+# one kick per episode, which ends as soon as the kick plays out (a blue has the ball again, or
+# it stops). Reward (pass_practice, paid once at the end): 1 if a teammate catches it, else
+# 0.5 * exp(-gap / 1 m) for how close the ball came to a teammate, 0 for no kick. (2026-11-10:
+# rl.reward.min_pass_distance and pass_length_bonus can add a minimum pass and pay a catch by its
+# length; these stages leave them off.) The gate is on
+# the catch rate (not survival). Each teammate stands pass_distance (+-15%) from the holder, so
+# the passes get longer stage by stage; a full kick rolls ~4.9 m, and catch_far's longest pass is
+# 3.9 * 1.15 = 4.5 m. The critic carries between these three (same scenario and reward).
+# [[stage]]
+# name = "catch_close"
+# total_steps = 500_000
+# threshold = 0.9           # catch rate the gate's lower bound must reach
+# confidence = 2.0
+# window = 50
+# stop_when_passed = true
+# [stage.overrides.shared]
+# scenario = "pass_practice"
+# n_blue = 3
+# n_red = 0
+# max_episode_steps = 80    # 4 s: time to kick, plus a full roll
+# [stage.overrides.shared.start]
+# pass_distance = 1.5
+# [stage.overrides.rl.reward]
+# base = "pass_practice"
+# 
+# [[stage]]
+# name = "catch_mid"
+# total_steps = 500_000
+# threshold = 0.9
+# confidence = 2.0
+# window = 50
+# stop_when_passed = true
+# [stage.overrides.shared]
+# scenario = "pass_practice"
+# n_blue = 3
+# n_red = 0
+# max_episode_steps = 80
+# [stage.overrides.shared.start]
+# pass_distance = 2.75
+# [stage.overrides.rl.reward]
+# base = "pass_practice"
+# 
+# [[stage]]
+# name = "catch_far"
+# total_steps = 500_000
+# threshold = 0.9
+# confidence = 2.0
+# window = 50
+# stop_when_passed = true
+# [stage.overrides.shared]
+# scenario = "pass_practice"
+# n_blue = 3
+# n_red = 0
+# max_episode_steps = 80
+# [stage.overrides.shared.start]
+# pass_distance = 3.9       # close to the longest kick that still gets there
+# [stage.overrides.rl.reward]
+# base = "pass_practice"
+# ### END AI GENERATED
+
+### AI GENERATED (2026-11-09: pass practice with the blues free to move)
+# catch_moving: the pass_practice_moving scenario. Like catch_far (same reward, catch-rate gate,
+# one kick per episode, no red), but every blue can move: the holder can dribble before kicking
+# (at carry speed) and the teammates can run to meet the ball. A miss ends only once no teammate
+# could reach the ball before the time limit, so the clock is a little longer. The movement
+# head trains again here (it was masked in the frozen stages); the critic starts fresh (a
+# different scenario).
+[[stage]]
+name = "catch_moving"
+total_steps = 400_000
+threshold = 0.9
+confidence = 2.0
+window = 50
+stop_when_passed = true
+[stage.overrides.shared]
+scenario = "pass_practice_moving"
+n_blue = 3
+n_red = 0
+max_episode_steps = 100   # 5 s: time to set up and kick, a full roll, and a teammate's run
+[stage.overrides.shared.start]
+pass_distance = 3.9
+[stage.overrides.rl.reward]
+base = "pass_practice"
+### END AI GENERATED
+
+### AI GENERATED (2026-11-10: catch_moving with real passes only)
+# catch_moving_long: catch_moving again with two reward options on. A catch less than 1 m from
+# the kick point is no pass (it pays nothing, and doesn't count for the gate), and teammates
+# within 1.5 m of the kick point earn no near-miss credit, so tapping the ball into a teammate
+# who ran up next to the kicker stops paying. A real catch pays 0.75 + 0.25 * min(1, length / 4 m),
+# so longer passes pay a bit more and every catch still beats every miss (at most 0.5).
+# catch_moving trains first on the plain reward (any catch pays 1), which it learns quickly. The
+# critic starts fresh here (the reward changed).
+[[stage]]
+name = "catch_moving_long"
+total_steps = 1_000_000
+threshold = 0.9
+confidence = 2.0
+window = 50
+stop_when_passed = true
+[stage.overrides.shared]
+scenario = "pass_practice_moving"
+n_blue = 3
+n_red = 0
+max_episode_steps = 100
+[stage.overrides.shared.start]
+pass_distance = 3.9
+[stage.overrides.rl.reward]
+base = "pass_practice"
+min_pass_distance = 1.0     # m from the kick point
+pass_length_bonus = true    # 0.75 to 1 by the pass's length (full from 4 m)
+### END AI GENERATED
+
+
+# [[stage]]
+# name = "drill_slow"
+# total_steps = 100_000
+# threshold = 0.6           # survival fraction (of 300 steps) the gate's lower bound must reach
+# confidence = 2.0
+# window = 50
+# stop_when_passed = true
+# [stage.overrides.shared]
+# scenario = "passing_drill"
+# n_blue = 3
+# red_max_speed = 0.6
+# [stage.overrides.rl.reward]
+# base = "passing_drill"
+# shaping = [
+#     { name = "pass_progress", enabled = true, coef = 1.0 },
+#     { name = "pass_completed", enabled = true, coef = 3.0 },
+# ]
+# 
+# [[stage]]
+# name = "drill_medium"
+# total_steps = 200_000
+# threshold = 0.5
+# confidence = 2.0
+# window = 50
+# stop_when_passed = true
+# [stage.overrides.shared]  # stage overrides don't carry over, so the drill is spelled out again
+# scenario = "passing_drill"
+# n_blue = 3
+# red_max_speed = 0.9
+# [stage.overrides.rl.reward]
+# base = "passing_drill"
+# shaping = [
+#     { name = "pass_progress", enabled = true, coef = 1.0 },
+#     { name = "pass_completed", enabled = true, coef = 3.0 },
+# ]
+# 
+# [[stage]]
+# name = "drill_medium2"
+# total_steps = 200_000
+# threshold = 0.5
+# confidence = 2.0
+# window = 50
+# stop_when_passed = true
+# [stage.overrides.shared]  # stage overrides don't carry over, so the drill is spelled out again
+# scenario = "passing_drill"
+# n_blue = 3
+# red_max_speed = 1.2
+# [stage.overrides.rl.reward]
+# base = "passing_drill"
+# shaping = [
+#     { name = "pass_progress", enabled = true, coef = 1.0 },
+#     { name = "pass_completed", enabled = true, coef = 3.0 },
+# ]
+# 
+# [[stage]]
+# name = "drill_medium3"
+# total_steps = 200_000
+# threshold = 0.5
+# confidence = 2.0
+# window = 50
+# stop_when_passed = true
+# [stage.overrides.shared]  # stage overrides don't carry over, so the drill is spelled out again
+# scenario = "passing_drill"
+# n_blue = 3
+# red_max_speed = 0.8
+# [stage.overrides.rl.reward]
+# base = "passing_drill"
+# shaping = [
+#     { name = "pass_progress", enabled = true, coef = 1.0 },
+#     { name = "pass_completed", enabled = true, coef = 3.0 },
+# ]
+# 
+# [[stage]]
+# name = "drill_medium4"
+# total_steps = 200_000
+# threshold = 0.5
+# confidence = 2.0
+# window = 50
+# stop_when_passed = true
+# [stage.overrides.shared]  # stage overrides don't carry over, so the drill is spelled out again
+# scenario = "passing_drill"
+# n_blue = 3
+# red_max_speed = 1.2
+# [stage.overrides.rl.reward]
+# base = "passing_drill"
+# shaping = [
+#     { name = "pass_progress", enabled = true, coef = 1.0 },
+#     { name = "pass_completed", enabled = true, coef = 3.0 },
+# ]
+
+# [[stage]]
+# name = "drill_medium5"
+# total_steps = 500_000
+# threshold = 0.9
+# confidence = 2.0
+# window = 50
+# stop_when_passed = true
+# [stage.overrides.shared]  # stage overrides don't carry over, so the drill is spelled out again
+# scenario = "passing_drill"
+# n_blue = 3
+# red_max_speed = 1.5
+# [stage.overrides.rl.reward]
+# base = "passing_drill"
+# shaping = [
+#     { name = "pass_progress", enabled = true, coef = 1.0 },
+#     { name = "pass_completed", enabled = true, coef = 3.0 },
+# ]
+# 
+# [[stage]]
+# name = "drill_full"
+# total_steps = 500_000
+# threshold = 0.9
+# confidence = 2.0
+# window = 50
+# stop_when_passed = true
+# [stage.overrides.shared]
+# scenario = "passing_drill"
+# n_blue = 3
+# red_max_speed = 1.8
+# [stage.overrides.rl.reward]
+# base = "passing_drill"
+# shaping = [
+#     { name = "pass_progress", enabled = true, coef = 1.0 },
+#     { name = "pass_completed", enabled = true, coef = 3.0 },
+# ]
+
+[[stage]]
+name = "keepaway_3v1"
+total_steps = 2_000_000
+threshold = 0.9
+confidence = 2.0
+window = 50
+stop_when_passed = false  # the last stage: train on to the step cap
+[stage.overrides.shared]
+n_blue = 3
+free_speed_factor = 0.875 # 1.75 m/s without the ball, under red's 1.8
+[stage.overrides.shared.start]
+start_mix = 1.0           # half the episodes start with a blue holding the ball, half with a loose ball

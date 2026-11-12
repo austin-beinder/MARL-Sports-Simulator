@@ -1,0 +1,112 @@
+# ==============================================================================
+# AI CITATION
+# Tool:    Claude Code (Claude Opus 5.5)
+# Date:    2026-11-07
+# Author:  Austin Beinder
+# Usage:
+#   - 2026-11-07: Created this file: the 1v1 keep-away curriculum (possession
+#     stage, then a free-ball stage that moves the ball further away).
+#   - 2026-11-07: Kicking on for every stage (kick_enabled; PyBullet only).
+#   - 2026-11-07: Added the 2v1 stage; free_ball now ends when its gate passes.
+#   - 2026-11-07: Four stages: a goto_target warm-up first, and free_ball only
+#     goes out to 3 m (threshold 0.35); 8 m was close to unwinnable 1v1.
+#   - 2026-11-08: Added the slow_two_v_one stage (blue slower than red even
+#     without the ball); two_v_one now moves on when its gate passes.
+# Prompt summary: Lay out a curriculum for keep-away: a possession stage, then
+#   a free-ball stage whose ball starts close and moves further away (CACTUS).
+# Human review:   Pending review
+# ==============================================================================
+# Keep-away in stages (see the docstring in runner.py for how stages and gates work). Stage 2
+# (possession) is commented out for now, so a run goes go_to_target -> free_ball -> two_v_one ->
+# slow_two_v_one.
+#   1. go_to_target: no red; the ball is a fixed target and the reward is minus the distance to
+#      it. Teaches "run to the ball" before anything else. No gate (its episodes never end
+#      early), so it runs its full step budget.
+#   2. possession:   1v1, blue always starts with the ball; red chases until it catches it.
+#      Starts from stage 1's actor; the critic starts fresh (keep-away has a different reward).
+#   3. free_ball:    1v1, nobody has the ball. It starts within 1 m of blue, then 2 m, then 3 m
+#      each time the gate passes. Further than that was close to unwinnable: red (1.8 m/s) is
+#      faster than blue carrying the ball (1.5 m/s), so a long chase usually ends in a catch.
+#   4. two_v_one:    a second blue joins (same shared policy), with a mix of possession and
+#      free-ball starts. Kicking (passing) can finally pay off here.
+#   5. slow_two_v_one: the same 2v1, but blue is slower than red all the time: 1.5 m/s with the
+#      ball as before, and 1.75 m/s without it (half the ball's 25% slowdown) against red's
+#      1.8 m/s. Nobody can outrun red any more, so the ball has to be passed.
+#
+# The keep-away thresholds are guesses. Stage 2 (possession) leveled off near 0.5 survival in a
+# first PyBullet run. Check train.csv's gate_mean / gate_lower, or plot the printed output with
+# scripts/plot_episode_length.py, and adjust.
+
+name = "keepaway_1v1"
+config = "configs/keepaway_1v1.toml"  # the base experiment config (repo-relative); stages override it
+env = "pybullet"                      # PyBullet only: the mock can't kick
+
+# Every stage
+[overrides.rl]
+kick_enabled = true                   # the policy gets the kick heads (trigger + kick vector)
+
+[[stage]]
+name = "go_to_target"
+total_steps = 200_000     # no threshold = no gate: always runs this many steps
+
+[stage.overrides.shared]
+scenario = "goto_target"
+n_red = 0                 # goto_target has no red; the warm start adds red's inputs for stage 2
+
+[stage.overrides.rl.reward]
+base = "goto_target"      # minus the distance to the ball each step
+
+# [[stage]]
+# name = "possession"
+# total_steps = 500_000     # step cap
+# threshold = 0.5           # move on once blue survives 50% of the 15 s episode...
+# confidence = 2.0          # ...even 2 standard errors below the mean (about 97% confidence)...
+# window = 50               # ...over the last 50 training episodes
+# stop_when_passed = true   # then go straight to the next stage
+# 
+# [stage.overrides.shared.start]
+# start_mix = 1.0           # every episode starts with blue holding the ball
+
+[[stage]]
+name = "free_ball"
+total_steps = 1_500_000
+option = "max_ball_dist"
+levels = [1.0, 2.0, 3.0]  # metres from blue
+threshold = 0.5          # lower than possession: blue has to get to the ball before red does
+confidence = 2.0
+window = 50
+stop_when_passed = true   # move on to 2v1 once it passes at 3 m (or at the step cap)
+
+[stage.overrides.shared.start]
+start_mix = 0.0           # every episode starts with a loose ball
+max_ball_dist = 3.0       # the stage's real task, which eval.csv measures: the ball within 3 m
+
+[[stage]]
+name = "two_v_one"
+total_steps = 1_500_000
+threshold = 0.6           # a first guess: with a teammate to pass to, blue should last longer
+confidence = 2.0
+window = 50
+stop_when_passed = true   # then on to the slow-blue version
+
+[stage.overrides.shared]
+n_blue = 2                # a teammate joins. Both blues share the policy; the warm start grows its
+                          # inputs for the teammate, starting at zero weight (it ignores them at first)
+
+[stage.overrides.shared.start]
+start_mix = 0.5           # half the episodes start with a blue holding the ball, half with a loose ball
+
+[[stage]]
+name = "slow_two_v_one"
+total_steps = 1_500_000
+threshold = 0.5           # a guess: lower than two_v_one, since blue can't outrun red any more
+confidence = 2.0
+window = 50
+stop_when_passed = false  # the last stage: train on to the step cap
+
+[stage.overrides.shared]
+n_blue = 2                # stage overrides don't carry over, so the 2v1 is spelled out again
+free_speed_factor = 0.875 # without the ball: 2.0 x 0.875 = 1.75 m/s, under red's 1.8 (with it: 1.5 m/s)
+
+[stage.overrides.shared.start]
+start_mix = 0.5

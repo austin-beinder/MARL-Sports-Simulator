@@ -8,6 +8,7 @@
 #     movement only), listing every key with its default for reference.
 #   - 2026-10-11: Set red_max_speed to the calibrated 1.8 (scripts/calibrate.py).
 #   - 2026-11-07: Added ball_damping; max_kick_speed is used now. (Austin Beinder)
+#   - 2026-11-07: ball_damping 0.2 -> 0.4 (kicks max out near 5 m). (Austin Beinder)
 # Prompt summary: Implement Phase 3 of the issue #7 plan (RL layer + mock env).
 # Human review:   Pending review
 # ==============================================================================
@@ -28,7 +29,7 @@ red_max_speed = 1.8                 # calibrated (scripts/calibrate.py, 2026-10-
                                     # flee survives 50.1% of max steps; random/still ~28% (#22)
 carry_speed_factor = 0.75
 max_kick_speed = 6.0                # kick speed cap; also the ball's top speed in the sim
-ball_damping = 0.2                  # loose-ball slowdown (PyBullet): a 6 m/s kick rolls ~9.7 m
+ball_damping = 0.4                  # loose-ball slowdown (PyBullet): a 6 m/s kick rolls ~4.9 m
 possession_radius = 0.5
 player_radius = 0.25
 

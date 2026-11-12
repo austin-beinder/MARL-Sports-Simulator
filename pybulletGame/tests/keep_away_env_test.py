@@ -234,9 +234,9 @@ class TestKicks(KeepAwayEnvTestCase):
         for _ in range(59):  # 60 steps of 8 / 240 s = 2 s
             observation, *_ = self.env.step([0, 0])
 
-        d, v0, t = 0.2, 3.0, 2.0
+        d, v0, t = self.config.ball_damping, 3.0, 2.0
         a = 1 + 1 / v0
-        expected = math.log((a - math.exp(-d * t)) / (a - 1)) / d  # about 3.44 m
+        expected = math.log((a - math.exp(-d * t)) / (a - 1)) / d  # about 2.6 m with ball_damping 0.4
         self.assertAlmostEqual(observation["ball"]["position"]["x"] - start, expected, delta=0.15)
 
     def test_kicker_can_pick_the_ball_straight_back_up(self):
@@ -246,6 +246,48 @@ class TestKicks(KeepAwayEnvTestCase):
             self.env.step([3.0, 0.0])
 
         self.assertIs(self.env.ball.possession_player, self.env.blue)
+
+    # 2026-11-07: kicks next to a wall used to put the ball inside the wall, and pybullet pushed it out
+    # of the arena. The default field's inner wall faces are at x = +-10.5 and y = +-6.8.
+    def kick_from(self, blue_position, kick, steps=30):
+        self.env.reset(options={"blue_position": blue_position, "red_position": (-8, -5), "blue_has_ball": True})
+        observation, reward, terminated, truncated, info = self.env.step([0, 0], kicks=[kick])
+        kicked = info["kicks"]
+        for _ in range(steps):
+            observation, *_ = self.env.step([0, 0])
+        return observation, kicked
+
+    def assert_ball_inside(self, observation):
+        ball = xy(observation["ball"], "position")
+        self.assertLess(abs(ball[0]), 10.5)
+        self.assertLess(abs(ball[1]), 6.8)
+
+    def test_kick_into_the_wall_from_against_it_rebounds_to_the_kicker(self):
+        observation, kicked = self.kick_from((10.19, 0), (6.0, 0.0))
+
+        self.assertEqual(kicked, [True])  # the kick happened (ICD: trigger + possession)...
+        self.assertIs(self.env.ball.possession_player, self.env.blue)  # ...but the ball came straight back
+        self.assert_ball_inside(observation)
+
+    def test_kick_into_a_corner_rebounds_too(self):
+        observation, kicked = self.kick_from((10.19, 6.49), (4.0, 4.0))
+
+        self.assertIs(self.env.ball.possession_player, self.env.blue)
+        self.assert_ball_inside(observation)
+
+    def test_kick_along_the_wall_still_works(self):
+        observation, kicked = self.kick_from((10.19, 0), (0.0, 4.0))
+
+        self.assertIsNone(self.env.ball.possession_player)
+        self.assertGreater(observation["ball"]["position"]["y"], 1.0)
+        self.assert_ball_inside(observation)
+
+    def test_kick_toward_a_nearby_wall_stays_inside(self):
+        # Enough room for the ball, but it hits the wall almost at once
+        observation, kicked = self.kick_from((9.5, 0), (6.0, 0.0))
+
+        self.assertIsNone(self.env.ball.possession_player)
+        self.assert_ball_inside(observation)
 
     def test_one_kick_per_blue_player(self):
         with self.assertRaises(ValueError):
@@ -319,6 +361,51 @@ class TestRules(KeepAwayEnvTestCase):
 
         self.assertEqual(observation["game"]["blue_possession_time"], 0.0)
         self.assertEqual(observation["game"]["red_possession_time"], 0.0)
+
+
+class TestStealsDuringContact(KeepAwayEnvTestCase):
+    # 2026-11-07: red used to take the ball only on the first tick it touched blue, so a blue that
+    # got the ball while red was already touching it kept the ball for as long as they touched.
+    # Red stands still here (red_gain = 0) so the contacts stay put.
+    config = KeepAwayConfig(red_gain=0.0)
+
+    def press_into_red(self, blue_xy, red_xy, steps=10):
+        self.env.reset(options={"blue_position": blue_xy, "red_position": red_xy, "ball_position": (5.0, 5.0)})
+        push = np.subtract(red_xy, blue_xy)
+        for _ in range(steps):
+            self.env.step(push)
+        self.assertIn(self.env.red, self.env.blue.collided_entities)
+        return push
+
+    def test_blue_picking_up_the_ball_while_touching_red_loses_it(self):
+        push = self.press_into_red((0.0, 0.0), (0.7, 0.0))
+        self.give_ball_to(self.env.blue)  # a loose-ball pickup mid-contact
+
+        self.env.step(push)
+
+        self.assertIs(self.env.ball.possession_player, self.env.red)
+
+    def test_same_in_a_corner(self):
+        x, y = self.config.field_length / 2 - 0.35, self.config.field_width / 2 - 0.35
+        push = self.press_into_red((x - 0.6, y - 0.6), (x, y))  # red pinned in the corner by blue
+        self.give_ball_to(self.env.blue)
+        start = self.env.game_steps * self.env.time_step
+
+        observation, reward, terminated, truncated, info = self.step_until_done(push)
+
+        self.assertEqual(info["winner"], Team.RED)  # red took it at once and held it for red_win_time
+        self.assertAlmostEqual(info["game_time"] - start, self.config.red_win_time)  # from the first tick
+
+    def test_old_carrier_cant_take_it_back_without_letting_go(self):
+        push = self.press_into_red((0.0, 0.0), (0.7, 0.0))
+        self.give_ball_to(self.env.red)
+        self.env.step(push)
+        self.assertIs(self.env.ball.possession_player, self.env.blue)  # blue was touching red: it takes the ball
+
+        for _ in range(20):  # still pressed together well past the steal cooldown
+            self.env.step(push)
+        self.assertIn(self.env.red, self.env.blue.collided_entities)
+        self.assertIs(self.env.ball.possession_player, self.env.blue)
 
 
 class TestRulesWithShortGames(KeepAwayEnvTestCase):
@@ -409,9 +496,18 @@ class TestTargetGame(KeepAwayEnvTestCase):
         with self.assertRaises(ValueError):
             KeepAwayEnv(KeepAwayConfig(n_red=1, ball_is_target=True))
         with self.assertRaises(ValueError):
-            KeepAwayEnv(KeepAwayConfig(n_red=0))
-        with self.assertRaises(ValueError):
             self.env.reset(options={"blue_has_ball": True})
+
+    def test_a_real_ball_needs_no_red(self):
+        # 2026-11-09: pass practice plays with a real ball and no red at all
+        game = KeepAwayEnv(KeepAwayConfig(n_red=0, n_blue=2))
+        try:
+            game.reset(options={"ball_holder": 0})
+            observation, reward, terminated, truncated, info = game.step([[0.0, 0.0], [0.0, 0.0]])
+            self.assertFalse(terminated)
+            self.assertIsNone(observation["red"])
+        finally:
+            game.close()
 
 
 class TestSideBySide(KeepAwayEnvTestCase):

@@ -8,6 +8,11 @@
 #     so the PyBullet adapter (pybullet_env.py) shares it. (Austin Beinder)
 #   - 2026-11-07: parse_actions also returns the kick vectors (the PyBullet
 #     adapter now kicks). The mock stays movement-only. (Austin Beinder)
+#   - 2026-11-08: Blue's speed without the ball is free_speed_factor x
+#     max_speed. (Austin Beinder)
+#   - 2026-11-08: Refuses the passing_drill scenario (it needs kicks).
+#     (Austin Beinder)
+#   - 2026-11-09: Refuses pass_practice and pass_practice_moving too. (Austin Beinder)
 #   - 2026-10-10: Generated this entire file: a kinematic 2D mock env that
 #     implements docs/ICD.md v0.2 (action repeat, per-tick termination, walls,
 #     possession radius, carry slowdown, pursuit red, goto_target scenario,
@@ -52,6 +57,8 @@ class MockEnv:
     """ICD-conformant mock env. ``reset`` and ``step`` speak plain Python types."""
 
     def __init__(self, cfg: SharedConfig):
+        if cfg.scenario in ("passing_drill", "pass_practice", "pass_practice_moving"):  # AI GENERATED (2026-11-08)
+            raise NotImplementedError(f"the mock env can't run {cfg.scenario}: it has no kicks (use the PyBullet env)")
         self.cfg = cfg
         self.n_blue, self.n_red = cfg.n_blue, cfg.n_red
         half = np.asarray(cfg.field_size, dtype=float) / 2.0
@@ -153,9 +160,9 @@ class MockEnv:
     # --- Physics -----------------------------------------------------------------
     def _tick(self, move: np.ndarray) -> None:
         cfg, dt = self.cfg, self.cfg.physics_dt
-        speed = np.full(self.n_blue, cfg.max_speed)
+        speed = np.full(self.n_blue, cfg.max_speed * cfg.free_speed_factor)  # AI GENERATED (free_speed_factor)
         if self._holder is not None and self._holder[0] == "blue":
-            speed[self._holder[1]] *= cfg.carry_speed_factor
+            speed[self._holder[1]] = cfg.max_speed * cfg.carry_speed_factor  # AI GENERATED (was *=, now not stacked)
         blue_vel = move * speed[:, None]
 
         red_vel = np.zeros((self.n_red, 2))

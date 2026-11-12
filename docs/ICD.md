@@ -18,6 +18,23 @@ Usage:
   2026-11-07: Kicking is built in the PyBullet env (the mock stays movement-only):
     §6 kick semantics, §8 release rule (no cooldown), §10 max_kick_speed and the
     new ball_damping. Decisions by Austin Beinder.
+  2026-11-07: Added the max_ball_dist reset option (§9), which the curriculum
+    (curriculum/runner.py) grows. Decision by Austin Beinder.
+  2026-11-07: §8: a kick into a wall the kicker is touching rebounds to the
+    kicker (it used to push the ball out of the arena).
+  2026-11-07: ball_damping 0.2 -> 0.4 (§10): kicks max out near 5 m.
+  2026-11-07: §8: PyBullet steals also count contacts that were already there
+    when blue got the ball (blue used to keep it while pinned against red).
+  2026-11-08: §10: free_speed_factor, blue's speed without the ball.
+  2026-11-08: §9: the passing_drill scenario (frozen blues) and the
+    drill_radius reset option.
+  2026-11-09: §7, §9: the pass_practice scenario (one kick per episode, no
+    red), its own terminal, and the pass_distance reset option.
+  2026-11-09: §9: pass_practice_moving (pass practice with the blues free to
+    move).
+  2026-11-10: §9: optional RL-side pass rules: a catch paid by its length,
+    and a minimum pass distance.
+  2026-11-11: §9: the catch_start_mix reset option (keepaway).
 Prompt summary: Draft the Gym/RL interface control document (issue #11) from
   the student's issue #7 design decisions, for teammates to review.
 Human review:   Pending review (student added the axis convention, 2026-10-10)
@@ -172,6 +189,7 @@ actions = {
 | ------------------- | ------------------------------------------------------------ | ------------------------------------- |
 | `terminated = True` | **red gains possession** (§8; checked every tick, §3)        | real game over; future value = 0      |
 | `truncated = True`  | `step` reaches `max_episode_steps`                           | time limit only; the game wasn't lost |
+| `terminated = True` | `pass_practice` only (2026-11-09): the episode's kick has played out (§9) | the one kick is over; future value = 0 |
 
 - If both happen on the same step, report `terminated = True`.
 - **The env always reports a time-out as `truncated`.** (If the RL side runs a "finite horizon" mode, it
@@ -192,10 +210,16 @@ RL side.
 - **Release:** only by a kick (§6). The kicked ball starts just in front of the kicker. **There is no
   cooldown (2026-11-07):** anyone, the kicker included, who touches the loose ball takes it, so a
   soft kick ahead and a chase is a legal dribble. (A cooldown would be hidden state, §5.)
+- **Kicks at a wall (PyBullet, 2026-11-07):** the kicked ball always starts inside the walls. If the
+  kicker is so close to the wall that the ball doesn't fit in front of them, the kick rebounds: the
+  kicker keeps the ball. It still counts as a kick (`kick_applied` is True, §6).
 - **Loose ball (PyBullet):** it slows down by `dv/dt = -ball_damping · v · (1 + |v|)`, so a ball
   released at `v` m/s rolls about `ln(1 + v) / ball_damping` m. Walls stop it dead (no bounce).
 - **Collisions:** the mock has **no player-player collisions** (players pass through each other). The
   real env's collision rule is [OPEN]; it's an expected mock-vs-sim difference.
+- **Possession by contact (PyBullet, 2026-11-07):** a red player touching the blue carrier or its ball
+  takes the ball, including when they were already touching before blue got it (a loose ball picked
+  up mid-scrum). The ball changes hands at most once per physics tick.
 - **Spawning:** a "blue possession" start places the ball on a blue player (possessed at step 0). A
   reset **never** starts with red possession: red spawns at least `min_red_ball_dist`
   (> `possession_radius`) from the ball.
@@ -227,6 +251,13 @@ options = {
     "require_blue_closer": True, # free-ball starts: the ball is closer to some blue than to any red
     "min_clearance": float,      # minimum distance between any two players at spawn (meters)
     "min_red_ball_dist": float,  # minimum red-to-ball distance at spawn (> possession_radius)
+    "max_ball_dist": float,      # free-ball starts: the ball spawns within this distance of a random
+                                 # blue (uniform in that disc); 0 = anywhere (2026-11-07, for the curriculum)
+    "drill_radius": float,       # passing_drill only: the blues' circle radius round red (2026-11-08)
+    "pass_distance": float,      # pass_practice only: each teammate's distance from the holder (2026-11-09)
+    "catch_start_mix": float,    # keepaway only: share of resets in the pass_practice layout (a blue holding
+                                 # the ball, teammates pass_distance away) plus red min_red_ball_dist from
+                                 # the ball; 0 = the usual starts (2026-11-11, for the curriculum)
 }
 ```
 
@@ -240,6 +271,26 @@ options = {
 - `goto_target`: a sanity-check task. `n_red = 0`, the ball is an **immobile target** (possession
   disabled, the ball never moves), there's no termination, only truncation. The RL side's reward is the
   negative distance from blue to the ball.
+- `passing_drill` (2026-11-08, PyBullet only): keep-away rules (red possession is terminal), but the
+  blues **can't move**: the env ignores `move` (it is still validated). `n_blue >= 2`, and the RL side
+  needs kicking on. Every episode starts with a blue holding the ball; the blues spawn spread evenly
+  round a circle of about `drill_radius` m (radius ±15%, angles ±15°) with red within 30% of the
+  radius from its centre. Only `min_clearance` and `drill_radius` apply to this layout. The RL side
+  pays its own drill reward (holding the ball after the team's first pass, plus pass shaping) and
+  masks the movement head out of PPO.
+- `pass_practice` (2026-11-09, PyBullet only): passing with no opponent. `n_blue >= 2`, `n_red = 0`,
+  kicking on, blues frozen as in `passing_drill`. A random blue starts with the ball, and every other
+  blue stands `pass_distance` m (±15%) from it in a random direction; only `min_clearance` and
+  `pass_distance` apply. One kick per episode: once a blue has kicked, the episode is `terminated` as
+  soon as some blue holds the ball again (a catch, or the kicker getting it back) or the loose ball
+  can't reach a teammate any more (what it has left to roll, `ln(1 + |v|) / ball_damping`, is less
+  than its gap to the nearest teammate other than the kicker). No kick: `truncated` at the time limit.
+  The RL side pays 1 for a catch, else up to 0.5 for how close the ball came to a teammate. RL-side
+  options (2026-11-10) can pay a catch 0.75 to 1 by its length and set a minimum pass distance.
+- `pass_practice_moving` (2026-11-09, PyBullet only): `pass_practice` with the blues free to move
+  (the holder at carry speed). A miss is `terminated` only once no teammate can reach the ball before
+  the time limit: its gap must exceed what the ball has left to roll plus what the teammate can run
+  in the time left (`max_speed * free_speed_factor`). Same spawn, reward and options.
 
 ## 10. Shared configuration
 
@@ -248,8 +299,8 @@ teammate's call. Both sides validate the config **at load**.
 
 | Key                                 | Default       | Notes                                                    |
 | ----------------------------------- | ------------- | -------------------------------------------------------- |
-| `scenario`                          | `keepaway`    | or `goto_target` (§9)                                    |
-| `n_blue`, `n_red`                   | 1, 1          | milestone 1 is 1v1; `n_red = 0` allowed (goto_target)    |
+| `scenario`                          | `keepaway`    | or `goto_target`, `passing_drill`, `pass_practice`, `pass_practice_moving` (§9) |
+| `n_blue`, `n_red`                   | 1, 1          | milestone 1 is 1v1; `n_red = 0` in goto_target, pass_practice |
 | `physics_dt`                        | 1/240 s       |                                                          |
 | `control_k`                         | 12            | → 20 Hz control                                          |
 | `max_episode_steps`                 | 300           | in control steps (15 s at 20 Hz); truncation limit       |
@@ -257,8 +308,9 @@ teammate's call. Both sides validate the config **at load**.
 | `max_speed`                         | [OPEN]        | blue's top speed (m/s)                                   |
 | `red_max_speed`                     | [OPEN]        | red's top speed; a **calibration knob** (see below)      |
 | `carry_speed_factor`                | [OPEN]        | carrier speed = factor × `max_speed`                     |
+| `free_speed_factor`                 | 1.0           | blue's speed without the ball = factor × `max_speed` (2026-11-08); doesn't stack with `carry_speed_factor` |
 | `max_kick_speed`                    | 6.0 m/s       | kick speed cap (§6); also the ball's top speed in the sim |
-| `ball_damping`                      | 0.2           | loose-ball slowdown (§8): a 6 m/s kick rolls ~9.7 m, 3 m/s ~6.9 m |
+| `ball_damping`                      | 0.4           | loose-ball slowdown (§8): a 6 m/s kick rolls ~4.9 m, 3 m/s ~3.5 m |
 | `possession_radius`                 | [OPEN]        | §8                                                       |
 | start-distribution options          | see §9        |                                                          |
 
@@ -273,7 +325,7 @@ The RL side will write a test suite against this ICD that can run on **both** th
 (it doubles as an acceptance test for the real env):
 - same seed + options → identical episode;
 - malformed actions raise;
-- `terminated` ⇒ some red has `has_possession` in `s_next`;
+- `terminated` ⇒ some red has `has_possession` in `s_next` (except in `pass_practice`, §9);
 - terminated takes priority over truncated;
 - the final `s_next` is the true final state (no auto-reset);
 - a returned `s` is never modified afterwards, by later `step()` or `reset()` calls (§5);

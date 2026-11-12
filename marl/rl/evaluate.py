@@ -16,6 +16,10 @@
 #     alignment), moved from Claude's pilot-analysis scripts at the student's
 #     request.
 #   - 2026-11-07: actor_policy sends the kick heads' actions too. (Austin Beinder)
+#   - 2026-11-08: Each episode gets its own reward memory (the passing
+#     drill's pass bookkeeping). (Austin Beinder)
+#   - 2026-11-09: Records passes per episode; summarize adds passes_mean and
+#     frac_passed (episodes with at least one pass). (Austin Beinder)
 # Prompt summary: Implement Phase 3 step 8 of the issue #7 plan (PPO update +
 #   training loop); evaluation is called by the loop.
 # Human review:   Pending review
@@ -88,11 +92,12 @@ def run_episodes(
         s, _ = env.reset(seed=int(seed), options=options)
         start_type = start_type_of(s, cfg.shared.scenario)
         base_sum = 0.0  # the task reward only: shaping is a training aid, never part of evaluation
+        memory = reward_fn.new_episode()  # AI GENERATED (2026-11-08): this episode's pass bookkeeping
         while True:
             actions = policy(s)
             s_next, terminated, truncated, info = env.step(actions)
             eff = effective_terminal(terminated, truncated, cfg.rl.horizon_mode)
-            base_sum += reward_fn.parts(s, actions, s_next, eff, truncated, info).base
+            base_sum += reward_fn.parts(s, actions, s_next, eff, truncated, info, memory).base  # AI GENERATED (memory)
             if on_step is not None:
                 on_step(s, actions, s_next, terminated, truncated)
             s = s_next
@@ -105,6 +110,7 @@ def run_episodes(
                 truncated=truncated,
                 start_type=start_type,
                 mean_reward=base_sum / s["step"],
+                passes=memory.passes,  # AI GENERATED (2026-11-09)
             )
         )
     return records
@@ -136,6 +142,10 @@ def summarize(records: Sequence[EpisodeRecord]) -> dict[str, float]:
         "len_std": float(lengths.std()) if len(records) else nan,
         "frac_truncated": float(np.mean([r.truncated for r in records])) if len(records) else nan,
         "mean_reward": float(np.mean([r.mean_reward for r in records])) if len(records) else nan,
+        ### AI GENERATED (2026-11-09)
+        "passes_mean": float(np.mean([r.passes for r in records])) if len(records) else nan,
+        "frac_passed": float(np.mean([r.passes > 0 for r in records])) if len(records) else nan,
+        ### END AI GENERATED
     }
     for st in START_TYPES:
         sel = lengths[[r.start_type == st for r in records]] if len(records) else lengths

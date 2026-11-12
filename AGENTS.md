@@ -42,6 +42,7 @@ built in the PyBullet env only (`rl.kick_enabled = true`, which needs
 | `marl/envs/` | `make_env` selector, `MockEnv` (pure-numpy ICD env), `PyBulletEnv` (ICD adapter around `KeepAwayEnv`) |
 | `marl/rl/` | PPO: networks, rollout, buffer, GAE, rewards, observations, training loop, evaluation, checkpoints, CSV logging |
 | `marl/` (top level) | `baselines.py` (random/still/flee/oracle), `calibrate.py`, `plots.py`, `watch.py` |
+| `curriculum/` | Curriculum training: `runner.py` (everything) and curriculum TOMLs such as `keepaway_1v1.toml` |
 | `scripts/` | Thin CLI wrappers: `train.py`, `evaluate.py`, `watch.py`, `calibrate.py`, `plot.py` |
 | `configs/` | Experiment configs: `keepaway_1v1.toml`, `goto_target.toml` |
 | `docs/ICD.md` | Env ↔ RL interface control document (DRAFT v0.2) |
@@ -73,7 +74,8 @@ configs/*.toml -> marl.common.config.Config
   releases the ball, ICD §8), and for `goto_target` an untouchable, immobile
   ball (`KeepAwayConfig.ball_is_target`). Kicks: `kick_vec` → the ball's
   velocity (`max_kick_speed`-capped), passed as `KeepAwayEnv.step(action,
-  kicks=...)`. No re-grab cooldown.
+  kicks=...)`. No re-grab cooldown. `Ball.play_area` keeps a kicked ball
+  inside the walls; a point-blank kick into a wall rebounds to the kicker.
 - The loose ball slows by `dv/dt = -ball_damping · v · (1 + |v|)` (pybullet's
   link damping), so a kick at `v` rolls `ln(1 + v) / ball_damping` m. Walls
   stop it dead.
@@ -83,7 +85,11 @@ configs/*.toml -> marl.common.config.Config
   env add nothing to the PPO ratio.
 - Possession in PyBullet is contact-based (player touching the ball, or an
   opponent touching the carrier), not `possession_radius`. So the same policy
-  survives longer there than in the mock. That difference is accepted. Red's
+  survives longer there than in the mock. That difference is accepted.
+  `Ball.check_held_contacts` runs every physics tick so a contact that began
+  before blue got the ball still steals (`on_new_collision` only fires on a
+  contact's first tick). Each contact gets one roll (`Ball.contested`); the
+  ball changes hands at most once per tick. Red's
   P-controller (`KeepAwayConfig.red_gain = 20`) only slows within 9 cm of the
   ball, so in practice it chases at full speed, like the mock's red.
 - `MockEnv` implements the same ICD in numpy. It's fast, so most tests and quick
@@ -112,6 +118,101 @@ configs/*.toml -> marl.common.config.Config
   because pybullet reuses freed connection ids.
 - **`marl/common/config.py` stays torch-free** so the env side can import it.
 
+## Curriculum
+
+- `curriculum/` holds only curriculum TOMLs, `__init__.py` and `runner.py`.
+  Keep all curriculum logic in `runner.py`, in plain classes; the team
+  prefers that over many small modules.
+- A curriculum is a list of stages. Each stage is a normal `train()` run with
+  its own overrides and step cap, warm-started (`init_from`) from the previous
+  stage's `final.pt`.
+- A stage can step one reset option through `levels`: CACTUS-style, from
+  `papers/currcilum.pdf`. `max_ball_dist` starts the free ball near blue and
+  grows to 0, which means anywhere. It moves up a level when a confidence gate
+  passes on the training episodes' survival fraction: the mean minus
+  `confidence` standard errors must reach `threshold`, over `window` episodes.
+- `train()` exposes two hooks for this: `init_from` and `curriculum` (an
+  object with `reset_options()`, `update(episodes)` and `finished`).
+  `eval.csv` still measures the stage's real task.
+- Warm starts work across team sizes (`checkpoint.warm_start`). Each
+  input is built from per-player blocks (`obs_blocks`, `state_blocks`). Old
+  columns move to their slot in the new layout, and new players' columns get
+  zero weight, so a grown 2v1 network first acts exactly like the 1v1 one.
+  A team can also shrink (1v1 -> 3v0 for pass practice): the removed slots'
+  columns are dropped.
+- `curriculum/keepaway_1v1.toml` has these stages:
+  1. `go_to_target`: goto_target warm-up, no gate, fixed budget.
+  2. `possession`: 1v1. Commented out for now.
+  3. `free_ball`: 1v1, `max_ball_dist` 1, 2, then 3 m. Red (1.8 m/s) is
+     faster than the carrier (1.5 m/s), so longer distances were nearly
+     unwinnable.
+  4. `two_v_one`: `n_blue = 2`, mixed starts.
+  5. `slow_two_v_one`: the same 2v1 with `free_speed_factor = 0.875`, so
+     blue is slower than red even without the ball (1.75 vs 1.8 m/s).
+
+  Kicking is on in every stage, so it needs PyBullet.
+- `curriculum/passing_3v1.toml` aims at monkey in the middle: `go_to_target`,
+  `free_ball`, `catch_moving` (moving pass practice, teammates 3.9 m away),
+  then `catch_moving_long` / `_longer` / `_longest` (minimum pass 1, 2, 3 m,
+  length bonus on), all four with `kicker_clearance`, then
+  `keepaway_from_catch` (3v1 keep-away whose resets start in the catch
+  layout, `shared.start.catch_start_mix` stepped 1, 0.5, 0), then a short
+  `go_to_target_again` (1v0), then 3v1 keep-away from a loose ball 1, 2,
+  then 3 m away, with `free_speed_factor = 0.875`.
+- `shared.start.catch_start_mix` (keepaway only, default 0): the share of
+  resets that use the pass practice layout (a blue holding the ball,
+  teammates `pass_distance` away) with each red anywhere at least
+  `min_red_ball_dist` from the ball. At 0 the spawn draws are unchanged.
+- The `pass_practice` scenario (PyBullet only, needs kicking): 3 frozen blues,
+  no red, one kick per episode. Each teammate stands
+  `shared.start.pass_distance` (±15%) from the holder. `PyBulletEnv` ends the
+  episode (`terminated`) once the kick has played out: a blue holds the ball
+  again, or the ball can't roll as far as the nearest teammate any more.
+  Reward `rl.reward.base = "pass_practice"`, paid once at the end: 1 for a
+  catch, else `0.5 · exp(-gap / 1 m)` for the ball's closest approach
+  (`PassMemory.closest`), 0 without a kick. Two options, off by default:
+  `rl.reward.pass_length_bonus` pays a catch `0.75 + 0.25 · min(1, length /
+  4 m)` (kick point to catch point; every catch still beats every miss), and
+  `rl.reward.min_pass_distance` d (m, any scenario) makes a catch nearer
+  than d to the kick point no pass, and drops teammates within d + 0.5 m of
+  it from the closest approach. The `kicker_clearance` shaping term
+  (coef c) charges the kicker `c · (1 - d / 1.5 m)` a step while its kick is
+  in play (d = its distance to the ball) and `10 c` for taking the ball
+  back, so it stops chasing its own pass. The actor isn't told who kicked.
+  These stages gate on the catch
+  rate (`StageCurriculum(catch_gate=True)`) instead of survival.
+  `train.csv` / `eval.csv` log `passes_mean` and `frac_passed` for every
+  scenario.
+- `pass_practice_moving`: the same, but the blues can move (not in
+  `FROZEN_SCENARIOS`; both are in `PASS_PRACTICE_SCENARIOS`). A miss ends
+  only once no teammate could run to the ball before the time limit.
+  `curriculum/passing_only_3v1.toml` runs it as `catch_moving` (plain
+  reward), then `catch_moving_long` (1 m minimum pass, length bonus).
+- The `passing_drill` scenario (PyBullet only, needs kicking): the blues
+  are frozen on a circle of `shared.start.drill_radius` round red, and one
+  starts with the ball. `PyBulletEnv` zeroes their `move`. The actor masks
+  the movement head out of the log-prob and entropy (`Actor.move_enabled`),
+  so a warm-started movement skill doesn't drift. Its reward is
+  `rl.reward.base = "passing_drill"`: each step a blue holds the ball pays
+  the number of passes completed so far this episode (0 before the first
+  catch, then 1, 2, ...). The `pass_progress` and
+  `pass_completed` shaping terms add credit for kicks toward a teammate and
+  for completed passes; they are not potential-based. These terms need
+  memory across steps (`PassMemory`), so every episode loop passes its own
+  `RewardModule.new_episode()` to `parts()`. One `RewardModule` is shared
+  by training and the in-process evaluator, which can both be mid-episode.
+- A stage without `threshold` has no gate and runs to its step cap. The
+  critic carries into the next stage only if the scenario and reward match;
+  otherwise only the actor does.
+- Output goes to `runs/curriculum_<name>[_<env>]_seed<seed>/<NN>_<stage>/`,
+  plus `curriculum.csv`.
+- `--start-at N` (a stage number or name) restarts a curriculum at stage N
+  after editing the TOML: stages before N are skipped, stage N warm-starts
+  from `<N-1>_<name>/checkpoints/final.pt` in the same folder (that stage's
+  name in the current TOML), and their `curriculum.csv` rows are kept. Stage
+  N onward needs `--overwrite` if it already ran. `--init-from CHECKPOINT`
+  starts the first trained stage from any checkpoint instead.
+
 ## Configuration
 
 - TOML, three sections: `[shared]` (values env and RL must agree on, ICD §10,
@@ -137,8 +238,13 @@ configs/*.toml -> marl.common.config.Config
   are only used when running `keep_away_env.py` directly. Training uses
   `SharedConfig` values (16 × 10 m, 2.0 m/s, `control_k = 12`). Red's
   1.8 m/s is the same in both.
+- Blue's speed is `max_speed × carry_speed_factor` with the ball and
+  `max_speed × free_speed_factor` without it (default 1.0). Slow blue down
+  with `free_speed_factor`, not `max_speed`: `max_speed` is also the
+  velocity unit in every observation and the action scale.
 - Both envs support `keepaway` and `goto_target` and any team sizes the config
-  allows. Only `PyBulletEnv` kicks; `MockEnv` raises on a kick it would have
+  allows; only `PyBulletEnv` runs `passing_drill`, `pass_practice` and
+  `pass_practice_moving`. Only `PyBulletEnv` kicks; `MockEnv` raises on a kick it would have
   to apply. `PyBulletEnv` also needs `physics_dt = 1/240` (pybullet's fixed
   time step).
 
@@ -147,9 +253,11 @@ configs/*.toml -> marl.common.config.Config
 Run from the repo root with the venv active.
 
 ```bash
-python scripts/train.py --config configs/keepaway_1v1.toml --seed 0   # PyBullet (the default)
-python scripts/train.py --config configs/keepaway_1v1.toml --env mock --seed 0
-python scripts/train.py --config configs/goto_target.toml
+python scripts/train.py --config configs/keepaway_1v1.toml --env pybullet --seed 0
+python scripts/train.py --config configs/goto_target.toml          # mock env (add --env pybullet for the sim)
+python curriculum/runner.py curriculum/keepaway_1v1.toml --seed 0  # PyBullet only (it kicks)
+python curriculum/runner.py curriculum/passing_3v1.toml --seed 0   # the passing drill, then 3v1
+python curriculum/runner.py curriculum/passing_3v1.toml --seed 0 --start-at 3 --overwrite  # keep stages 1-2
 python scripts/evaluate.py runs/keepaway_1v1_pybullet_seed0
 python scripts/watch.py runs/keepaway_1v1_pybullet_seed0           # newest checkpoint in the GUI
 python scripts/watch.py --baseline flee
@@ -160,8 +268,8 @@ python pybulletGame/keep_away_env.py                               # play blue w
 ```
 
 `train.py` also takes `--render` (GUI on the training env), `--debug` (sim
-collision prints), `--total-steps`, `--out-dir` and `--overwrite`. Each script
-has `--help`.
+collision prints), `--total-steps`, `--out-dir`, `--overwrite` and
+`--init-from CHECKPOINT` (warm start). Each script has `--help`.
 
 ## Outputs
 

@@ -5,6 +5,12 @@ AI edits 2026-10-31 (Claude Code, Austin Beinder): physics_client on every pybul
 teammate handoff switch, and a per-ball random generator for steals. See the markers.
 AI edit 2026-11-07 (Claude Code, Austin Beinder): the linear_damping parameter (was a fixed 1.25),
 so KeepAwayEnv can tune how far a kick rolls.
+AI edit 2026-11-07 (Claude Code, Austin Beinder): play_area, so a kick next to a wall can't place
+the ball inside the wall (pybullet then pushed it out of the arena).
+AI edit 2026-11-07 (Claude Code, Austin Beinder): check_held_contacts and `contested`, so an
+opponent who was already touching when the carrier got the ball still takes it (steals used to
+fire only on the first tick of a contact), and last_change_time: the ball changes hands at most
+once per physics step.
 """
 
 import numpy as np
@@ -51,6 +57,15 @@ class Ball(Entity):
         self.sim_time = 0.0
         self.last_steal_time = -float("inf")
 
+        # Opponents whose contact with the current carrier has already been decided (2026-11-07):
+        # they rolled for the ball, or the carrier just took it from them. check_held_contacts skips
+        # them until they stop touching. Cleared whenever the ball changes hands.
+        self.contested = set()
+        # sim_time of the last change of hands. The ball changes hands at most once per physics step,
+        # so when both teams touch it on the same step, the second touch waits for the next step
+        # (check_held_contacts) instead of instantly stealing it and becoming untouchable.
+        self.last_change_time = None
+
         # Space left between the kicker's edge and the ball's edge when the ball is kicked
         self.KICK_GAP = 0.02
 
@@ -61,6 +76,10 @@ class Ball(Entity):
         # What rolls for steals (2026-10-31). Python's random module by default; KeepAwayEnv gives
         # each game its own seeded random.Random, so games in one process don't share a sequence.
         self.rng = random
+
+        # Half the inner size of the walled field, (half_length, half_width), centred on (0, 0), or
+        # None for no walls (2026-11-07). kick_ball keeps a kicked ball inside it. KeepAwayEnv sets it.
+        self.play_area = None
         ### END AI GENERATED
 
         super().__init__(
@@ -150,18 +169,55 @@ class Ball(Entity):
             # Don't allow a steal within STEAL_COOLDOWN of the last one, so the ball
             # doesn't ping pong between players during a complex collision.
             if self.sim_time - self.last_steal_time < self.STEAL_COOLDOWN:
+                self.contested.add(collided_entity)  # 2026-11-07: this contact had its chance; no retry later
+                return changed_possession
+            # 2026-11-07: nor on the step the ball last changed hands (see last_change_time). Unlike the
+            # cooldown, this doesn't use up the contact: check_held_contacts tries it again next step.
+            if self.sim_time == self.last_change_time:
                 return changed_possession
             ### END AI GENERATED
 
             num = self.rng.randint(1, 100)  # AI GENERATED (self.rng, was the random module)
+            self.contested.add(collided_entity)  # AI GENERATED (this contact has had its roll)
 
             # 50% chance of possession flip on collision with another team
             if num > (100 - self.possession_flip_percentage):
+                victim = self.possession_player  # AI GENERATED
                 self._player_takes_possession(collided_entity)
                 changed_possession = True
                 self.last_steal_time = self.sim_time  # AI GENERATED
+                # AI GENERATED: the old carrier can't take it straight back while they're still touching
+                self.contested = {victim}
 
         return changed_possession
+
+    ### AI GENERATED (2026-11-07)
+    def check_held_contacts(self) -> bool:
+        """
+        Give opponents who are touching the carrier, or the ball, their steal roll. Call this every
+        physics step, after every entity's sync_from_pybullet.
+
+        on_new_collision only runs on the first tick of a contact. So an opponent who was already
+        touching when the carrier got the ball (a loose ball picked up mid-scrum, often pinned in a
+        corner) would never get a roll, and the carrier kept the ball for as long as they stayed in
+        contact. Each contact still gets one roll (see contested): the player the carrier took the
+        ball from has to separate and touch again, so the ball doesn't ping-pong between them.
+        Returns True if the ball changed hands.
+        """
+        holder = self.possession_player
+        if holder is None:
+            return False
+        touching = []
+        for entity in (*holder.collided_entities, *self.collided_entities):
+            if (not entity.is_wall and not entity.is_ball and entity.team not in (Team.NONE, holder.team)
+                    and entity not in touching):
+                touching.append(entity)
+        self.contested &= set(touching)  # whoever has let go gets a fresh roll next time they touch
+        for opponent in touching:
+            if opponent not in self.contested and self.on_new_collision(opponent):
+                return True
+        return False
+    ### END AI GENERATED
 
     def get_observables(self) -> dict:
         """
@@ -201,6 +257,7 @@ class Ball(Entity):
         self.possession = player.team
         self.possession_player = player
         player.ball = self
+        self.last_change_time = self.sim_time  # 2026-11-07
         ### END AI GENERATED
 
     ### AI GENERATED
@@ -216,8 +273,9 @@ class Ball(Entity):
             self.possession_player.ball = None
         self.possession_player = None
         self.possession = Team.NONE
+        self.contested = set()  # AI GENERATED (a new carrier's contacts are all undecided)
 
-    def kick_ball(self, x: float, y: float):
+    def kick_ball(self, x: float, y: float) -> bool:
         ### AI GENERATED
         """
         Release the ball and send it off with velocity (x, y).
@@ -225,20 +283,33 @@ class Ball(Entity):
         If a player was holding the ball, it is first moved to the edge of that player
         in the kick direction, so it doesn't land on top of them and get picked straight back up.
         A zero (x, y) kick has no direction, so the ball is just dropped where it is.
+
+        With play_area set, that spot is kept inside the walls (2026-11-07): placing the ball inside
+        a wall made pybullet push it out the far side. If the kicker is so close to the wall that
+        the ball doesn't fit in front of them, the kick rebounds: the kicker keeps the ball.
+        Returns whether the ball left the kicker.
         """
         kicker = self.possession_player
-        ### END AI GENERATED
-        self._release()
-
-        # Teleport to side of player
-        ### AI GENERATED
         speed = np.hypot(x, y)
+        target = None
         if kicker is not None and speed > 0:
             direction = np.array([x, y]) / speed
             # Read the kicker's live position; kicker.position is only as fresh as its last sync
             c = self.client
             kicker_xy = np.array(p.getLinkState(kicker.body_id, 2, physicsClientId=c)[0][:2])
-            target_x, target_y = kicker_xy + direction * (kicker.radius + self.radius + self.KICK_GAP)
+            target = kicker_xy + direction * (kicker.radius + self.radius + self.KICK_GAP)
+            if self.play_area is not None:
+                limit = np.asarray(self.play_area, dtype=float) - self.radius - self.KICK_GAP
+                target = np.clip(target, -limit, limit)
+                if np.linalg.norm(target - kicker_xy) < kicker.radius + self.radius:
+                    return False  # no room between the kicker and the wall: the ball bounces straight back
+        ### END AI GENERATED
+        self._release()
+
+        # Teleport to side of player
+        ### AI GENERATED
+        if target is not None:
+            target_x, target_y = target
 
             # Joint positions are relative to the base, which is why bx/by are subtracted
             bx, by, _ = p.getBasePositionAndOrientation(self.body_id, physicsClientId=c)[0]
@@ -247,6 +318,7 @@ class Ball(Entity):
         ### END AI GENERATED
 
         self.apply_velocity(x, y)
+        return True  # AI GENERATED
 
 
 if __name__ == "__main__":

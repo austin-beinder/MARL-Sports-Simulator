@@ -1,0 +1,241 @@
+# ==============================================================================
+# AI CITATION
+# Tool:    Claude Code (Claude Opus 5.5)
+# Date:    2026-11-08
+# Author:  Austin Beinder
+# Usage:
+#   - 2026-11-08: Created this file: a 3v1 passing curriculum. A goto_target
+#     warm-up, then a passing drill (frozen blues) against a red that gets
+#     faster stage by stage, then normal 3v1 keep-away.
+#   - 2026-11-08: The hold reward now grows with each catch (header comment).
+#   - 2026-11-09: Three pass_practice stages (catch_close, catch_mid,
+#     catch_far) after free_ball: one kick to a frozen teammate, no red, the
+#     teammates further away each stage.
+#   - 2026-11-09: catch_moving after catch_far: the same pass practice with the
+#     blues free to move (pass_practice_moving).
+#   - 2026-11-10: catch_moving_long after catch_moving: the same, but a pass
+#     has to go 1 m and longer catches pay a bit more.
+#   - 2026-11-10: Comments rewritten for the student's reworked stages (no
+#     drill or frozen catch stages; catch_moving_long / _longer / _longest
+#     with a 1, 2 and 3 m minimum pass); the second "catch_moving_longer"
+#     renamed catch_moving_longest (stage names must be unique).
+#   - 2026-11-11: kicker_clearance shaping in the four catch stages; the
+#     student's second go_to_target stage renamed go_to_target_again (stage
+#     names must be unique).
+#   - 2026-11-11: keepaway_from_catch after catch_moving_longest: red joins
+#     the catch layout, then the starts spread out (catch_start_mix).
+# Prompt summary: A 3v1 passing drill against a slow red with the blues frozen
+#   in range of each other: a small reward for kicking toward a teammate, a big
+#   one for lasting, nothing before the first pass; in a new curriculum TOML.
+# Human review:   Pending review
+# ==============================================================================
+# Monkey in the middle, 3v1: blues that keep the ball away from red by passing round it, not by
+# running. (See the docstring in runner.py for how stages and gates work.) Kicking is on in every
+# stage, so this needs PyBullet.
+#   1. go_to_target: movement warm-up. No red; the ball is a fixed target and the reward is minus
+#      the distance to it.
+#   2. free_ball: 1v1 keep-away from a loose ball, which starts 1, 2, then 3 m from blue.
+#   3. catch_moving: pass practice with no red and everyone free to move. One kick per episode;
+#      a catch by a teammate pays 1.
+#   4-6. catch_moving_long / _longer / _longest: the same, but a catch only counts if the ball went
+#      at least 1, 2, then 3 m from where it was kicked, and longer catches pay a bit more.
+#      Stages 3-6 also charge the kicker for staying near its own kick (kicker_clearance).
+#   7. keepaway_from_catch: 3v1 keep-away that starts in the catch layout (a blue with the ball,
+#      teammates 3.9 m away, red at least 3 m off), then less and less often (all, half, none),
+#      the rest from random positions with a blue holding the ball.
+#   8. go_to_target_again: a short goto_target refresher (30k steps).
+#   9. keepaway_3v1: normal 3v1 keep-away with the survival reward, starting from a loose ball
+#      1, 2, then 3 m from a blue. Blue is slower than red even without the ball (1.75 m/s, 1.5
+#      with it, against red's 1.8), so running away doesn't work and passing has to carry over.
+# The critic starts fresh at every stage from 3 on: each one changes the scenario or the reward,
+# and it only carries over when both match. The actor always carries over.
+#
+# The thresholds are guesses. Check train.csv's gate_mean / gate_lower (and cur_level in the
+# stages with levels) to see how close a stage came to its gate.
+
+name = "passing_3v1"
+config = "configs/keepaway_1v1.toml"  # the base experiment config (repo-relative); stages override it
+env = "pybullet"                      # PyBullet only: the mock can't kick
+
+[overrides.rl]
+kick_enabled = true
+
+[[stage]]
+name = "go_to_target"
+total_steps = 200_000     # no threshold = no gate: always runs this many steps
+[stage.overrides.shared]
+scenario = "goto_target"
+n_red = 0
+[stage.overrides.rl.reward]
+base = "goto_target"
+
+[[stage]]
+name = "free_ball"
+total_steps = 1_500_000
+option = "max_ball_dist"
+levels = [1.0, 2.0, 3.0]  # metres from blue
+threshold = 0.5          # survival fraction: blue has to get to the ball before red does
+confidence = 2.0
+window = 50
+stop_when_passed = true   # move on to the catch stages once it passes at 3 m (or at the step cap)
+
+[stage.overrides.shared.start]
+start_mix = 0.0           # every episode starts with a loose ball
+max_ball_dist = 3.0       # the stage's real task, which eval.csv measures: the ball within 3 m
+
+### AI GENERATED (2026-11-09: pass practice with the blues free to move)
+# catch_moving: the pass_practice_moving scenario. Three blues, no red; one holds the ball and
+# gets one kick per episode. Every blue can move: the holder can dribble before kicking (at carry
+# speed) and the teammates can run to meet the ball. Each teammate starts 3.9 m (+-15%) from the
+# holder. The episode ends once the kick has played out: a blue has the ball again, or no
+# teammate could get to it before the time limit. Reward (pass_practice, paid once at the end): 1
+# if a teammate catches it, else up to 0.5 for how close the ball came to a teammate, 0 for no
+# kick. The gate is on the catch rate, not survival.
+# kicker_clearance (2026-11-11, all four catch stages): while the kick is in play the kicker pays
+# 0.025 * (1 - d / 1.5 m) a step for being within 1.5 m of the ball (d = distance), and 0.25 for
+# taking it back. So the kicker learns to kick firmly and leave the ball to its teammates instead
+# of chasing it. A full kick clears 1.5 m in ~0.3 s (about 0.05 if the kicker stands still);
+# staying on the ball the whole episode costs about 0.5. Every catch still beats every miss.
+[[stage]]
+name = "catch_moving"
+total_steps = 300_000
+threshold = 0.8           # catch rate the gate's lower bound must reach
+confidence = 2.0
+window = 50
+stop_when_passed = true
+[stage.overrides.shared]
+scenario = "pass_practice_moving"
+n_blue = 3
+n_red = 0
+max_episode_steps = 100   # 5 s: time to set up and kick, a full roll, and a teammate's run
+[stage.overrides.shared.start]
+pass_distance = 3.9
+[stage.overrides.rl.reward]
+base = "pass_practice"
+shaping = [{ name = "kicker_clearance", enabled = true, coef = 0.025 }]  # see the catch_moving comment
+### END AI GENERATED
+
+### AI GENERATED (2026-11-10: catch_moving with real passes only, 1, 2 then 3 m)
+# catch_moving_long / _longer / _longest: catch_moving again with two reward options on.
+#   - min_pass_distance d (1, 2, then 3 m): a catch less than d from the kick point is no pass (it
+#     pays nothing and doesn't count for the gate), and teammates within d + 0.5 m of the kick
+#     point earn no near-miss credit. So receivers can't just run up to the holder: they have to
+#     take the ball further and further out.
+#   - pass_length_bonus: a catch pays 0.75 + 0.25 * min(1, length / 4 m), so longer passes pay a
+#     bit more, and every catch still beats every miss (at most 0.5).
+# Teammates start 3.3-4.5 m from the holder, so at 3 m a receiver can barely step toward the
+# ball. The critic starts fresh in each (the reward changes every stage).
+[[stage]]
+name = "catch_moving_long"
+total_steps = 100_000
+threshold = 0.9
+confidence = 2.0
+window = 50
+stop_when_passed = true
+[stage.overrides.shared]
+scenario = "pass_practice_moving"
+n_blue = 3
+n_red = 0
+max_episode_steps = 100
+[stage.overrides.shared.start]
+pass_distance = 3.9
+[stage.overrides.rl.reward]
+base = "pass_practice"
+shaping = [{ name = "kicker_clearance", enabled = true, coef = 0.025 }]  # see the catch_moving comment
+min_pass_distance = 1.0     # m from the kick point
+pass_length_bonus = true    # 0.75 to 1 by the pass's length (full from 4 m)
+
+[[stage]]
+name = "catch_moving_longer"
+total_steps = 100_000
+threshold = 0.9
+confidence = 2.0
+window = 50
+stop_when_passed = true
+[stage.overrides.shared]
+scenario = "pass_practice_moving"
+n_blue = 3
+n_red = 0
+max_episode_steps = 100
+[stage.overrides.shared.start]
+pass_distance = 3.9
+[stage.overrides.rl.reward]
+base = "pass_practice"
+shaping = [{ name = "kicker_clearance", enabled = true, coef = 0.025 }]  # see the catch_moving comment
+min_pass_distance = 2.0     # m from the kick point
+pass_length_bonus = true
+
+[[stage]]
+name = "catch_moving_longest"
+total_steps = 100_000
+threshold = 0.9
+confidence = 2.0
+window = 50
+stop_when_passed = true
+[stage.overrides.shared]
+scenario = "pass_practice_moving"
+n_blue = 3
+n_red = 0
+max_episode_steps = 100
+[stage.overrides.shared.start]
+pass_distance = 3.9
+[stage.overrides.rl.reward]
+base = "pass_practice"
+shaping = [{ name = "kicker_clearance", enabled = true, coef = 0.025 }]  # see the catch_moving comment
+min_pass_distance = 3.0     # m from the kick point
+pass_length_bonus = true
+### END AI GENERATED
+
+### AI GENERATED (2026-11-11: red joins the catch layout)
+# keepaway_from_catch: catch_moving with a red added. Normal 3v1 keep-away (survival reward, 15 s
+# episodes, blue slower than red), but resets start like the catch stages: a blue holding the
+# ball, the other two about 3.9 m from it, and red anywhere at least 3 m from the ball.
+# catch_start_mix is the share of resets that start that way; the levels step it from 1 to 0.5 to
+# 0 as the survival gate passes. The other resets have a random blue holding the ball with
+# everyone placed at random (start_mix = 1). eval.csv measures the last level: random positions.
+# No kicker_clearance: the survival reward takes over, as in keepaway_3v1.
+[[stage]]
+name = "keepaway_from_catch"
+total_steps = 500_000
+threshold = 0.5           # survival fraction (of 300 steps) the gate's lower bound must reach
+option = "catch_start_mix"
+levels = [1.0, 0.5, 0.0]  # share of resets in the catch layout
+confidence = 2.0
+window = 50
+stop_when_passed = true
+[stage.overrides.shared]
+n_blue = 3
+free_speed_factor = 0.875 # 1.75 m/s without the ball, under red's 1.8
+[stage.overrides.shared.start]
+pass_distance = 3.9       # as in the catch stages
+start_mix = 1.0           # the other resets: a blue holds the ball too, everyone at random
+catch_start_mix = 0.0     # the stage's real task, which eval.csv measures
+### END AI GENERATED
+
+[[stage]]
+name = "go_to_target_again"
+total_steps = 30_000     # no threshold = no gate: always runs this many steps
+[stage.overrides.shared]
+scenario = "goto_target"
+n_red = 0
+[stage.overrides.rl.reward]
+base = "goto_target"
+
+# keepaway_3v1: normal keep-away, survival reward, everyone free to move. The free ball starts
+# 1, 2, then 3 m from a blue; the level goes up when the survival gate passes. The stage trains to
+# its step cap either way (the last stage), and eval.csv measures the 3 m task throughout.
+[[stage]]
+name = "keepaway_3v1"
+total_steps = 1_000_000
+threshold = 0.5           # survival fraction (of 300 steps) the gate's lower bound must reach
+option = "max_ball_dist"
+levels = [1.0, 2.0, 3.0]  # metres from blue
+confidence = 2.0
+window = 50
+stop_when_passed = false  # the last stage: train on to the step cap
+[stage.overrides.shared]
+n_blue = 3
+free_speed_factor = 0.875 # 1.75 m/s without the ball, under red's 1.8
+[stage.overrides.shared.start]
+start_mix = 0.0           # every episode starts with a loose ball
+max_ball_dist = 3.0       # the stage's real task, which eval.csv measures: the ball within 3 m

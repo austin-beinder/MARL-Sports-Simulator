@@ -11,6 +11,12 @@
 #     differs from the survival-only control config only in the reward.
 #   - 2026-11-01: Added a test that saved configs without run.env load as the
 #     mock while new configs default to PyBullet (backlog task 3).
+#   - 2026-11-07: The reset options now include max_ball_dist. (Austin Beinder)
+#   - 2026-11-08: free_speed_factor must be in (0, 1]. (Austin Beinder)
+#   - 2026-11-08: The passing_drill scenario and the drill_radius reset
+#     option. (Austin Beinder)
+#   - 2026-11-09: The pass_distance reset option. (Austin Beinder)
+#   - 2026-11-11: The catch_start_mix reset option. (Austin Beinder)
 # Prompt summary: Implement Phase 3 step 1 of the issue #7 plan (config +
 #   validation) with expected-input, unexpected-input and corner-case tests.
 # Human review:   Pending review
@@ -31,6 +37,11 @@ from marl.common.config import (
 
 CONFIGS = Path(__file__).resolve().parents[1] / "configs"
 GOTO = {"shared": {"scenario": "goto_target", "n_red": 0}, "rl": {"reward": {"base": "goto_target"}}}
+DRILL = {  # AI GENERATED (2026-11-08)
+    "shared": {"scenario": "passing_drill", "n_blue": 3},
+    "rl": {"kick_enabled": True, "reward": {"base": "passing_drill"}},
+    "run": {"env": "pybullet"},
+}
 
 
 # --- Expected input ----------------------------------------------------------
@@ -78,7 +89,46 @@ def test_round_trip_and_overrides():
 
 def test_reset_options_match_icd_keys():
     opts = config_from_dict({}).shared.start.to_reset_options()
-    assert set(opts) == {"start_mix", "require_blue_closer", "min_clearance", "min_red_ball_dist"}
+    assert set(opts) == {"start_mix", "require_blue_closer", "min_clearance", "min_red_ball_dist", "max_ball_dist",  # AI GENERATED (max_ball_dist)
+                         "drill_radius", "pass_distance",  # AI GENERATED (2026-11-08, 2026-11-09)
+                         "catch_start_mix"}  # AI GENERATED (2026-11-11)
+
+
+def test_catch_start_mix_must_be_a_share():  # AI GENERATED (2026-11-11)
+    for bad in (-0.1, 1.5):
+        with pytest.raises(ValueError, match="catch_start_mix"):
+            config_from_dict({"shared": {"start": {"catch_start_mix": bad}}})
+
+
+### AI GENERATED (2026-11-08)
+def test_passing_drill_config_is_valid():
+    cfg = config_from_dict({**DRILL, "rl": {**DRILL["rl"], "reward": {
+        "base": "passing_drill",
+        "shaping": [{"name": "pass_progress", "enabled": True, "coef": 1.0},
+                    {"name": "pass_completed", "enabled": True, "coef": 3.0}]}}})
+    assert cfg.shared.scenario == "passing_drill" and cfg.shared.start.drill_radius == 2.0
+    assert [t.name for t in cfg.rl.reward.shaping] == ["pass_progress", "pass_completed"]
+
+
+@pytest.mark.parametrize(
+    "change, match",
+    [
+        ({"shared": {"n_blue": 1}}, "n_blue >= 2"),  # nobody to pass to
+        ({"rl": {"kick_enabled": False}}, "kick_enabled"),  # the blues could do nothing
+        ({"rl": {"reward": {"base": "survival"}}}, "passing_drill"),  # the drill has its own base reward
+        ({"shared": {"start": {"drill_radius": 0.0}}}, "drill_radius"),
+    ],
+)
+def test_bad_passing_drill_config_raises(change, match):
+    data = {k: {**v, **change.get(k, {})} for k, v in DRILL.items()}
+    with pytest.raises(ValueError, match=match):
+        config_from_dict(data)
+
+
+def test_passing_drill_base_needs_its_scenario():
+    with pytest.raises(ValueError, match="needs rl.reward.base"):
+        config_from_dict({"rl": {"reward": {"base": "passing_drill"}}})
+### END AI GENERATED
 
 
 def test_disabled_deferred_shaping_term_is_allowed():
@@ -164,6 +214,8 @@ def test_unknown_option_raises_value_error(data):
         ({"rl": {"reward": {"base": "goto_target"}}}, "needs rl.reward.base"),  # mismatch with keepaway
         ({"rl": {"ppo": {"num_minibatches": 30}}}, "divisible"),
         ({"shared": {"carry_speed_factor": 0.0}}, "carry_speed_factor"),
+        ({"shared": {"free_speed_factor": 0.0}}, "free_speed_factor"),  # AI GENERATED (2026-11-08)
+        ({"shared": {"free_speed_factor": 1.5}}, "free_speed_factor"),  # AI GENERATED (2026-11-08)
         ({"shared": {"max_speed": float("nan")}}, "finite"),
         ({"run": {"total_steps": 100}}, "total_steps"),
         (

@@ -15,6 +15,25 @@
 #     mock (backlog task 3).
 #   - 2026-11-07: Kicking: rl.kick_enabled is built (PyBullet only), added
 #     shared.ball_damping, and max_kick_speed is now used. (Austin Beinder)
+#   - 2026-11-07: Added shared.start.max_ball_dist (free ball spawns near a
+#     blue), which the curriculum grows. (Austin Beinder)
+#   - 2026-11-07: ball_damping 0.2 -> 0.4: kicks max out near 5 m instead of
+#     10 m, so kicking the ball away isn't always the best move. (Austin Beinder)
+#   - 2026-11-08: Added shared.free_speed_factor (blue's speed without the
+#     ball), for a curriculum stage where blue is always slower than red.
+#     (Austin Beinder)
+#   - 2026-11-08: The passing_drill scenario (frozen blues pass against a
+#     slow red), its reward base and pass shaping terms, and the
+#     shared.start.drill_radius reset option. (Austin Beinder)
+#   - 2026-11-09: The pass_practice scenario (one kick to a frozen teammate,
+#     no red), its reward base and the shared.start.pass_distance reset
+#     option. (Austin Beinder)
+#   - 2026-11-09: pass_practice_moving: pass practice with the blues free to
+#     move (PASS_PRACTICE_SCENARIOS). (Austin Beinder)
+#   - 2026-11-10: rl.reward.min_pass_distance and rl.reward.pass_length_bonus.
+#     (Austin Beinder)
+#   - 2026-11-11: The kicker_clearance shaping term name. (Austin Beinder)
+#   - 2026-11-11: shared.start.catch_start_mix. (Austin Beinder)
 # Prompt summary: Implement Phase 3 step 1 of the issue #7 plan (config +
 #   validation) following the student's design decisions.
 # Human review:   Pending review
@@ -49,7 +68,7 @@ from typing import Any
 # name -> (built values, interface-only values). Interface-only values raise
 # NotImplementedError ("design the interface, defer the implementation", #21).
 OPTIONS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
-    "scenario": (frozenset({"keepaway", "goto_target"}), frozenset()),
+    "scenario": (frozenset({"keepaway", "goto_target", "passing_drill", "pass_practice", "pass_practice_moving"}), frozenset()),  # AI GENERATED (drills)
     "critic_input": (frozenset({"local", "global"}), frozenset()),
     "horizon_mode": (frozenset({"infinite"}), frozenset({"finite"})),
     "obs_ordering": (frozenset({"distance"}), frozenset({"index"})),
@@ -59,13 +78,27 @@ OPTIONS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
 
 # Reward term names (#14). The registry in marl/rl/reward.py must match these
 # (a test checks it); they live here so the config can be validated at load.
-BASE_REWARD_TERMS: frozenset[str] = frozenset({"survival", "goto_target"})
-SHAPING_TERMS_BUILT: frozenset[str] = frozenset({"pbrs_ball_acquisition"})  # acquisition ablation
+BASE_REWARD_TERMS: frozenset[str] = frozenset({"survival", "goto_target", "passing_drill", "pass_practice"})  # AI GENERATED (drills)
+### AI GENERATED (pass_progress, pass_completed: 2026-11-08, for the passing drill; kicker_clearance: 2026-11-11)
+SHAPING_TERMS_BUILT: frozenset[str] = frozenset({"pbrs_ball_acquisition", "pass_progress", "pass_completed",
+                                                 "kicker_clearance"})
+### END AI GENERATED
 SHAPING_TERMS_DEFERRED: frozenset[str] = frozenset({"pbrs_red_distance"})  # #15
 
 # The base reward each scenario needs (survival is constant in goto_target,
 # and -distance is meaningless in keep-away).
-SCENARIO_BASE_REWARD: dict[str, str] = {"keepaway": "survival", "goto_target": "goto_target"}
+SCENARIO_BASE_REWARD: dict[str, str] = {
+    "keepaway": "survival",
+    "goto_target": "goto_target",
+    "passing_drill": "passing_drill",  # AI GENERATED (2026-11-08)
+    "pass_practice": "pass_practice",  # AI GENERATED (2026-11-09)
+    "pass_practice_moving": "pass_practice",  # AI GENERATED (2026-11-09): the same reward, blues free to move
+}
+# The scenarios whose blues can't move: the env ignores their move actions and the actor masks
+# the movement head out of PPO (2026-11-09).
+FROZEN_SCENARIOS: frozenset[str] = frozenset({"passing_drill", "pass_practice"})  # AI GENERATED
+# One kick per episode, no red, gated on the catch rate (2026-11-09); only pass_practice is frozen.
+PASS_PRACTICE_SCENARIOS: frozenset[str] = frozenset({"pass_practice", "pass_practice_moving"})  # AI GENERATED
 
 
 # --- Schema ----------------------------------------------------------------
@@ -77,6 +110,21 @@ class StartConfig:
     require_blue_closer: bool = True
     min_clearance: float = 1.0  # meters between any two players at spawn
     min_red_ball_dist: float = 3.0  # meters; must exceed possession_radius
+    # Free-ball starts: the ball spawns within this many meters of a blue player. 0 = anywhere
+    # (the real task). The curriculum starts it small and grows it (CACTUS-style).
+    max_ball_dist: float = 0.0  # AI GENERATED
+    ### AI GENERATED (2026-11-08)
+    # passing_drill only: the blues stand on a circle of about this radius (m) around red, evenly
+    # spread (3 blues at 2.0 m are ~3.5 m apart). The other options above don't apply to the drill.
+    drill_radius: float = 2.0
+    ### END AI GENERATED
+    # pass_practice only (2026-11-09): every other blue stands about this far (m) from the blue
+    # holding the ball. A full kick rolls ~4.9 m, so keep it under ~4.2 (the +-15% jitter).
+    pass_distance: float = 2.0  # AI GENERATED
+    # keepaway only (2026-11-11): the share of resets that start in the pass practice layout (a
+    # blue holding the ball, its teammates pass_distance away) with red anywhere min_red_ball_dist
+    # from the ball. A curriculum steps it from 1 to 0. 0 = the usual starts.
+    catch_start_mix: float = 0.0  # AI GENERATED
 
     def to_reset_options(self) -> dict[str, Any]:
         return dataclasses.asdict(self)
@@ -96,11 +144,15 @@ class SharedConfig:
     max_speed: float = 2.0
     red_max_speed: float = 1.8  # calibrated 2026-10-11: flee survives 50% of max steps (#22)
     carry_speed_factor: float = 0.75
+    # Blue's speed WITHOUT the ball, as a fraction of max_speed (2026-11-08, Austin Beinder). 1.0 is
+    # the normal game. Below red_max_speed / max_speed (0.9) blue is slower than red all the time. It
+    # doesn't touch max_speed, which is also the velocity unit of every observation.
+    free_speed_factor: float = 1.0  # AI GENERATED
     ### AI GENERATED
     max_kick_speed: float = 6.0  # kick speed cap (ICD §6); also the ball's top speed in the sim
     # How fast a loose ball slows down in the sim: dv/dt = -ball_damping * v * (1 + |v|), so a ball
-    # kicked at v m/s rolls about ln(1 + v) / ball_damping metres (9.7 m at 6 m/s). PyBullet only.
-    ball_damping: float = 0.2
+    # kicked at v m/s rolls about ln(1 + v) / ball_damping metres (4.9 m at 6 m/s). PyBullet only.
+    ball_damping: float = 0.4  # 0.2 (~10 m kicks) made "kick it away" the answer to everything
     ### END AI GENERATED
     possession_radius: float = 0.5
     player_radius: float = 0.25
@@ -123,6 +175,10 @@ class ShapingTerm:
 class RewardConfig:
     base: str = "survival"
     shaping: tuple[ShapingTerm, ...] = ()
+    ### AI GENERATED (2026-11-10: pass length rules, marl/rl/reward.py)
+    min_pass_distance: float = 0.0  # m: a catch nearer the kick point is no pass; 0 = any catch counts
+    pass_length_bonus: bool = False  # pass_practice: a catch pays 0.75 to 1 by its length, not a flat 1
+    ### END AI GENERATED
 
 
 @dataclass(frozen=True)
@@ -326,6 +382,12 @@ def _validate_shared(s: SharedConfig) -> None:
     _require(s.n_red >= 0, "shared.n_red must be >= 0")
     if s.scenario == "keepaway":
         _require(s.n_red >= 1, "keepaway needs n_red >= 1 (termination = red possession)")
+    ### AI GENERATED (2026-11-08)
+    elif s.scenario == "passing_drill":
+        _require(s.n_blue >= 2 and s.n_red >= 1, "passing_drill needs n_blue >= 2 (someone to pass to) and n_red >= 1")
+    elif s.scenario in PASS_PRACTICE_SCENARIOS:  # 2026-11-09
+        _require(s.n_blue >= 2 and s.n_red == 0, f"{s.scenario} needs n_blue >= 2 (someone to pass to) and n_red = 0")
+    ### END AI GENERATED
     else:  # goto_target (ICD §9)
         _require(s.n_blue == 1 and s.n_red == 0, "goto_target needs n_blue = 1, n_red = 0")
     _require(s.physics_dt > 0, "shared.physics_dt must be > 0")
@@ -334,6 +396,7 @@ def _validate_shared(s: SharedConfig) -> None:
     for name in ("max_speed", "red_max_speed", "max_kick_speed", "possession_radius", "player_radius"):
         _require(getattr(s, name) > 0, f"shared.{name} must be > 0")
     _require(0 < s.carry_speed_factor <= 1, "shared.carry_speed_factor must be in (0, 1]")
+    _require(0 < s.free_speed_factor <= 1, "shared.free_speed_factor must be in (0, 1]")  # AI GENERATED
     _require(s.ball_damping >= 0, "shared.ball_damping must be >= 0")  # AI GENERATED
     _require(
         all(L > 2 * s.player_radius for L in s.field_size),
@@ -349,6 +412,15 @@ def _validate_shared(s: SharedConfig) -> None:
         st.min_red_ball_dist > s.possession_radius,
         "shared.start.min_red_ball_dist must be > possession_radius (no start inside red's reach)",
     )
+    ### AI GENERATED
+    _require(
+        st.max_ball_dist == 0 or st.max_ball_dist > s.possession_radius,
+        "shared.start.max_ball_dist must be 0 (anywhere) or > possession_radius (a free ball must start loose)",
+    )
+    _require(st.drill_radius > 0, "shared.start.drill_radius must be > 0")
+    _require(st.pass_distance > 0, "shared.start.pass_distance must be > 0")  # 2026-11-09
+    _require(0.0 <= st.catch_start_mix <= 1.0, "shared.start.catch_start_mix must be in [0, 1]")  # AI GENERATED (2026-11-11)
+    ### END AI GENERATED
 
 
 def _validate_rl(cfg: Config) -> None:
@@ -358,6 +430,8 @@ def _validate_rl(cfg: Config) -> None:
     ### AI GENERATED (2026-11-07: kicking is built, in the PyBullet env only)
     if rl.kick_enabled and cfg.run.env != "pybullet":
         raise NotImplementedError("rl.kick_enabled=true needs run.env = 'pybullet': the mock env has no ball physics")
+    if s.scenario in FROZEN_SCENARIOS | PASS_PRACTICE_SCENARIOS:  # 2026-11-08: passing needs kicks
+        _require(rl.kick_enabled, f"{s.scenario} needs rl.kick_enabled = true (the blues can only kick)")
     ### END AI GENERATED
     _require(rl.horizon_seconds > 0, "rl.horizon_seconds must be > 0")
     _require(
@@ -381,6 +455,7 @@ def _validate_rl(cfg: Config) -> None:
         seen.add(term.name)
         if term.enabled and term.name in SHAPING_TERMS_DEFERRED:
             raise NotImplementedError(f"shaping term {term.name!r} is interface-only for milestone 1 (#15)")
+    _require(rw.min_pass_distance >= 0, "rl.reward.min_pass_distance must be >= 0")  # AI GENERATED (2026-11-10)
 
     p = rl.ppo
     for name in ("rollout_steps", "num_minibatches", "update_epochs"):

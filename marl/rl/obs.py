@@ -9,6 +9,8 @@
 #     possession + visible flags, distance ordering), design #13.
 #   - 2026-11-07: Named the own-possession index (OWN_POSSESSION), which the
 #     actor's kick masks read. (Austin Beinder)
+#   - 2026-11-07: obs_blocks, the layout as blocks, so a warm start can grow
+#     the actor's first layer when the team sizes change. (Austin Beinder)
 # Prompt summary: Implement Phase 3 step 4 of the issue #7 plan (state
 #   flattener + obs builder).
 # Human review:   Pending review
@@ -44,6 +46,13 @@ from marl.rl.state import StateArrays
 SELF_DIM = 5
 SLOT_DIM = 6
 OWN_POSSESSION = 4  # index of "I hold the ball" in o_i; the actor's kick masks read it  # AI GENERATED
+
+
+### AI GENERATED
+def obs_blocks(n_blue: int, n_red: int) -> list[tuple[str, int, int]]:
+    """The layout above as (block, numbers per slot, slots), in order."""
+    return [("self", SELF_DIM, 1), ("teammates", SLOT_DIM, n_blue - 1), ("reds", SLOT_DIM, n_red), ("ball", SLOT_DIM, 1)]
+### END AI GENERATED
 
 
 class ObsBuilder:

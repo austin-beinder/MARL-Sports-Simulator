@@ -13,6 +13,11 @@
 #   - 2026-11-07: The kick heads behind kick_enabled: a Bernoulli kick_trigger
 #     and a Beta kick_vec, masked by possession (read from o_i) and by the
 #     trigger. (Austin Beinder)
+#   - 2026-11-08: move_enabled=False (the passing drill, where the blues
+#     can't move) masks the movement head out of the log-prob and entropy.
+#     (Austin Beinder)
+#   - 2026-11-09: The same for pass_practice (config.FROZEN_SCENARIOS).
+#     (Austin Beinder)
 # Prompt summary: Implement Phase 3 step 6 of the issue #7 plan (actor/critic
 #   + Beta movement head + action adapter).
 # Human review:   Pending review
@@ -70,7 +75,7 @@ from torch import nn
 from torch.distributions import Bernoulli, Beta, Distribution  # AI GENERATED (Bernoulli, Distribution)
 from torch.nn import functional as F
 
-from marl.common.config import Config
+from marl.common.config import FROZEN_SCENARIOS, Config  # AI GENERATED (FROZEN_SCENARIOS)
 from marl.rl.obs import OWN_POSSESSION  # AI GENERATED
 
 MOVE = "move"  # head name (matches the ICD §6 action key)
@@ -138,6 +143,7 @@ class Actor(nn.Module):
         hidden_sizes: Sequence[int] = (64, 64),
         beta_eps: float = 1e-6,
         kick_enabled: bool = False,  # AI GENERATED
+        move_enabled: bool = True,  # AI GENERATED (2026-11-08)
     ):
         super().__init__()
         if not 0.0 < beta_eps < 0.5:
@@ -147,6 +153,10 @@ class Actor(nn.Module):
         self.heads = nn.ModuleDict({MOVE: BetaHead(hidden_sizes[-1], action_dim=2)})
         ### AI GENERATED
         self.kick_enabled = kick_enabled
+        # False when the env ignores move (passing_drill, pass_practice): the move head still samples, but adds
+        # nothing to the log-prob or entropy, so it neither learns noise nor drifts (2026-11-08).
+        # A flag, not a weight: checkpoints load the same either way.
+        self.move_enabled = move_enabled
         if kick_enabled:
             self.heads[KICK_TRIGGER] = BernoulliHead(hidden_sizes[-1], KICK_PRIOR)
             self.heads[KICK_VEC] = BetaHead(hidden_sizes[-1], action_dim=2)
@@ -176,7 +186,7 @@ class Actor(nn.Module):
             ### END AI GENERATED
             x = d.mean if deterministic else d.sample()
             samples[name] = x.clamp(self.beta_eps, 1.0 - self.beta_eps)
-        return samples, _joint_log_prob(dists, samples, _head_masks(obs, samples))  # AI GENERATED (masks)
+        return samples, _joint_log_prob(dists, samples, _head_masks(obs, samples, self.move_enabled))  # AI GENERATED (masks)
 
     def evaluate(
         self, obs: torch.Tensor, samples: dict[str, torch.Tensor]
@@ -190,23 +200,26 @@ class Actor(nn.Module):
         dists = self.distributions(obs)
         ### AI GENERATED (kick-head entropy gated by possession, #10)
         holds = (obs[..., OWN_POSSESSION] > 0.5).float()
-        head_entropy = {name: d.entropy().sum(-1) * (1.0 if name == MOVE else holds) for name, d in dists.items()}
+        moves = 1.0 if self.move_enabled else 0.0  # 2026-11-08: a frozen blue's move head has no entropy bonus
+        head_entropy = {name: d.entropy().sum(-1) * (moves if name == MOVE else holds) for name, d in dists.items()}
         ### END AI GENERATED
         entropy = torch.stack(list(head_entropy.values())).sum(0)
-        return _joint_log_prob(dists, samples, _head_masks(obs, samples)), entropy, head_entropy  # AI GENERATED (masks)
+        return _joint_log_prob(dists, samples, _head_masks(obs, samples, self.move_enabled)), entropy, head_entropy  # AI GENERATED (masks)
 
 
 ### AI GENERATED
-def _head_masks(obs: torch.Tensor, samples: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+def _head_masks(obs: torch.Tensor, samples: dict[str, torch.Tensor], move_enabled: bool = True) -> dict[str, torch.Tensor]:
     """Per-head [B] masks: 1 where the head's sample can affect the env (#10).
 
     The trigger matters only if the agent holds the ball at the start of the step, and the kick
-    vector only if it also kicks. The movement head always matters (no mask).
+    vector only if it also kicks. The movement head always matters, unless the env ignores it
+    (``move_enabled`` False, the passing drill, 2026-11-08).
     """
+    masks = {} if move_enabled else {MOVE: torch.zeros(obs.shape[:-1])}
     if KICK_TRIGGER not in samples:
-        return {}
+        return masks
     holds = (obs[..., OWN_POSSESSION] > 0.5).float()
-    return {KICK_TRIGGER: holds, KICK_VEC: holds * samples[KICK_TRIGGER].squeeze(-1)}
+    return {**masks, KICK_TRIGGER: holds, KICK_VEC: holds * samples[KICK_TRIGGER].squeeze(-1)}
 
 
 def _joint_log_prob(
@@ -214,8 +227,9 @@ def _joint_log_prob(
 ) -> torch.Tensor:
     """Sum of log-probs over every head and component (independent factors).
 
-    One joint log-prob per (t, i) -> one PPO ratio per (t, i) (#20). The movement head is
-    always counted; a masked kick head (#10) adds 0 where it can't affect the env.
+    One joint log-prob per (t, i) -> one PPO ratio per (t, i) (#20). A masked head (#10) adds 0
+    where it can't affect the env: the kick heads without the ball, the movement head in the
+    passing drill (2026-11-08).
     """
     if set(samples) != set(dists):
         raise ValueError(f"samples have heads {sorted(samples)}, the actor has {sorted(dists)}")
@@ -263,7 +277,8 @@ def critic_input(mode: str, obs: np.ndarray, state_flat: np.ndarray) -> np.ndarr
 def build_networks(cfg: Config, obs_dim: int, state_dim: int) -> tuple[Actor, Critic]:
     """Actor + critic sized from the config. Seed torch first for a reproducible init."""
     hidden = cfg.rl.ppo.hidden_sizes
-    actor = Actor(obs_dim, hidden, cfg.rl.beta_eps, kick_enabled=cfg.rl.kick_enabled)  # AI GENERATED (kick_enabled)
+    actor = Actor(obs_dim, hidden, cfg.rl.beta_eps, kick_enabled=cfg.rl.kick_enabled,  # AI GENERATED (kick_enabled)
+                  move_enabled=cfg.shared.scenario not in FROZEN_SCENARIOS)  # AI GENERATED (2026-11-08: frozen blues)
     critic = Critic(critic_input_dim(cfg.rl.critic_input, obs_dim, state_dim), hidden)
     return actor, critic
 
