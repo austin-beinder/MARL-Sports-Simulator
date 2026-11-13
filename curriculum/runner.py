@@ -16,6 +16,9 @@
 #   - 2026-11-09: So do pass_practice_moving stages. (Austin Beinder)
 #   - 2026-11-11: --start-at / --init-from: restart a curriculum from a later
 #     stage, keeping the earlier stages' output and curriculum.csv rows.
+#   - 2026-11-11: Pass practice stages gate on the pass completion rate
+#     (passes / kicks per episode): pass_practice_moving episodes now have
+#     many kicks.
 # Prompt summary: Lay out a curriculum for keep-away: a possession stage, then
 #   a free-ball stage whose ball starts close and moves further away (CACTUS).
 # Human review:   Pending review
@@ -47,9 +50,10 @@ Difficulty levels (the CACTUS idea, Phan et al. 2024, papers/currcilum.pdf):
 - A stage ends at its step cap, or, with stop_when_passed, as soon as the gate passes on its
   last level. A stage without a threshold has no gate and always runs to its cap (e.g. a
   goto_target warm-up, whose episodes never end early, so survival says nothing).
-- pass_practice and pass_practice_moving stages (2026-11-09) score each episode 1 if a teammate caught the kick, else 0,
-  instead of survival (their episodes end as soon as the kick plays out), so the gate is on the
-  catch rate.
+- pass_practice and pass_practice_moving stages (2026-11-09) score each episode by its pass
+  completion rate, passes / kicks (0 without a kick), instead of survival, so the gate is on the
+  catch rate. A pass_practice episode has one kick, so it scores 1 for a catch, else 0;
+  pass_practice_moving runs to the time limit with many kicks (2026-11-11).
 - The next stage always starts from the actor. It keeps the critic too only if the scenario and
   reward are the same (a critic trained on goto_target's -distance would be wrong for keep-away).
 
@@ -211,7 +215,7 @@ class StageCurriculum:
 
     def __init__(self, stage: Stage, base_options: dict, max_episode_steps: int, log=say, catch_gate: bool = False):
         self.stage = stage
-        self.catch_gate = catch_gate  # 2026-11-09: score episodes by catch (pass_practice), not survival
+        self.catch_gate = catch_gate  # 2026-11-09: score episodes by passes / kicks (pass practice), not survival
         self.base_options = dict(base_options)
         self.max_episode_steps = max_episode_steps
         self.log = log
@@ -236,7 +240,7 @@ class StageCurriculum:
 
     def update(self, episodes) -> dict:
         if self.catch_gate:
-            self.gate.add(1.0 if episode.passes else 0.0 for episode in episodes)
+            self.gate.add(episode.passes / episode.kicks if episode.kicks else 0.0 for episode in episodes)  # 2026-11-11
         else:
             self.gate.add(episode.length / self.max_episode_steps for episode in episodes)
         # Log the gate as it was when the decision was made, before a level change clears it

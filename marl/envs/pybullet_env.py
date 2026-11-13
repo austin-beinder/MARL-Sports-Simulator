@@ -24,6 +24,9 @@
 #     episode ends once the one kick has played out.
 #   - 2026-11-09: pass_practice_moving: the same, with the blues free to move;
 #     a teammate who can still run to the ball in time keeps the kick alive.
+#   - 2026-11-11: pass_practice_moving no longer ends when a kick plays out:
+#     it runs to the time limit, with as many kicks as the blues like.
+#     (Austin Beinder)
 # Prompt summary: Integrate the MARL layer with the PyBullet env through an
 #   adapter with MockEnv's reset/step interface.
 # Human review:   Pending review
@@ -51,10 +54,9 @@ and translates in both directions:
   more: what it has left to roll (``ln(1 + |v|) / ball_damping``) is less than the gap to the
   nearest teammate. A slow ball crawls for seconds, so waiting for it to stop would mostly hit
   the time limit (§7, §9).
-* pass_practice_moving (2026-11-09): pass_practice with the blues free to move. A teammate can run
-  to the ball, so a miss ends only once no teammate can get there before the time limit: the gap
-  must exceed what the ball has left to roll plus what the teammate can run in the time left
-  (``max_speed * free_speed_factor``).
+* pass_practice_moving (2026-11-09): pass_practice with the blues free to move and, since
+  2026-11-11, no one-kick limit: the episode runs to the time limit (``truncated``), and the blues can pass as
+  often as they like. After a miss somebody has to fetch the loose ball.
 
 Possession is contact-based in the sim (player edge touching ball edge, or an opponent touching
 the carrier), not ``possession_radius``. A kicker can touch the ball again at once (no cooldown).
@@ -88,7 +90,7 @@ class PyBulletEnv:
         self.cfg = cfg
         self.n_blue, self.n_red = cfg.n_blue, cfg.n_red
         self._frozen = cfg.scenario in FROZEN_SCENARIOS  # AI GENERATED (2026-11-08): blues stand still
-        self._one_kick = cfg.scenario in PASS_PRACTICE_SCENARIOS  # AI GENERATED (2026-11-09): ends when the kick plays out
+        self._one_kick = cfg.scenario == "pass_practice"  # AI GENERATED (2026-11-09; frozen only 2026-11-11): ends when the kick plays out
         self._kicker: int | None = None  # AI GENERATED (2026-11-09): who kicked this episode (pass_practice)
         Entity.print_collisions = print_collisions
         episode_time = cfg.max_episode_steps * cfg.control_k * cfg.physics_dt
@@ -142,7 +144,7 @@ class PyBulletEnv:
         self._place(sp.blue_pos, sp.red_pos, sp.ball_pos, sp.holder)
         self._step = 0
         s = self._state()
-        if (self._frozen or self._one_kick) and not any(b["has_possession"] for b in s["blue"]):  # AI GENERATED (2026-11-08)
+        if (self._frozen or self.cfg.scenario in PASS_PRACTICE_SCENARIOS) and not any(b["has_possession"] for b in s["blue"]):  # AI GENERATED (2026-11-08)
             raise RuntimeError(f"a {self.cfg.scenario} episode must start with a blue holding the ball")  # AI GENERATED
         return s, self._info([])
 
@@ -182,9 +184,8 @@ class PyBulletEnv:
 
     ### AI GENERATED (2026-11-09)
     def _kick_played_out(self) -> bool:
-        """pass practice: a blue holds the ball again, or the loose ball and no teammate can meet in time
-        (frozen teammates can't move; moving ones can run max_speed * free_speed_factor until the
-        time limit)."""
+        """pass_practice: a blue holds the ball again, or the loose ball can't roll as far as a (frozen)
+        teammate any more. (pass_practice_moving runs to the time limit instead, 2026-11-11.)"""
         ball = self._game.ball
         if ball.possession_player is not None:
             return True
@@ -193,11 +194,9 @@ class PyBulletEnv:
         speed = float(np.linalg.norm(np.asarray(ball.velocity, dtype=float)[:2]))
         roll_left = np.log1p(speed) / self.cfg.ball_damping
         pos = np.asarray(ball.position, dtype=float)[:2]
-        time_left = (self.cfg.max_episode_steps - self._step) * self.cfg.dt_control
-        run = 0.0 if self._frozen else self.cfg.max_speed * self.cfg.free_speed_factor * time_left
         gap = min(np.linalg.norm(np.asarray(b.position, dtype=float)[:2] - pos) - self.cfg.player_radius - ball.radius
                   for i, b in enumerate(self._game.blues) if i != self._kicker)
-        return roll_left + run < gap
+        return roll_left < gap
     ### END AI GENERATED
 
     def close(self) -> None:

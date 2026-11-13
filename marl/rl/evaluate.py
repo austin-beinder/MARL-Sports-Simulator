@@ -20,6 +20,8 @@
 #     drill's pass bookkeeping). (Austin Beinder)
 #   - 2026-11-09: Records passes per episode; summarize adds passes_mean and
 #     frac_passed (episodes with at least one pass). (Austin Beinder)
+#   - 2026-11-11: Records kicks per episode; summarize adds pass_rate (passes
+#     per kick, over all the episodes). (Austin Beinder)
 # Prompt summary: Implement Phase 3 step 8 of the issue #7 plan (PPO update +
 #   training loop); evaluation is called by the loop.
 # Human review:   Pending review
@@ -111,6 +113,7 @@ def run_episodes(
                 start_type=start_type,
                 mean_reward=base_sum / s["step"],
                 passes=memory.passes,  # AI GENERATED (2026-11-09)
+                kicks=memory.kicks,  # AI GENERATED (2026-11-11)
             )
         )
     return records
@@ -146,12 +149,21 @@ def summarize(records: Sequence[EpisodeRecord]) -> dict[str, float]:
         "passes_mean": float(np.mean([r.passes for r in records])) if len(records) else nan,
         "frac_passed": float(np.mean([r.passes > 0 for r in records])) if len(records) else nan,
         ### END AI GENERATED
+        "pass_rate": _pass_rate(records),  # AI GENERATED (2026-11-11)
     }
     for st in START_TYPES:
         sel = lengths[[r.start_type == st for r in records]] if len(records) else lengths
         out[f"n_{st}"] = len(sel)
         out[f"len_mean_{st}"] = float(sel.mean()) if len(sel) else nan
     return out
+
+
+### AI GENERATED (2026-11-11)
+def _pass_rate(records: Sequence[EpisodeRecord]) -> float:
+    """Passes completed per kick over all the episodes (nan without kicks)."""
+    kicks = sum(r.kicks for r in records)
+    return sum(r.passes for r in records) / kicks if kicks else float("nan")
+### END AI GENERATED
 
 
 # --- The race for a loose ball (PBRS acquisition ablation) ------------------------------

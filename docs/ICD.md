@@ -35,6 +35,8 @@ Usage:
   2026-11-10: §9: optional RL-side pass rules: a catch paid by its length,
     and a minimum pass distance.
   2026-11-11: §9: the catch_start_mix reset option (keepaway).
+  2026-11-11: §9: pass_practice_moving runs to the time limit (no one-kick
+    limit); the RL side pays each catch when it happens.
 Prompt summary: Draft the Gym/RL interface control document (issue #11) from
   the student's issue #7 design decisions, for teammates to review.
 Human review:   Pending review (student added the axis convention, 2026-10-10)
@@ -287,10 +289,11 @@ options = {
   than its gap to the nearest teammate other than the kicker). No kick: `truncated` at the time limit.
   The RL side pays 1 for a catch, else up to 0.5 for how close the ball came to a teammate. RL-side
   options (2026-11-10) can pay a catch 0.75 to 1 by its length and set a minimum pass distance.
-- `pass_practice_moving` (2026-11-09, PyBullet only): `pass_practice` with the blues free to move
-  (the holder at carry speed). A miss is `terminated` only once no teammate can reach the ball before
-  the time limit: its gap must exceed what the ball has left to roll plus what the teammate can run
-  in the time left (`max_speed * free_speed_factor`). Same spawn, reward and options.
+- `pass_practice_moving` (2026-11-09, PyBullet only): `pass_practice`'s spawn with the blues free to
+  move (the holder at carry speed). Since 2026-11-11 there is no one-kick limit and no `terminated`:
+  every episode runs to the time limit (`truncated`), and the blues pass as often as they like. After
+  a miss somebody has to fetch the loose ball. The RL side pays each catch on the step it happens
+  (`pass_catch`), with the same RL-side options.
 
 ## 10. Shared configuration
 

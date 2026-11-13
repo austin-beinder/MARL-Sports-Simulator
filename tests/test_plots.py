@@ -18,6 +18,9 @@
 #     are kept.
 #   - 2026-11-01: Added tests for the demo fixes (stacked close labels, early
 #     ends labeled to the right, single-seed labels and legends).
+#   - 2026-11-13: Curriculum run figures on a synthetic curriculum run (a
+#     stale stage is left out; no catch figure without pass practice
+#     stages). (Austin Beinder)
 # Prompt summary: Implement Phase 3 step 11 of the issue #7 plan (plots for the
 #   midterm from the 5-seed keep-away runs); later, task 2's plotting refactor.
 # Human review:   Pending review
@@ -25,6 +28,7 @@
 import csv
 import json
 import math
+import os  # AI GENERATED (2026-11-13)
 from pathlib import Path
 
 import matplotlib
@@ -40,8 +44,10 @@ from marl.plots import (
     Series,
     SweepPoint,
     _end_labels,
+    curriculum_stages,  # AI GENERATED (2026-11-13)
     assign_colors,
     eval_curves,
+    fig_catch_stages,  # AI GENERATED (2026-11-13)
     fig_curves,
     main,
     mean_std,
@@ -384,6 +390,60 @@ def test_close_line_ends_get_labels_on_opposite_sides():
     plt.close(fig)
     # the close pair splits (higher above); the lone end steps away from the reference just below it
     assert va == {"low": "top", "high": "bottom", "alone": "bottom"}
+
+
+### AI GENERATED (2026-11-13)
+def fake_curriculum(root):
+    """A curriculum run: a finished, gated pass practice stage; a keep-away stage with levels, still
+    running; and a third stage left over from an earlier attempt (older than the second)."""
+    run = root / "curriculum_x_seed0"
+    run.mkdir(parents=True)
+    (run / "curriculum.toml").write_text(
+        'name = "x"\nconfig = "configs/keepaway_1v1.toml"\n'
+        '[[stage]]\nname = "catch"\ntotal_steps = 4096\nthreshold = 0.8\n'
+        '[[stage]]\nname = "keepaway"\ntotal_steps = 8192\nthreshold = 0.5\noption = "max_ball_dist"\nlevels = [1.0, 2.0]\n'
+        '[[stage]]\nname = "old"\ntotal_steps = 2048\n', encoding="utf-8")
+    shared = {"physics_dt": 1 / 240, "control_k": 12, "max_episode_steps": 300, "n_blue": 3, "red_max_speed": 1.8}
+    stages = [("catch", "pass_practice_moving", 0, 2, True), ("keepaway", "keepaway", 1, 3, False), ("old", "keepaway", 1, 1, True)]
+    for k, (name, scenario, n_red, iterations, finished) in enumerate(stages, 1):
+        d = run / f"{k:02d}_{name}"
+        (d / "checkpoints").mkdir(parents=True)
+        (d / "config.json").write_text(json.dumps({"shared": {**shared, "scenario": scenario, "n_red": n_red}}))
+        write_csv(d / "train.csv", [
+            {"iteration": i, "env_steps": 2048 * i, "ep_len_mean": 100 * i, "gate_mean": 0.5, "gate_lower": 0.4,
+             "cur_level": int(i >= 3), "reward_mean_unscaled": 0.1, "ep_passes_mean": i,
+             "reward_shaping_mean_unscaled": 0.01, "kicks_per_step": 0.02} for i in range(1, iterations + 1)])
+        write_csv(d / "eval.csv", [
+            {"iteration": 0, "env_steps": 0, "mode": mode, "len_mean": 150, "passes_mean": 1.0, "pass_rate": 0.5}
+            for mode in ("stochastic", "deterministic")])
+        if finished:
+            (d / "checkpoints" / "final.pt").write_bytes(b"")
+    os.utime(run / "03_old" / "train.csv", (0, 0))
+    return run
+
+
+def test_curriculum_stages_stop_at_one_left_from_an_earlier_attempt(tmp_path):
+    run = fake_curriculum(tmp_path)
+    assert [d.name for d, _, _ in curriculum_stages(run)] == ["01_catch", "02_keepaway"]
+
+
+def test_curriculum_figures_are_written(tmp_path, capsys):
+    run = fake_curriculum(tmp_path)
+    out = tmp_path / "figures"
+    assert main(["--curriculum", str(run), "--out", str(out)]) == 0
+    for name in ("curriculum_x_seed0_progress", "curriculum_x_seed0_catch"):
+        assert (out / f"{name}.png").exists() and (out / f"{name}.pdf").exists()
+    assert "results_tables.md" not in {p.name for p in out.iterdir()}  # the report figures aren't made
+
+
+def test_no_catch_figure_without_pass_practice_stages(tmp_path):
+    run = fake_curriculum(tmp_path)
+    config = run / "01_catch" / "config.json"
+    data = json.loads(config.read_text())
+    data["shared"]["scenario"] = "keepaway"
+    config.write_text(json.dumps(data))
+    assert fig_catch_stages(run, tmp_path) is None
+### END AI GENERATED
 
 
 def test_three_close_ends_stack_and_early_ends_label_to_the_right():

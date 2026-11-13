@@ -24,6 +24,28 @@
 #     names must be unique).
 #   - 2026-11-11: keepaway_from_catch after catch_moving_longest: red joins
 #     the catch layout, then the starts spread out (catch_start_mix).
+#   - 2026-11-11: The catch stages run the full 15 s with as many passes as the
+#     blues make: each catch pays when it happens (pass_catch), the
+#     receiver_spacing term pays for blues 3 m apart (4 m in the 3 m stage),
+#     and the gate is on passes / kicks.
+#   - 2026-11-11: catch_moving needs a 2 m pass (with no minimum the blues
+#     huddled 0.5 m apart and tapped the ball back and forth); the 1 m stage
+#     (catch_moving_long) is gone.
+#   - 2026-11-11: receiver_spacing is a tent and its coef 0.03 (the blues
+#     stayed bunched 0.6 m apart under the old 0.01 Gaussian).
+#   - 2026-11-11: The receiver must stand 2 m (3 m) from the kick point when
+#     the ball is kicked: the blues ran as a pack, kicking the ball ahead and
+#     letting a packmate chase it down.
+#   - 2026-11-12: ent_coef 0.01 in the catch stages: movement entropy had
+#     collapsed in free_ball, and the blues stayed bunched 0.5 m apart.
+#   - 2026-11-12: rl.new_player_init = "random": warm starts that add players
+#     (go_to_target 1v0 -> catch 3v0, catch -> 3v1) let the network see them
+#     from the start.
+#   - 2026-11-12: catch_moving runs up to 1M steps (its catch rate was still
+#     climbing at the old 300k cap).
+#   - 2026-11-13: catch_moving runs up to 2M steps, catch_moving_longer and
+#     catch_moving_longest up to 500k each (all three were still improving
+#     at their caps).
 # Prompt summary: A 3v1 passing drill against a slow red with the blues frozen
 #   in range of each other: a small reward for kicking toward a teammate, a big
 #   one for lasting, nothing before the first pass; in a new curriculum TOML.
@@ -35,16 +57,18 @@
 #   1. go_to_target: movement warm-up. No red; the ball is a fixed target and the reward is minus
 #      the distance to it.
 #   2. free_ball: 1v1 keep-away from a loose ball, which starts 1, 2, then 3 m from blue.
-#   3. catch_moving: pass practice with no red and everyone free to move. One kick per episode;
-#      a catch by a teammate pays 1.
-#   4-6. catch_moving_long / _longer / _longest: the same, but a catch only counts if the ball went
-#      at least 1, 2, then 3 m from where it was kicked, and longer catches pay a bit more.
-#      Stages 3-6 also charge the kicker for staying near its own kick (kicker_clearance).
-#   7. keepaway_from_catch: 3v1 keep-away that starts in the catch layout (a blue with the ball,
+#   3. catch_moving: pass practice with no red and everyone free to move, for the full 15 s. Each
+#      catch by a teammate pays 1 if the ball went at least 2 m; the blues are also paid for
+#      standing 3 m apart.
+#   4-5. catch_moving_longer / _longest: the same, but longer catches pay a bit more, and the
+#      last stage needs 3 m passes (blues 4 m apart).
+#      Stages 3-5 also charge the kicker for staying near its own kick (kicker_clearance), and
+#      gate on the share of kicks caught.
+#   6. keepaway_from_catch: 3v1 keep-away that starts in the catch layout (a blue with the ball,
 #      teammates 3.9 m away, red at least 3 m off), then less and less often (all, half, none),
 #      the rest from random positions with a blue holding the ball.
-#   8. go_to_target_again: a short goto_target refresher (30k steps).
-#   9. keepaway_3v1: normal 3v1 keep-away with the survival reward, starting from a loose ball
+#   7. go_to_target_again: a short goto_target refresher (30k steps).
+#   8. keepaway_3v1: normal 3v1 keep-away with the survival reward, starting from a loose ball
 #      1, 2, then 3 m from a blue. Blue is slower than red even without the ball (1.75 m/s, 1.5
 #      with it, against red's 1.8), so running away doesn't work and passing has to carry over.
 # The critic starts fresh at every stage from 3 on: each one changes the scenario or the reward,
@@ -59,6 +83,14 @@ env = "pybullet"                      # PyBullet only: the mock can't kick
 
 [overrides.rl]
 kick_enabled = true
+### AI GENERATED (2026-11-12)
+# Every warm start here that adds players (go_to_target 1v0 -> the catch stages' 3v0, the catch
+# stages -> 3v1) starts the new players' input columns at random instead of zero. With zero, the
+# blues in catch_moving still barely saw each other after 180k steps (teammate columns ~6x weaker
+# than the ball's) and bunched 0.5 m apart even when spacing was nearly the whole reward; a
+# from-scratch network on the same task kept them ~2.6 m apart.
+new_player_init = "random"
+### END AI GENERATED
 
 [[stage]]
 name = "go_to_target"
@@ -69,37 +101,50 @@ n_red = 0
 [stage.overrides.rl.reward]
 base = "goto_target"
 
-[[stage]]
-name = "free_ball"
-total_steps = 1_500_000
-option = "max_ball_dist"
-levels = [1.0, 2.0, 3.0]  # metres from blue
-threshold = 0.5          # survival fraction: blue has to get to the ball before red does
-confidence = 2.0
-window = 50
-stop_when_passed = true   # move on to the catch stages once it passes at 3 m (or at the step cap)
+# [[stage]]
+# name = "free_ball"
+# total_steps = 1_500_000
+# option = "max_ball_dist"
+# levels = [1.0, 2.0, 3.0]  # metres from blue
+# threshold = 0.5          # survival fraction: blue has to get to the ball before red does
+# confidence = 2.0
+# window = 50
+# stop_when_passed = true   # move on to the catch stages once it passes at 3 m (or at the step cap)
+#
+# [stage.overrides.shared.start]
+# start_mix = 0.0           # every episode starts with a loose ball
+# max_ball_dist = 3.0       # the stage's real task, which eval.csv measures: the ball within 3 m
 
-[stage.overrides.shared.start]
-start_mix = 0.0           # every episode starts with a loose ball
-max_ball_dist = 3.0       # the stage's real task, which eval.csv measures: the ball within 3 m
-
-### AI GENERATED (2026-11-09: pass practice with the blues free to move)
-# catch_moving: the pass_practice_moving scenario. Three blues, no red; one holds the ball and
-# gets one kick per episode. Every blue can move: the holder can dribble before kicking (at carry
-# speed) and the teammates can run to meet the ball. Each teammate starts 3.9 m (+-15%) from the
-# holder. The episode ends once the kick has played out: a blue has the ball again, or no
-# teammate could get to it before the time limit. Reward (pass_practice, paid once at the end): 1
-# if a teammate catches it, else up to 0.5 for how close the ball came to a teammate, 0 for no
-# kick. The gate is on the catch rate, not survival.
-# kicker_clearance (2026-11-11, all four catch stages): while the kick is in play the kicker pays
-# 0.025 * (1 - d / 1.5 m) a step for being within 1.5 m of the ball (d = distance), and 0.25 for
-# taking it back. So the kicker learns to kick firmly and leave the ball to its teammates instead
-# of chasing it. A full kick clears 1.5 m in ~0.3 s (about 0.05 if the kicker stands still);
-# staying on the ball the whole episode costs about 0.5. Every catch still beats every miss.
+### AI GENERATED (2026-11-09: pass practice with the blues free to move; 2026-11-11: to the time limit)
+# catch_moving: the pass_practice_moving scenario. Three blues, no red; one starts with the ball
+# and every blue can move (the holder at carry speed). Each teammate starts 3.9 m (+-15%) from the
+# holder. Since 2026-11-11 the episode runs the full 15 s (300 steps), with as many passes as
+# the blues can make; after a miss somebody has to fetch the loose ball.
+#   - Reward (pass_catch): each catch by a teammate pays 1 on the step it happens, if the ball
+#     went at least 2 m from where it was kicked (min_pass_distance, 2026-11-11). With no
+#     minimum the blues learned to huddle 0.5 m apart and tap the ball back and forth (38
+#     "passes" a game, median 0.5 m). 3 m spacing gives ~2.2 m passes, enough to count. The
+#     receiver must also have stood 2 m from the kick point at the kick (2026-11-11): otherwise
+#     the blues run as a pack, kick the ball a few metres ahead and let a packmate chase it down.
+#   - kicker_clearance (coef 0.025): while its kick is in play the kicker pays 0.025 * (1 - d / 1.5 m)
+#     a step for being within 1.5 m of the ball (d = distance), and 0.25 for taking it back. So it
+#     kicks firmly and leaves the ball to its teammates instead of chasing it.
+#   - receiver_spacing (coef 0.03, 2026-11-11): every step, up to 0.03 for every pair of blues
+#     being rl.reward.spacing_distance (3 m) apart: a tent, 0 at 0 m, 1 at 3 m, 0 again at 6 m, so
+#     each metre apart is worth 0.01 a step wherever the blues start. So the blues spread out into
+#     passing range and the one best placed for the next pass is ready for it. A whole episode of
+#     perfect spacing is worth 9, less than a good passing episode. (With 0.01 and a 1 m wide
+#     Gaussian bump the blues stayed bunched 0.6 m apart: its tail was flat.)
+# The gate is on the pass completion rate: each episode scores passes / kicks (a tap shorter than
+# 2 m counts as a missed kick).
+# ent_coef 0.01 (2026-11-12, all three catch stages; the default is 0.001): free_ball leaves the
+# movement head nearly deterministic (entropy -2.2, "everyone runs to the ball"), and with the
+# default the blues never tried standing apart: they stayed a median 0.5 m apart through all
+# 500k catch steps, and the catch rate rose only because they stopped kicking.
 [[stage]]
 name = "catch_moving"
-total_steps = 300_000
-threshold = 0.8           # catch rate the gate's lower bound must reach
+total_steps = 2_000_000   # 2026-11-13: was 1M (2026-11-12: 300k); still climbing at each cap: 5% -> 24% caught by 300k, 84% by 1M
+threshold = 0.8
 confidence = 2.0
 window = 50
 stop_when_passed = true
@@ -107,47 +152,32 @@ stop_when_passed = true
 scenario = "pass_practice_moving"
 n_blue = 3
 n_red = 0
-max_episode_steps = 100   # 5 s: time to set up and kick, a full roll, and a teammate's run
 [stage.overrides.shared.start]
 pass_distance = 3.9
+[stage.overrides.rl.ppo]
+ent_coef = 0.01            # 10x the default: see the catch_moving comment (2026-11-12)
 [stage.overrides.rl.reward]
-base = "pass_practice"
-shaping = [{ name = "kicker_clearance", enabled = true, coef = 0.025 }]  # see the catch_moving comment
+base = "pass_catch"
+shaping = [{ name = "kicker_clearance", enabled = true, coef = 0.025 },
+           { name = "receiver_spacing", enabled = true, coef = 0.03 }]  # see the catch_moving comment
+min_pass_distance = 2.0     # m from the kick point (2026-11-11)
 ### END AI GENERATED
 
-### AI GENERATED (2026-11-10: catch_moving with real passes only, 1, 2 then 3 m)
-# catch_moving_long / _longer / _longest: catch_moving again with two reward options on.
-#   - min_pass_distance d (1, 2, then 3 m): a catch less than d from the kick point is no pass (it
-#     pays nothing and doesn't count for the gate), and teammates within d + 0.5 m of the kick
-#     point earn no near-miss credit. So receivers can't just run up to the holder: they have to
-#     take the ball further and further out.
+### AI GENERATED (2026-11-10: catch_moving with real passes only; 2026-11-11: 2 then 3 m)
+# catch_moving_longer / _longest: catch_moving again with two reward options on.
+#   - min_pass_distance d (2, then 3 m): a catch less than d from the kick point is no pass (it
+#     pays nothing and counts as a missed kick for the gate). So receivers can't just run up to
+#     the holder: they have to take the ball further out.
 #   - pass_length_bonus: a catch pays 0.75 + 0.25 * min(1, length / 4 m), so longer passes pay a
-#     bit more, and every catch still beats every miss (at most 0.5).
-# Teammates start 3.3-4.5 m from the holder, so at 3 m a receiver can barely step toward the
-# ball. The critic starts fresh in each (the reward changes every stage).
-[[stage]]
-name = "catch_moving_long"
-total_steps = 100_000
-threshold = 0.9
-confidence = 2.0
-window = 50
-stop_when_passed = true
-[stage.overrides.shared]
-scenario = "pass_practice_moving"
-n_blue = 3
-n_red = 0
-max_episode_steps = 100
-[stage.overrides.shared.start]
-pass_distance = 3.9
-[stage.overrides.rl.reward]
-base = "pass_practice"
-shaping = [{ name = "kicker_clearance", enabled = true, coef = 0.025 }]  # see the catch_moving comment
-min_pass_distance = 1.0     # m from the kick point
-pass_length_bonus = true    # 0.75 to 1 by the pass's length (full from 4 m)
-
+#     bit more.
+# (A 1 m stage, catch_moving_long, came first until 2026-11-11; catch_moving now needs 2 m.)
+# A pass between blues d apart travels about d - 0.8 m (the ball sits at the kicker's edge and is
+# caught at the receiver's), so 3 m spacing gives ~2.2 m passes. The 3 m stage spaces the blues
+# 4 m apart (spacing_distance) so its passes can make the minimum (2026-11-11). The critic starts
+# fresh in each (the reward changes every stage).
 [[stage]]
 name = "catch_moving_longer"
-total_steps = 100_000
+total_steps = 500_000     # 2026-11-13: was 100k; 73% caught at the cap
 threshold = 0.9
 confidence = 2.0
 window = 50
@@ -156,18 +186,20 @@ stop_when_passed = true
 scenario = "pass_practice_moving"
 n_blue = 3
 n_red = 0
-max_episode_steps = 100
 [stage.overrides.shared.start]
 pass_distance = 3.9
+[stage.overrides.rl.ppo]
+ent_coef = 0.01            # 10x the default: see the catch_moving comment (2026-11-12)
 [stage.overrides.rl.reward]
-base = "pass_practice"
-shaping = [{ name = "kicker_clearance", enabled = true, coef = 0.025 }]  # see the catch_moving comment
+base = "pass_catch"
+shaping = [{ name = "kicker_clearance", enabled = true, coef = 0.025 },
+           { name = "receiver_spacing", enabled = true, coef = 0.03 }]  # see the catch_moving comment
 min_pass_distance = 2.0     # m from the kick point
 pass_length_bonus = true
 
 [[stage]]
 name = "catch_moving_longest"
-total_steps = 100_000
+total_steps = 500_000     # 2026-11-13: was 100k; the catch rate went 5% -> 46% in 100k, still rising
 threshold = 0.9
 confidence = 2.0
 window = 50
@@ -176,14 +208,17 @@ stop_when_passed = true
 scenario = "pass_practice_moving"
 n_blue = 3
 n_red = 0
-max_episode_steps = 100
 [stage.overrides.shared.start]
 pass_distance = 3.9
+[stage.overrides.rl.ppo]
+ent_coef = 0.01            # 10x the default: see the catch_moving comment (2026-11-12)
 [stage.overrides.rl.reward]
-base = "pass_practice"
-shaping = [{ name = "kicker_clearance", enabled = true, coef = 0.025 }]  # see the catch_moving comment
+base = "pass_catch"
+shaping = [{ name = "kicker_clearance", enabled = true, coef = 0.025 },
+           { name = "receiver_spacing", enabled = true, coef = 0.03 }]  # see the catch_moving comment
 min_pass_distance = 3.0     # m from the kick point
 pass_length_bonus = true
+spacing_distance = 4.0      # m apart, so a pass makes ~3.2 m (2026-11-11)
 ### END AI GENERATED
 
 ### AI GENERATED (2026-11-11: red joins the catch layout)
@@ -212,14 +247,14 @@ start_mix = 1.0           # the other resets: a blue holds the ball too, everyon
 catch_start_mix = 0.0     # the stage's real task, which eval.csv measures
 ### END AI GENERATED
 
-[[stage]]
-name = "go_to_target_again"
-total_steps = 30_000     # no threshold = no gate: always runs this many steps
-[stage.overrides.shared]
-scenario = "goto_target"
-n_red = 0
-[stage.overrides.rl.reward]
-base = "goto_target"
+# [[stage]]
+# name = "go_to_target_again"
+# total_steps = 30_000     # no threshold = no gate: always runs this many steps
+# [stage.overrides.shared]
+# scenario = "goto_target"
+# n_red = 0
+# [stage.overrides.rl.reward]
+# base = "goto_target"
 
 # keepaway_3v1: normal keep-away, survival reward, everyone free to move. The free ball starts
 # 1, 2, then 3 m from a blue; the level goes up when the survival gate passes. The stage trains to

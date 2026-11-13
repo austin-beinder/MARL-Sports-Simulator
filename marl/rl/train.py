@@ -43,6 +43,10 @@
 #     (a different task or reward). (Austin Beinder)
 #   - 2026-11-09: The training and eval lines show passes per episode.
 #     (Austin Beinder)
+#   - 2026-11-11: ... and the share of kicks caught (pass_rate).
+#     (Austin Beinder)
+#   - 2026-11-12: The warm-start line says whether new inputs start at zero
+#     or random (rl.new_player_init). (Austin Beinder)
 # Prompt summary: Implement Phase 3 step 8 of the issue #7 plan (PPO update +
 #   training loop).
 # Human review:   Pending review
@@ -173,7 +177,8 @@ def train(
         old = ckpt["config"]["shared"]
         missing, critic_loaded = warm_start(actor, critic, ckpt, cfg)
         fresh = f" (fresh: {', '.join(missing)})" if missing else ""
-        teams = (f" ({old['n_blue']}v{old['n_red']} -> {cfg.shared.n_blue}v{cfg.shared.n_red}, new inputs start at zero)"
+        start = "at zero" if cfg.rl.new_player_init == "zero" else "random"  # AI GENERATED (2026-11-12)
+        teams = (f" ({old['n_blue']}v{old['n_red']} -> {cfg.shared.n_blue}v{cfg.shared.n_red}, new inputs start {start})"
                  if (old["n_blue"], old["n_red"]) != (cfg.shared.n_blue, cfg.shared.n_red) else "")
         critic_note = "" if critic_loaded else " (actor only: the critic starts fresh for the new task/reward)"
         log(f"[train] warm start from {init_from}{teams}{critic_note}{fresh}")
@@ -307,7 +312,7 @@ def _train_line(r: dict[str, Any], n_iters: int) -> str:
     return (
         f"it {r['iteration']:>4}/{n_iters} | steps {r['env_steps']:>9,} | "
         f"ep_len {r['ep_len_mean']:6.1f} (n={r['ep_episodes']:>3}, trunc {r['ep_frac_truncated']:4.0%}) | "
-        f"passes {r['ep_passes_mean']:4.2f} | "  # AI GENERATED (2026-11-09)
+        f"passes {r['ep_passes_mean']:4.2f} ({r['ep_pass_rate']:4.0%} caught) | "  # AI GENERATED (2026-11-09; rate 2026-11-11)
         f"r/step {r['reward_mean_unscaled']:+7.3f} | ent {r['entropy']:+.3f} | vloss {r['value_loss']:.2e} | "
         f"ev {r['explained_variance']:+.2f} | kl {r['approx_kl']:.4f} | clip {r['clip_frac']:.3f} | "
         f"{r['sps']:,.0f} sps"
@@ -333,7 +338,7 @@ def _eval_line(r: dict[str, Any]) -> str:
         f"  eval@{r['iteration']:>4} [{r['mode'][:5]}] len {r['len_mean']:6.1f} +/- {r['len_std']:5.1f} "
         f"(trunc {r['frac_truncated']:4.0%}) | possession {r['len_mean_possession']:6.1f} | "
         f"free_ball {r['len_mean_free_ball']:6.1f} | r/step {r['mean_reward']:+7.3f} | "
-        f"passes {r['passes_mean']:.2f} (caught {r['frac_passed']:4.0%})"  # AI GENERATED (2026-11-09)
+        f"passes {r['passes_mean']:.2f} ({r['pass_rate']:4.0%} of kicks caught)"  # AI GENERATED (2026-11-09; rate 2026-11-11)
     )
 
 

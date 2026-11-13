@@ -14,6 +14,8 @@
 #     the same (e.g. not goto_target -> keep-away). (Austin Beinder)
 #   - 2026-11-09: Teams may also shrink (e.g. 1v1 -> 3v0 for pass practice):
 #     the removed players' input columns are dropped. (Austin Beinder)
+#   - 2026-11-12: rl.new_player_init = "random" starts new players' columns
+#     at the fresh network's init instead of zero. (Austin Beinder)
 # Prompt summary: Implement Phase 3 step 8 of the issue #7 plan (PPO update +
 #   training loop).
 # Human review:   Pending review
@@ -31,6 +33,11 @@ are built from per-player blocks (``obs_blocks``, ``state_blocks``). With more p
 old input column moves to the same slot in the new layout, and the new slots' columns get zero
 weight. So at first the network gives exactly the old outputs and ignores the new players;
 those columns still get gradients, so it learns to use them.
+
+That learning can be slow (2026-11-12): a 1v0 go_to_target actor grown to 3v0 still had teammate
+columns ~6x weaker than the ball's after 180k steps, and acted as if alone. With
+``rl.new_player_init = "random"`` the new columns instead keep the fresh network's own random
+init, so the outputs change a little at first but the new players are visible from the start.
 
 Teams may also shrink (2026-11-09): a player slot the new layout doesn't have loses its columns,
 so the network forgets those weights (e.g. red's, going 1v1 -> 3v0; they come back as zero
@@ -100,8 +107,9 @@ def warm_start(actor: Actor, critic: Critic, ckpt: dict[str, Any], cfg: Config) 
     and it starts fresh instead. The actor always loads.
 
     If the team sizes differ from the checkpoint's config, the first layers' input columns are
-    remapped: new players' columns are zero, removed players' columns are dropped (see the
-    module docstring). Raises if the critic would load but its input mode changed.
+    remapped: new players' columns are zero (or, with ``cfg.rl.new_player_init = "random"``, keep
+    the networks' fresh init, 2026-11-12), removed players' columns are dropped (see the module
+    docstring). Raises if the critic would load but its input mode changed.
     """
     old = config_from_dict(ckpt["config"])
     actor_sd, critic_sd = dict(ckpt["actor"]), dict(ckpt["critic"])
@@ -112,10 +120,13 @@ def warm_start(actor: Actor, critic: Critic, ckpt: dict[str, Any], cfg: Config) 
     if (o.n_blue, o.n_red) != (n.n_blue, n.n_red):
         obs_cols = _column_map(obs_blocks(o.n_blue, o.n_red), obs_blocks(n.n_blue, n.n_red))
         state_cols = _column_map(state_blocks(o.n_blue, o.n_red), state_blocks(n.n_blue, n.n_red))
-        actor_sd["trunk.0.weight"] = _grow(actor_sd["trunk.0.weight"], *obs_cols)
+        random = cfg.rl.new_player_init == "random"  # AI GENERATED (2026-11-12)
+        actor_sd["trunk.0.weight"] = _grow(actor_sd["trunk.0.weight"], *obs_cols,
+                                           fresh=actor.state_dict()["trunk.0.weight"] if random else None)
         if load_critic:
             critic_cols = state_cols if cfg.rl.critic_input == "global" else obs_cols
-            critic_sd["body.0.weight"] = _grow(critic_sd["body.0.weight"], *critic_cols)
+            critic_sd["body.0.weight"] = _grow(critic_sd["body.0.weight"], *critic_cols,
+                                               fresh=critic.state_dict()["body.0.weight"] if random else None)
 
     loaded = actor.load_state_dict(actor_sd, strict=False)  # missing heads keep their fresh init
     if loaded.unexpected_keys:
@@ -139,9 +150,14 @@ def _column_map(old_blocks, new_blocks) -> tuple[np.ndarray, np.ndarray, int]:
     return np.asarray(kept, dtype=np.int64), np.asarray(mapping, dtype=np.int64), new_start
 
 
-def _grow(weight: torch.Tensor, kept: np.ndarray, columns: np.ndarray, new_inputs: int) -> torch.Tensor:
-    """A first-layer weight [out, old_in] -> [out, new_in]: kept columns moved, new ones zero."""
-    grown = torch.zeros(weight.shape[0], new_inputs, dtype=weight.dtype)
+def _grow(weight: torch.Tensor, kept: np.ndarray, columns: np.ndarray, new_inputs: int,
+          fresh: torch.Tensor | None = None) -> torch.Tensor:
+    """A first-layer weight [out, old_in] -> [out, new_in]: kept columns moved, new ones zero, or
+    (2026-11-12) taken from ``fresh``, the new network's own freshly initialized weight."""
+    if fresh is not None:
+        assert fresh.shape == (weight.shape[0], new_inputs)
+    grown = (torch.zeros(weight.shape[0], new_inputs, dtype=weight.dtype) if fresh is None
+             else fresh.detach().clone().to(weight.dtype))
     grown[:, torch.as_tensor(columns)] = weight[:, torch.as_tensor(kept)]
     return grown
 ### END AI GENERATED

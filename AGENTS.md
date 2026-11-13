@@ -139,7 +139,11 @@ configs/*.toml -> marl.common.config.Config
   columns move to their slot in the new layout, and new players' columns get
   zero weight, so a grown 2v1 network first acts exactly like the 1v1 one.
   A team can also shrink (1v1 -> 3v0 for pass practice): the removed slots'
-  columns are dropped.
+  columns are dropped. `rl.new_player_init = "random"` (default `"zero"`)
+  starts the new players' columns at the fresh network's random init
+  instead, so the network sees them from the start: with zero columns a
+  1v0 `go_to_target` actor grown to 3v0 still barely saw its teammates
+  after 180k steps. `passing_3v1.toml` sets it for every stage.
 - `curriculum/keepaway_1v1.toml` has these stages:
   1. `go_to_target`: goto_target warm-up, no gate, fixed budget.
   2. `possession`: 1v1. Commented out for now.
@@ -152,9 +156,14 @@ configs/*.toml -> marl.common.config.Config
 
   Kicking is on in every stage, so it needs PyBullet.
 - `curriculum/passing_3v1.toml` aims at monkey in the middle: `go_to_target`,
-  `free_ball`, `catch_moving` (moving pass practice, teammates 3.9 m away),
-  then `catch_moving_long` / `_longer` / `_longest` (minimum pass 1, 2, 3 m,
-  length bonus on), all four with `kicker_clearance`, then
+  `free_ball`, `catch_moving` (moving pass practice for the full 15 s,
+  teammates start 3.9 m away, `kicker_clearance` and `receiver_spacing`,
+  minimum pass 2 m), then `catch_moving_longer` / `_longest` (minimum pass
+  2, 3 m, length bonus on), all three with both terms (blues 4 m apart in
+  the 3 m stage; with no minimum the blues huddled and tapped the ball)
+  and `rl.ppo.ent_coef = 0.01` (10x the default: movement had stopped
+  exploring after `free_ball`, and the blues stayed bunched; `free_ball`
+  and `go_to_target_again` are commented out for now), then
   `keepaway_from_catch` (3v1 keep-away whose resets start in the catch
   layout, `shared.start.catch_start_mix` stepped 1, 0.5, 0), then a short
   `go_to_target_again` (1v0), then 3v1 keep-away from a loose ball 1, 2,
@@ -174,18 +183,28 @@ configs/*.toml -> marl.common.config.Config
   `rl.reward.pass_length_bonus` pays a catch `0.75 + 0.25 · min(1, length /
   4 m)` (kick point to catch point; every catch still beats every miss), and
   `rl.reward.min_pass_distance` d (m, any scenario) makes a catch nearer
-  than d to the kick point no pass, and drops teammates within d + 0.5 m of
-  it from the closest approach. The `kicker_clearance` shaping term
+  than d to the kick point no pass, and so is a catch by a blue who stood
+  nearer than d to the kick point when the ball was kicked (no chasing down
+  a ball kicked ahead of a pack). It also drops teammates within d + 0.5 m
+  of the kick point from the closest approach. The `kicker_clearance` shaping term
   (coef c) charges the kicker `c · (1 - d / 1.5 m)` a step while its kick is
   in play (d = its distance to the ball) and `10 c` for taking the ball
   back, so it stops chasing its own pass. The actor isn't told who kicked.
-  These stages gate on the catch
-  rate (`StageCurriculum(catch_gate=True)`) instead of survival.
-  `train.csv` / `eval.csv` log `passes_mean` and `frac_passed` for every
+  These stages gate on the pass completion rate
+  (`StageCurriculum(catch_gate=True)`: each episode scores passes / kicks,
+  0 without a kick) instead of survival. `train.csv` / `eval.csv` log
+  `passes_mean`, `frac_passed` and `pass_rate` (passes per kick) for every
   scenario.
-- `pass_practice_moving`: the same, but the blues can move (not in
-  `FROZEN_SCENARIOS`; both are in `PASS_PRACTICE_SCENARIOS`). A miss ends
-  only once no teammate could run to the ball before the time limit.
+- `pass_practice_moving`: the same spawn, but the blues can move (not in
+  `FROZEN_SCENARIOS`; both are in `PASS_PRACTICE_SCENARIOS`), and there is
+  no one-kick limit: the episode runs to the time limit (300 steps) with as
+  many passes as the blues make. Reward `rl.reward.base = "pass_catch"`:
+  each catch pays on the step it happens (1, or the length bonus), nothing
+  for a miss. The `receiver_spacing` shaping term pays, every step, the
+  mean over blue pairs of the tent `max(0, 1 - |d - target| / target)`, target
+  `rl.reward.spacing_distance` (default 3 m, centre to centre). A pass
+  between blues d apart travels about d - 0.8 m, so the spacing has to be
+  about 0.8 m more than `min_pass_distance`.
   `curriculum/passing_only_3v1.toml` runs it as `catch_moving` (plain
   reward), then `catch_moving_long` (1 m minimum pass, length bonus).
 - The `passing_drill` scenario (PyBullet only, needs kicking): the blues
@@ -264,6 +283,7 @@ python scripts/watch.py --baseline flee
 python scripts/calibrate.py --config configs/keepaway_1v1.toml     # -> runs/calibration_keepaway_1v1_pybullet.csv
 python scripts/plot.py
 python scripts/regress.py                                          # regression check vs results/silver (~1 min)
+python scripts/plot.py --curriculum runs/curriculum_passing_3v1_pybullet_seed0  # a curriculum run's progress (scripts/README.md)
 python pybulletGame/keep_away_env.py                               # play blue with the on-screen joystick
 ```
 

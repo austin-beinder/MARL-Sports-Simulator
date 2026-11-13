@@ -23,6 +23,10 @@
 #   - 2026-11-11: Restarting from a later stage (--start-at, --init-from);
 #     the passing curriculum's kicker_clearance and go_to_target_again.
 #   - 2026-11-11: ... and keepaway_from_catch (catch_start_mix levels).
+#   - 2026-11-12: The catch stages raise ent_coef to 0.01; free_ball and
+#     go_to_target_again are commented out of the passing curriculum.
+#   - 2026-11-12: rl.new_player_init = "random" in warm starts that grow a
+#     team.
 # Prompt summary: Lay out a curriculum for keep-away: a possession stage, then
 #   a free-ball stage whose ball starts close and moves further away (CACTUS).
 # Human review:   Pending review
@@ -200,6 +204,39 @@ def test_growing_1v1_to_2v1_keeps_the_old_outputs(critic_input):
             torch.testing.assert_close(critic2(torch.as_tensor(cin2)), critic1(torch.as_tensor(obs1)))
 
 
+### AI GENERATED (2026-11-12: new players' columns can start random)
+def test_random_new_player_init_keeps_old_columns_and_the_fresh_init_for_new_ones():
+    small = config_from_dict({})
+    big = config_from_dict({"shared": {"n_blue": 3}, "rl": {"new_player_init": "random"}})
+    _, actor1, critic1 = nets(small, 0)
+    _, actor3, critic3 = nets(big, 1)
+    fresh_a = actor3.state_dict()["trunk.0.weight"].clone()
+    fresh_c = critic3.state_dict()["body.0.weight"].clone()
+    ckpt = {"actor": actor1.state_dict(), "critic": critic1.state_dict(), "config": config_to_dict(small)}
+    assert warm_start(actor3, critic3, ckpt, big) == ([], True)
+    # obs: self 0-4 | teammates 5-10, 11-16 | red 17-22 | ball 23-28 (1v1: self 0-4 | red 5-10 | ball 11-16)
+    w1, w3 = actor1.state_dict()["trunk.0.weight"], actor3.state_dict()["trunk.0.weight"]
+    torch.testing.assert_close(w3[:, :5], w1[:, :5])
+    torch.testing.assert_close(w3[:, 17:], w1[:, 5:])
+    torch.testing.assert_close(w3[:, 5:17], fresh_a[:, 5:17])  # the teammates' columns keep the fresh init
+    assert w3[:, 5:17].abs().mean() > 0.1 * w1.abs().mean()  # not zero: the actor sees them from the start
+    # global state: blue 0 0-4 | blues 1, 2 5-14 | red 15-19 | ball 20-23 (1v1: blue 0-4 | red 5-9 | ball 10-13)
+    c1, c3 = critic1.state_dict()["body.0.weight"], critic3.state_dict()["body.0.weight"]
+    torch.testing.assert_close(c3[:, :5], c1[:, :5])
+    torch.testing.assert_close(c3[:, 15:], c1[:, 5:])
+    torch.testing.assert_close(c3[:, 5:15], fresh_c[:, 5:15])
+    zero = config_from_dict({"shared": {"n_blue": 3}})  # the default still zeroes them
+    _, actor0, critic0 = nets(zero, 1)
+    warm_start(actor0, critic0, ckpt, zero)
+    assert actor0.state_dict()["trunk.0.weight"][:, 5:17].abs().max() == 0
+
+
+def test_new_player_init_must_be_zero_or_random():
+    with pytest.raises(ValueError, match="new_player_init"):
+        config_from_dict({"rl": {"new_player_init": "copy"}})
+### END AI GENERATED
+
+
 def _drop_blue_1(s):
     return {**s, "blue": s["blue"][:1]}
 
@@ -340,30 +377,41 @@ def test_passing_curriculum_loads():
     c = load_curriculum(ROOT / "curriculum" / "passing_3v1.toml")
     configs = stage_configs(c)
     names = [s.name for s in c.stages]
-    assert names == ["go_to_target", "free_ball", "catch_moving", "catch_moving_long", "catch_moving_longer",
-                     "catch_moving_longest", "keepaway_from_catch", "go_to_target_again", "keepaway_3v1"]
-    catch = configs[2:6]
-    assert all(cfg.shared.scenario == "pass_practice_moving" and cfg.rl.reward.base == "pass_practice"
-               for cfg in catch)
+    # 2026-11-11: no 1 m stage; 2026-11-12: free_ball and go_to_target_again commented out
+    assert names == ["go_to_target", "catch_moving", "catch_moving_longer",
+                     "catch_moving_longest", "keepaway_from_catch", "keepaway_3v1"]
+    assert configs[0].shared.start.max_ball_dist == 0.0  # no leftover free_ball start options
+    catch = configs[1:4]
+    assert all(cfg.shared.scenario == "pass_practice_moving" and cfg.rl.reward.base == "pass_catch"
+               for cfg in catch)  # 2026-11-11: paid per catch, over the full episode
+    assert all(cfg.shared.max_episode_steps == 300 for cfg in catch)
     assert all((cfg.shared.n_blue, cfg.shared.n_red) == (3, 0) for cfg in catch)
     minimums = [cfg.rl.reward.min_pass_distance for cfg in catch]
-    assert minimums == [0.0, 1.0, 2.0, 3.0]  # passes have to go further and further
-    assert [cfg.rl.reward.pass_length_bonus for cfg in catch] == [False, True, True, True]
-    assert all([(t.name, t.enabled) for t in cfg.rl.reward.shaping] == [("kicker_clearance", True)]
-               for cfg in catch)  # 2026-11-11: the kicker keeps clear of its kick
+    assert minimums == [2.0, 2.0, 3.0]  # 2026-11-11: no minimum taught the blues to huddle and tap
+    assert [cfg.rl.reward.pass_length_bonus for cfg in catch] == [False, True, True]
+    assert all([(t.name, t.enabled) for t in cfg.rl.reward.shaping] == [("kicker_clearance", True),
+                                                                        ("receiver_spacing", True)]
+               for cfg in catch)  # 2026-11-11: the kicker keeps clear of its kick; the blues spread out
+    # 2026-11-11: a pass between blues d apart goes about d - 0.8 m, so the spacing leaves room for the minimum
+    assert [cfg.rl.reward.spacing_distance for cfg in catch] == [3.0, 3.0, 4.0]
+    # 2026-11-12: more exploration in the catch stages only (movement collapsed in free_ball)
+    assert [cfg.rl.ppo.ent_coef for cfg in catch] == [0.01, 0.01, 0.01]
+    assert configs[0].rl.ppo.ent_coef == configs[4].rl.ppo.ent_coef == configs[5].rl.ppo.ent_coef == 0.001
+    assert all(cfg.rl.reward.spacing_distance - 0.8 >= cfg.rl.reward.min_pass_distance for cfg in catch)
     for cfg in catch:  # the teammates start far enough out for the minimum, and a kick can still reach them
         sc = cfg.shared
         assert cfg.rl.reward.min_pass_distance < sc.start.pass_distance * 0.85
         assert sc.start.pass_distance * 1.15 < math.log(1 + sc.max_kick_speed) / sc.ball_damping
-    red_joins = configs[6]  # 2026-11-11: 3v1 from the catch layout, then random positions
+    red_joins = configs[4]  # 2026-11-11: 3v1 from the catch layout, then random positions
     assert red_joins.shared.scenario == "keepaway" and (red_joins.shared.n_blue, red_joins.shared.n_red) == (3, 1)
-    assert c.stages[6].option == "catch_start_mix" and c.stages[6].levels == [1.0, 0.5, 0.0]
+    assert c.stages[4].option == "catch_start_mix" and c.stages[4].levels == [1.0, 0.5, 0.0]
     assert red_joins.shared.start.pass_distance == catch[-1].shared.start.pass_distance
     last = configs[-1]
     assert last.shared.scenario == "keepaway" and last.rl.reward.base == "survival" and last.rl.reward.shaping == ()
     assert (last.shared.n_blue, last.shared.n_red) == (3, 1)
     assert last.shared.max_speed * last.shared.free_speed_factor < last.shared.red_max_speed
     assert all(cfg.run.env == "pybullet" and cfg.rl.kick_enabled for cfg in configs)
+    assert all(cfg.rl.new_player_init == "random" for cfg in configs)  # 2026-11-12: warm starts see new players
 ### END AI GENERATED
 
 

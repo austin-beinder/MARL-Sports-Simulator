@@ -34,6 +34,11 @@
 #     (Austin Beinder)
 #   - 2026-11-11: The kicker_clearance shaping term name. (Austin Beinder)
 #   - 2026-11-11: shared.start.catch_start_mix. (Austin Beinder)
+#   - 2026-11-11: pass_practice_moving runs to the time limit with the
+#     pass_catch base (paid per catch); the receiver_spacing shaping term and
+#     rl.reward.spacing_distance. (Austin Beinder)
+#   - 2026-11-12: rl.new_player_init (zero | random): how a warm start that
+#     grows a team sets the new players' input columns. (Austin Beinder)
 # Prompt summary: Implement Phase 3 step 1 of the issue #7 plan (config +
 #   validation) following the student's design decisions.
 # Human review:   Pending review
@@ -74,14 +79,17 @@ OPTIONS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
     "obs_ordering": (frozenset({"distance"}), frozenset({"index"})),
     "obs_mode": (frozenset({"full"}), frozenset({"radius"})),
     "env": (frozenset({"mock", "pybullet"}), frozenset()),  # AI GENERATED
+    "new_player_init": (frozenset({"zero", "random"}), frozenset()),  # AI GENERATED (2026-11-12)
 }
 
 # Reward term names (#14). The registry in marl/rl/reward.py must match these
 # (a test checks it); they live here so the config can be validated at load.
-BASE_REWARD_TERMS: frozenset[str] = frozenset({"survival", "goto_target", "passing_drill", "pass_practice"})  # AI GENERATED (drills)
-### AI GENERATED (pass_progress, pass_completed: 2026-11-08, for the passing drill; kicker_clearance: 2026-11-11)
+BASE_REWARD_TERMS: frozenset[str] = frozenset({"survival", "goto_target", "passing_drill", "pass_practice",
+                                              "pass_catch"})  # AI GENERATED (drills; pass_catch 2026-11-11)
+### AI GENERATED (pass_progress, pass_completed: 2026-11-08, for the passing drill; kicker_clearance,
+### receiver_spacing: 2026-11-11)
 SHAPING_TERMS_BUILT: frozenset[str] = frozenset({"pbrs_ball_acquisition", "pass_progress", "pass_completed",
-                                                 "kicker_clearance"})
+                                                 "kicker_clearance", "receiver_spacing"})
 ### END AI GENERATED
 SHAPING_TERMS_DEFERRED: frozenset[str] = frozenset({"pbrs_red_distance"})  # #15
 
@@ -92,12 +100,13 @@ SCENARIO_BASE_REWARD: dict[str, str] = {
     "goto_target": "goto_target",
     "passing_drill": "passing_drill",  # AI GENERATED (2026-11-08)
     "pass_practice": "pass_practice",  # AI GENERATED (2026-11-09)
-    "pass_practice_moving": "pass_practice",  # AI GENERATED (2026-11-09): the same reward, blues free to move
+    "pass_practice_moving": "pass_catch",  # AI GENERATED (2026-11-11): paid per catch, to the time limit
 }
 # The scenarios whose blues can't move: the env ignores their move actions and the actor masks
 # the movement head out of PPO (2026-11-09).
 FROZEN_SCENARIOS: frozenset[str] = frozenset({"passing_drill", "pass_practice"})  # AI GENERATED
-# One kick per episode, no red, gated on the catch rate (2026-11-09); only pass_practice is frozen.
+# No red, a blue starts with the ball, gated on the pass completion rate (2026-11-09). pass_practice
+# is frozen and ends after its one kick; pass_practice_moving runs to the time limit (2026-11-11).
 PASS_PRACTICE_SCENARIOS: frozenset[str] = frozenset({"pass_practice", "pass_practice_moving"})  # AI GENERATED
 
 
@@ -177,7 +186,8 @@ class RewardConfig:
     shaping: tuple[ShapingTerm, ...] = ()
     ### AI GENERATED (2026-11-10: pass length rules, marl/rl/reward.py)
     min_pass_distance: float = 0.0  # m: a catch nearer the kick point is no pass; 0 = any catch counts
-    pass_length_bonus: bool = False  # pass_practice: a catch pays 0.75 to 1 by its length, not a flat 1
+    pass_length_bonus: bool = False  # pass_practice, pass_catch: a catch pays 0.75 to 1 by its length, not a flat 1
+    spacing_distance: float = 3.0  # 2026-11-11, receiver_spacing: the blue-to-blue distance (m, centre to centre) it pays for
     ### END AI GENERATED
 
 
@@ -206,6 +216,14 @@ class RLConfig:
     obs_mode: str = "full"
     kick_enabled: bool = False
     beta_eps: float = 1e-6
+    ### AI GENERATED (2026-11-12)
+    # A warm start that grows a team (checkpoint.warm_start): the new players' first-layer input
+    # columns start at zero ("zero": the network first acts exactly as before and ignores them) or
+    # at the fresh network's own random init ("random": it sees them from the start). With "zero"
+    # a 1v0 go_to_target actor warm-started into 3v0 pass practice barely saw its teammates after
+    # 180k steps (their columns ~6x weaker than the ball's), and the blues never spread out.
+    new_player_init: str = "zero"
+    ### END AI GENERATED
     reward: RewardConfig = field(default_factory=RewardConfig)
     ppo: PPOConfig = field(default_factory=PPOConfig)
 
@@ -425,7 +443,7 @@ def _validate_shared(s: SharedConfig) -> None:
 
 def _validate_rl(cfg: Config) -> None:
     rl, s = cfg.rl, cfg.shared
-    for name in ("critic_input", "horizon_mode", "obs_ordering", "obs_mode"):
+    for name in ("critic_input", "horizon_mode", "obs_ordering", "obs_mode", "new_player_init"):  # AI GENERATED (2026-11-12: new_player_init)
         _check_option(name, getattr(rl, name))
     ### AI GENERATED (2026-11-07: kicking is built, in the PyBullet env only)
     if rl.kick_enabled and cfg.run.env != "pybullet":
@@ -456,6 +474,7 @@ def _validate_rl(cfg: Config) -> None:
         if term.enabled and term.name in SHAPING_TERMS_DEFERRED:
             raise NotImplementedError(f"shaping term {term.name!r} is interface-only for milestone 1 (#15)")
     _require(rw.min_pass_distance >= 0, "rl.reward.min_pass_distance must be >= 0")  # AI GENERATED (2026-11-10)
+    _require(rw.spacing_distance > 0, "rl.reward.spacing_distance must be > 0")  # AI GENERATED (2026-11-11)
 
     p = rl.ppo
     for name in ("rollout_steps", "num_minibatches", "update_epochs"):

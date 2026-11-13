@@ -29,6 +29,15 @@
 #     first. (Austin Beinder)
 #   - 2026-11-11: The kicker_clearance shaping term: the kicker pays for
 #     staying near its own kick, and more for taking it back. (Austin Beinder)
+#   - 2026-11-11: The pass_catch base term (pass practice to the time limit:
+#     each catch pays when it happens), the receiver_spacing shaping term, and
+#     PassMemory counts kicks. (Austin Beinder)
+#   - 2026-11-11: receiver_spacing is a tent, not a Gaussian: blues bunched
+#     0.6 m apart sat on the Gaussian's flat tail and felt no pull apart.
+#     (Austin Beinder)
+#   - 2026-11-11: With a minimum pass distance d, the receiver must also have
+#     been d from the kick point when the ball was kicked (the blues ran as a
+#     pack, kicked the ball ahead and chased it down). (Austin Beinder)
 # Prompt summary: Implement Phase 3 step 5 of the issue #7 plan (reward
 #   module + registry).
 # Human review:   Pending review
@@ -83,10 +92,23 @@ Pass practice (2026-11-09; one kick per episode, no red, frozen blues):
   edge of a teammate (closest approach, so a kick in the right direction scores even if it is
   too soft or too hard). 0 if the holder never kicked. A catch always beats a near miss.
 
+Pass practice to the time limit (2026-11-11; pass_practice_moving, no red, blues free to move):
+
+* ``pass_catch`` (base) -- each completed pass pays on the step it is caught: 1, or 0.75 to 1 by
+  its length with ``rl.reward.pass_length_bonus``. Nothing else; a miss just costs the time to
+  get the ball back.
+* ``receiver_spacing`` (shaping, NOT potential-based) -- every step, how close each pair of blues
+  is to ``rl.reward.spacing_distance`` apart (3 m by default): the mean over pairs of the tent
+  ``max(0, 1 - |d - target| / target)``, 0 for blues on top of each other or twice the target
+  apart, 1 when every pair is exactly the target apart, and straight lines between. So the blues
+  spread out into passing range of each other, ready for the next pass.
+
 A pass is a blue's kick picked up by a different blue with nobody else touching it first. With
 ``rl.reward.min_pass_distance`` d > 0 (2026-11-10), the catch must also be at least d from where
-the ball was kicked, and the closest approach ignores teammates within d + 0.5 m of the kick
-point, so a tap into a teammate next to the kicker earns nothing. That
+the ball was kicked, the receiver must have been at least d from the kick point when the ball was
+kicked (2026-11-11: so a teammate running beside the kicker can't chase down a ball kicked ahead),
+and the closest approach ignores teammates within d + 0.5 m of the kick point, so a tap into a
+teammate next to the kicker earns nothing. That
 needs memory across steps (who kicked the ball in play, how many passes so far), so these terms
 read ``info["pass"]`` (a ``PassStep``), which ``RewardModule.parts`` adds from a ``PassMemory``.
 Every loop that plays episodes owns one memory per episode (``RewardModule.new_episode``): the
@@ -167,7 +189,10 @@ class PassStep(NamedTuple):
 # from where it was kicked, and the closest approach ignores teammates within d + PASS_REACH of the
 # kick point (they could only catch a shorter one; PASS_REACH: player 0.25 + ball 0.15 m, plus a
 # margin). So a tap into a teammate next to the kicker counts for nothing (no pass, no near miss).
-# d = 0 (the default) counts every catch and every teammate, as before.
+# 2026-11-11: the receiver must also have stood at least d from the kick point (centre to the
+# ball's position) at the kick. Otherwise a pack of blues could kick the ball a few metres ahead
+# and let a packmate chase it down: a "pass" nobody aimed. d = 0 (the default) counts every catch
+# and every teammate, as before.
 PASS_REACH = 0.5
 ### END AI GENERATED
 
@@ -182,6 +207,10 @@ class PassMemory:
     kick_point: tuple[float, float] | None = None  # 2026-11-10: where the ball in play was kicked from
     length: float = 0.0  # 2026-11-10: see PassStep.length
     min_distance: float = 0.0  # 2026-11-10: rl.reward.min_pass_distance (m); 0 = no minimum
+    kicks: int = 0  # 2026-11-11: blue kicks this episode (the pass completion rate is passes / kicks)
+    # 2026-11-11: the blues who stood min_distance or more from the kick point at the latest kick
+    # (the only ones who can complete it); None = anyone (no minimum, or no state to tell from)
+    receivers: frozenset[int] | None = None
 
     def _far_enough(self, ball) -> bool:  # AI GENERATED (2026-11-10)
         """The ball is min_distance from the kick point (always, with no minimum or no kick point)."""
@@ -200,14 +229,21 @@ class PassMemory:
         for event in info["events"]:
             if event["type"] == "kick":
                 self.kicker = in_play = event["agent"][1]  # blue kicks are the only kicks (ICD §6)
+                self.kicks += 1  # AI GENERATED (2026-11-11)
                 self.closest = math.inf  # a new kick: measure its path from scratch
                 self.kick_point = tuple(s["ball"]["pos"][:2]) if s is not None else None  # AI GENERATED (2026-11-10)
+                ### AI GENERATED (2026-11-11: who was far enough away to receive it)
+                self.receivers = None if self.min_distance <= 0 or s is None else frozenset(
+                    b["id"] for b in s["blue"]
+                    if b["id"] != self.kicker and math.dist(b["pos"][:2], self.kick_point) >= self.min_distance)
+                ### END AI GENERATED
             elif event["type"] == "possession_change" and event["to"] is not None:
                 to = event["to"]
                 ### AI GENERATED (2026-11-10: a catch has to be min_distance from the kick point)
                 caught_at = s_next["ball"]["pos"][:2] if s_next is not None else None
                 if (to[0] == "blue" and self.kicker is not None and to[1] != self.kicker
-                        and (caught_at is None or self._far_enough(caught_at))):
+                        and (caught_at is None or self._far_enough(caught_at))
+                        and (self.receivers is None or to[1] in self.receivers)):  # AI GENERATED (2026-11-11)
                     completed = True
                     self.passes += 1
                     self.length = math.dist(caught_at, self.kick_point) if caught_at and self.kick_point else 0.0
@@ -258,8 +294,9 @@ def pass_completed(s, actions, s_next, effective_terminal, truncated, info, cfg)
 ### AI GENERATED (2026-11-11: the kicker keeps clear of its own kick)
 # kicker_clearance: while a kick is in play, each step costs the kicker's closeness to the ball,
 # 1 - distance / KICKER_CLEARANCE (0 from KICKER_CLEARANCE out, nearly 1 on top of it), and the
-# kicker taking the ball back costs KICKER_REGRAB at once (it ends the episode, so the steps it
-# saves would otherwise make a re-grab the cheap way out). So the kicker learns to kick firmly and
+# kicker taking the ball back costs KICKER_REGRAB at once (in pass_practice it ends the episode, so
+# the steps it saves would otherwise make a re-grab the cheap way out; in pass_practice_moving it
+# ends the pass, 2026-11-11). So the kicker learns to kick firmly and
 # leave the ball to its teammates instead of chasing it. A negative term with a positive coef,
 # like every shaping coef; with coef c an episode spent on the ball costs about c per step.
 # The kicker isn't marked in o_i: it has to tell from the ball running away from it.
@@ -292,16 +329,21 @@ assert PASS_CATCH_MIN > PASS_MISS_MAX
 ### END AI GENERATED
 
 
+def _catch_value(p: PassStep, cfg) -> float:
+    """What the latest completed pass pays: 1, or 0.75 to 1 by its length with the bonus on."""
+    ### AI GENERATED (2026-11-10: the length bonus)
+    if not cfg.rl.reward.pass_length_bonus:
+        return 1.0
+    return PASS_CATCH_MIN + (1.0 - PASS_CATCH_MIN) * min(1.0, p.length / PASS_FULL_LENGTH)
+    ### END AI GENERATED
+
+
 def pass_practice(s, actions, s_next, effective_terminal, truncated, info, cfg) -> float:
     if not (effective_terminal or truncated):
         return 0.0  # paid once, when the kick has played out (or time ran out)
     p = info["pass"]
     if p.passes:
-        ### AI GENERATED (2026-11-10: the length bonus)
-        if not cfg.rl.reward.pass_length_bonus:
-            return 1.0
-        return PASS_CATCH_MIN + (1.0 - PASS_CATCH_MIN) * min(1.0, p.length / PASS_FULL_LENGTH)
-        ### END AI GENERATED
+        return _catch_value(p, cfg)
     if math.isinf(p.closest):
         return 0.0  # never kicked
     gap = max(0.0, p.closest - cfg.shared.player_radius)
@@ -309,8 +351,33 @@ def pass_practice(s, actions, s_next, effective_terminal, truncated, info, cfg) 
 ### END AI GENERATED
 
 
+### AI GENERATED (2026-11-11: pass practice to the time limit)
+def pass_catch(s, actions, s_next, effective_terminal, truncated, info, cfg) -> float:
+    p = info["pass"]
+    return _catch_value(p, cfg) if p.completed else 0.0
+
+
+# receiver_spacing: how close each pair of blues is to rl.reward.spacing_distance apart, averaged
+# over pairs: each blue is paid for being in passing range of every teammate, holder included. A
+# tent: 0 at 0 m, rising in a straight line to 1 at the target, back to 0 at twice the target, so
+# every metre apart pays the same wherever the blues start (a Gaussian bump, until 2026-11-11, was
+# flat for blues bunched 0.6 m apart, and they never spread out). Measured centre to centre; a
+# pass between blues d apart travels about d - 0.8 m (kick point to catch point), so with a
+# minimum pass distance the target has to be about 0.8 m more than the minimum.
+
+
+def receiver_spacing(s, actions, s_next, effective_terminal, truncated, info, cfg) -> float:
+    target = cfg.rl.reward.spacing_distance
+    spots = [b["pos"][:2] for b in s_next["blue"]]
+    gaps = [math.dist(a, b) for i, a in enumerate(spots) for b in spots[i + 1:]]
+    if not gaps:
+        return 0.0  # a lone blue has nobody to space from
+    return sum(max(0.0, 1.0 - abs(d - target) / target) for d in gaps) / len(gaps)
+### END AI GENERATED
+
+
 PASS_TERMS = frozenset({"passing_drill", "pass_progress", "pass_completed", "pass_practice",  # the terms that read info["pass"]
-                        "kicker_clearance"})  # AI GENERATED (2026-11-11)
+                        "kicker_clearance", "pass_catch"})  # AI GENERATED (2026-11-11)
 ### END AI GENERATED
 
 
@@ -334,12 +401,14 @@ BASE_TERMS: dict[str, Term] = {
     "goto_target": goto_target,
     "passing_drill": passing_drill,  # AI GENERATED (2026-11-08)
     "pass_practice": pass_practice,  # AI GENERATED (2026-11-09)
+    "pass_catch": pass_catch,  # AI GENERATED (2026-11-11)
 }
 SHAPING_TERMS: dict[str, Term] = {
     "pbrs_ball_acquisition": pbrs_ball_acquisition,
     "pass_progress": pass_progress,  # AI GENERATED (2026-11-08)
     "pass_completed": pass_completed,  # AI GENERATED (2026-11-08)
     "kicker_clearance": kicker_clearance,  # AI GENERATED (2026-11-11)
+    "receiver_spacing": receiver_spacing,  # AI GENERATED (2026-11-11)
     "pbrs_red_distance": _deferred("pbrs_red_distance", "#15"),
 }
 

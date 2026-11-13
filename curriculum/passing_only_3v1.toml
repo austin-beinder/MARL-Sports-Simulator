@@ -15,6 +15,8 @@
 #     blues free to move (pass_practice_moving).
 #   - 2026-11-10: catch_moving_long after catch_moving: the same, but a pass
 #     has to go 1 m and longer catches pay a bit more.
+#   - 2026-11-11: The moving stages run the full 15 s with as many passes as
+#     the blues make; each catch pays when it happens (pass_catch).
 # Prompt summary: A 3v1 passing drill against a slow red with the blues frozen
 #   in range of each other: a small reward for kicking toward a teammate, a big
 #   one for lasting, nothing before the first pass; in a new curriculum TOML.
@@ -142,10 +144,10 @@ max_ball_dist = 3.0       # the stage's real task, which eval.csv measures: the 
 # ### END AI GENERATED
 
 ### AI GENERATED (2026-11-09: pass practice with the blues free to move)
-# catch_moving: the pass_practice_moving scenario. Like catch_far (same reward, catch-rate gate,
-# one kick per episode, no red), but every blue can move: the holder can dribble before kicking
-# (at carry speed) and the teammates can run to meet the ball. A miss ends only once no teammate
-# could reach the ball before the time limit, so the clock is a little longer. The movement
+# catch_moving: the pass_practice_moving scenario. Like catch_far (no red), but every blue can
+# move: the holder can dribble before kicking (at carry speed) and the teammates can run to meet
+# the ball. Since 2026-11-11 the episode runs the full 15 s with as many passes as the blues make,
+# each catch pays 1 when it happens (pass_catch), and the gate is on passes / kicks. The movement
 # head trains again here (it was masked in the frozen stages); the critic starts fresh (a
 # different scenario).
 [[stage]]
@@ -159,11 +161,10 @@ stop_when_passed = true
 scenario = "pass_practice_moving"
 n_blue = 3
 n_red = 0
-max_episode_steps = 100   # 5 s: time to set up and kick, a full roll, and a teammate's run
 [stage.overrides.shared.start]
 pass_distance = 3.9
 [stage.overrides.rl.reward]
-base = "pass_practice"
+base = "pass_catch"         # 2026-11-11: per catch, over the full 15 s
 ### END AI GENERATED
 
 ### AI GENERATED (2026-11-10: catch_moving with real passes only)
@@ -185,11 +186,10 @@ stop_when_passed = true
 scenario = "pass_practice_moving"
 n_blue = 3
 n_red = 0
-max_episode_steps = 100
 [stage.overrides.shared.start]
 pass_distance = 3.9
 [stage.overrides.rl.reward]
-base = "pass_practice"
+base = "pass_catch"
 min_pass_distance = 1.0     # m from the kick point
 pass_length_bonus = true    # 0.75 to 1 by the pass's length (full from 4 m)
 ### END AI GENERATED

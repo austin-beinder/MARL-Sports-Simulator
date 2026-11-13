@@ -22,6 +22,8 @@
 #     drill's pass bookkeeping). (Austin Beinder)
 #   - 2026-11-09: EpisodeRecord.passes, the passes completed in the episode.
 #     (Austin Beinder)
+#   - 2026-11-11: EpisodeRecord.kicks, the blue kicks in the episode.
+#     (Austin Beinder)
 # Prompt summary: Implement Phase 3 step 7 of the issue #7 plan (buffer +
 #   GAE); the rollout collector moved here from step 8 because it owns the
 #   next_value contract that GAE depends on.
@@ -100,6 +102,7 @@ class EpisodeRecord:
     # goto_target, where length is always the max.
     mean_reward: float
     passes: int = 0  # AI GENERATED (2026-11-09): passes completed (a blue's kick caught by another blue)
+    kicks: int = 0  # AI GENERATED (2026-11-11): blue kicks (passes / kicks = the pass completion rate)
 
 
 @dataclass(frozen=True)
@@ -192,6 +195,7 @@ class RolloutCollector:
                         start_type=self._start_type,
                         mean_reward=self._ep_base / s_next["step"],
                         passes=self._reward_memory.passes,  # AI GENERATED (2026-11-09)
+                        kicks=self._reward_memory.kicks,  # AI GENERATED (2026-11-11)
                     )
                 )
                 self._s = None  # no auto-reset (ICD §4): the next step starts a new episode

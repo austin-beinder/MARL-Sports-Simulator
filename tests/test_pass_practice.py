@@ -17,6 +17,12 @@
 #     rl.reward.pass_length_bonus), off by default.
 #   - 2026-11-11: kicker_clearance: the kicker pays for staying near its own
 #     kick and more for taking it back; chasing costs more than standing back.
+#   - 2026-11-11: pass_practice_moving runs to the time limit and pays each
+#     catch when it happens (pass_catch); receiver_spacing; the gate scores
+#     passes / kicks.
+#   - 2026-11-11: receiver_spacing is a tent: every metre apart pays the same.
+#   - 2026-11-11: With a minimum pass distance the receiver must have stood that
+#     far from the kick point at the kick (no chasing down a ball kicked ahead).
 # Prompt summary: A curriculum stage with three frozen blues and no red, where
 #   the holder is rewarded for kicking the ball near a teammate and most for a
 #   catch; three stages with the teammates further and further away.
@@ -33,8 +39,8 @@ from marl.envs.mock_env import MockEnv
 from marl.envs.pybullet_env import PyBulletEnv
 from marl.rl.networks import build_networks
 from marl.rl.reward import (KICKER_CLEARANCE, KICKER_REGRAB, PASS_CATCH_MIN, PASS_FULL_LENGTH,  # AI GENERATED
-                             PASS_MISS_MAX, PASS_MISS_SCALE, PassMemory, PassStep, RewardModule,  # AI GENERATED
-                             kicker_clearance)  # AI GENERATED (2026-11-11)
+                             PASS_MISS_MAX, PASS_MISS_SCALE, PassMemory, PassStep,  # AI GENERATED
+                             RewardModule, kicker_clearance, receiver_spacing)  # AI GENERATED (2026-11-11)
 from marl.rl.rollout import EpisodeRecord
 from marl.rl.train import train
 from curriculum.runner import Stage, StageCurriculum
@@ -258,18 +264,26 @@ def test_min_pass_distance_cant_be_negative():
 
 
 # --- Gate and training ------------------------------------------------------------------
-def test_practice_stages_gate_on_the_catch_rate():
+def test_practice_stages_gate_on_the_catch_rate():  # 2026-11-11: one kick per episode here, so passes / kicks
     stage = Stage(name="catch", total_steps=1000, threshold=0.8, window=10)
     ctl = StageCurriculum(stage, {}, max_episode_steps=80, log=lambda _m: None, catch_gate=True)
 
     def episodes(caught, n):  # long episodes would pass a survival gate; caught ones are short
         return [EpisodeRecord(length=20 if caught else 80, terminated=caught, truncated=not caught,
-                              start_type=START_POSSESSION, mean_reward=0.0, passes=int(caught))] * n
+                              start_type=START_POSSESSION, mean_reward=0.0, passes=int(caught), kicks=1)] * n
 
     row = ctl.update(episodes(False, 10))
     assert row["gate_mean"] == 0.0 and not ctl.finished
     ctl.update(episodes(True, 10))
     assert ctl.gate.mean() == 1.0 and ctl.finished
+
+
+def test_the_gate_scores_passes_per_kick():  # AI GENERATED (2026-11-11)
+    stage = Stage(name="catch", total_steps=1000, threshold=0.8, window=3)
+    ctl = StageCurriculum(stage, {}, max_episode_steps=300, log=lambda _m: None, catch_gate=True)
+    ctl.update([EpisodeRecord(length=300, terminated=False, truncated=True, start_type=START_POSSESSION,
+                              mean_reward=0.0, passes=p, kicks=k) for p, k in [(6, 8), (0, 0), (3, 3)]])
+    assert list(ctl.gate.scores) == [0.75, 0.0, 1.0]  # no kick scores 0
 
 
 def test_training_pass_practice_runs_end_to_end(tmp_path, cfg):
@@ -283,11 +297,13 @@ def test_training_pass_practice_runs_end_to_end(tmp_path, cfg):
 
 
 # --- Pass practice with the blues free to move (2026-11-09) -------------------------------
-MOVING = {**PRACTICE, "shared": {**PRACTICE["shared"], "scenario": "pass_practice_moving", "max_episode_steps": 100}}
+MOVING = {**PRACTICE, "shared": {**PRACTICE["shared"], "scenario": "pass_practice_moving", "max_episode_steps": 100},
+          "rl": {**PRACTICE["rl"], "reward": {"base": "pass_catch"}}}  # 2026-11-11: paid per catch
 
 
-def soft_pass_to_blue_1(env, cfg, blue_1_runs):
-    """Blue 0 kicks softly at blue 1, 3 m away (0.9 m/s: it rolls ~1.6 m, ~0.5 m short); blue 1 runs at it or stands."""
+def soft_pass_to_blue_1(env, cfg, blue_1_runs, until_catch=False):
+    """Blue 0 kicks softly at blue 1, 3 m away (0.9 m/s: it rolls ~1.6 m, ~0.5 m short); blue 1 runs at it or stands.
+    until_catch (2026-11-11): stop once a teammate has the ball, not at the episode's end."""
     env.set_state_for_testing(blue_pos=[[0, 0], [3, 0], [0, 3]], red_pos=[], holder=("blue", 0), step=0)
     rm = RewardModule(cfg)
     memory, s, total = rm.new_episode(), env._state(), 0.0
@@ -299,7 +315,7 @@ def soft_pass_to_blue_1(env, cfg, blue_1_runs):
         s_next, term, trunc, info = env.step(act)
         total += rm.parts(s, act, s_next, term, trunc, info, memory).base
         s, first = s_next, False
-        if term or trunc:
+        if term or trunc or (until_catch and any(b["has_possession"] for b in s["blue"][1:])):
             return s, term, trunc, total
 
 
@@ -318,9 +334,9 @@ def test_a_teammate_can_run_onto_a_short_pass():
     env = PyBulletEnv(cfg.shared)
     try:
         env.reset(seed=0)
-        s, term, trunc, total = soft_pass_to_blue_1(env, cfg, blue_1_runs=True)
-        assert term and not trunc and s["blue"][1]["has_possession"]
-        assert total == 1.0
+        s, term, trunc, total = soft_pass_to_blue_1(env, cfg, blue_1_runs=True, until_catch=True)
+        assert not term and not trunc and s["blue"][1]["has_possession"]  # 2026-11-11: play goes on
+        assert total == 1.0  # paid on the catch
         assert s["blue"][1]["pos"][0] < 2.9  # it came to meet the ball
     finally:
         env.close()
@@ -332,21 +348,111 @@ def test_the_same_short_pass_is_a_miss_for_a_frozen_teammate(env, cfg):
     assert 0 < total < PASS_MISS_MAX
 
 
-def test_a_moving_miss_ends_once_no_teammate_can_get_there_in_time():
+### AI GENERATED (2026-11-11: pass practice to the time limit)
+def test_a_moving_episode_runs_to_the_time_limit_after_a_miss():
     cfg = config_from_dict(MOVING)
     env = PyBulletEnv(cfg.shared)
     try:
         env.reset(seed=0)
         env.set_state_for_testing(blue_pos=[[0, 0], [3, 0], [0, 3]], red_pos=[], holder=("blue", 0), step=0)
-        s, term, trunc, total, _ = play(env, cfg, actions(kicker=0, kick_vec=(-0.7071, -0.7071)))  # full kick away
-        assert term and not trunc and s["step"] < 50  # ~7 m from both teammates, who'd need 3.5 s to run there
-        time_left = (cfg.shared.max_episode_steps - s["step"]) * cfg.shared.dt_control
-        run = cfg.shared.max_speed * cfg.shared.free_speed_factor * time_left
-        roll_left = math.log1p(math.hypot(*s["ball"]["vel"])) / cfg.shared.ball_damping
-        gaps = [math.dist(b["pos"], s["ball"]["pos"]) - cfg.shared.player_radius - 0.15 for b in s["blue"][1:]]
-        assert roll_left + run < min(gaps)
+        s, term, trunc, total, memory = play(env, cfg, actions(kicker=0, kick_vec=(-0.7071, -0.7071)))  # full kick away
+        assert trunc and not term and s["step"] == cfg.shared.max_episode_steps
+        assert total == 0.0 and memory.kicks == 1 and memory.passes == 0
     finally:
         env.close()
+
+
+def test_two_passes_in_one_episode_pay_twice():
+    """Blue 0 passes to blue 1, which passes on to blue 2; both catches pay, in the same episode."""
+    cfg = config_from_dict(MOVING)
+    env = PyBulletEnv(cfg.shared)
+    try:
+        env.reset(seed=0)
+        s = env.set_state_for_testing(blue_pos=[[0, 0], [3, 0], [3, 3]], red_pos=[], holder=("blue", 0), step=0)
+        rm = RewardModule(cfg)
+        memory, paid = rm.new_episode(), []
+        for _ in range(cfg.shared.max_episode_steps):
+            holder = next((b["id"] for b in s["blue"] if b["has_possession"]), None)
+            act = actions()
+            if holder in (0, 1) and memory.kicks == holder:  # each holder kicks once, at the next blue
+                aim = np.subtract(s["blue"][holder + 1]["pos"], s["ball"]["pos"])
+                act = actions(kicker=holder, kick_vec=tuple(0.6 * aim / np.linalg.norm(aim)))
+            s_next, term, trunc, info = env.step(act)
+            base = rm.parts(s, act, s_next, term, trunc, info, memory).base
+            if base:
+                paid.append(base)
+            s = s_next
+            if term or trunc:
+                break
+        assert trunc and not term
+        assert paid == [1.0, 1.0] and memory.passes == 2 and memory.kicks == 2
+        assert s["blue"][2]["has_possession"]
+    finally:
+        env.close()
+
+
+def chase(min_distance, catcher_starts_at):
+    """Blue 0 kicks the ball 3 m ahead along x; blue 1, starting at ``catcher_starts_at``, picks it
+    up 3 m from the kick point. Returns the memory."""
+    memory = PassMemory(min_distance=min_distance)
+    start = ((0.0, 0.0), catcher_starts_at, (-3.0, 3.0))
+    memory.update({"events": [KICK_0, RELEASE_0]}, practice_state(0, blues=start), practice_state(ball=(0.5, 0.0), blues=start))
+    there = ((0.0, 0.0), (3.3, 0.0), (-3.0, 3.0))
+    memory.update({"events": [caught_by(1)]}, practice_state(ball=(2.9, 0.0), blues=there),
+                  {**practice_state(1, blues=there), "ball": {"pos": [3.0, 0.0], "vel": [0.0, 0.0]}})
+    return memory
+
+
+def test_a_ball_chased_down_by_a_packmate_is_no_pass():
+    assert chase(2.0, catcher_starts_at=(0.6, 0.5)).passes == 0  # it ran beside the kicker: no pass
+    assert chase(2.0, catcher_starts_at=(2.5, 0.5)).passes == 1  # it stood in range at the kick
+    assert chase(0.0, catcher_starts_at=(0.6, 0.5)).passes == 1  # no minimum: any catch counts
+    memory = chase(2.0, catcher_starts_at=(0.6, 0.5))
+    assert memory.receivers == frozenset({2}) and memory.kicks == 1  # only blue 2 stood 2 m away
+
+
+def test_pass_catch_pays_on_the_catch_with_the_length_bonus():
+    rm = RewardModule(with_overrides(config_from_dict(MOVING), LONG))
+    memory = rm.new_episode()
+    blues = ((0.0, 0.0), (3.0, 0.0), (0.0, 3.0))
+    kick = rm.parts(practice_state(0, blues=blues), {}, practice_state(ball=(0.5, 0.0), blues=blues), False, False,
+                    practice_info(KICK_0, RELEASE_0), memory)
+    catch = rm.parts(practice_state(ball=(2.8, 0.0), blues=blues), {}, practice_state(1, blues=blues), False, False,
+                     practice_info(caught_by(1)), memory)
+    later = rm.parts(practice_state(1, blues=blues), {}, practice_state(1, blues=blues), False, True,
+                     practice_info(), memory)
+    assert kick.base == 0.0 and later.base == 0.0  # nothing for the kick, nothing at the time limit
+    assert catch.base == pytest.approx(PASS_CATCH_MIN + (1 - PASS_CATCH_MIN) * 3.0 / PASS_FULL_LENGTH)
+
+
+def spacing(spots, target=3.0):
+    cfg = with_overrides(config_from_dict(MOVING), {"rl": {"reward": {"spacing_distance": target}}})
+    s_next = {"blue": [{"id": i, "pos": [*p, 0.0]} for i, p in enumerate(spots)]}
+    return receiver_spacing(None, None, s_next, False, False, {}, cfg)
+
+
+def test_receiver_spacing_pays_most_for_blues_the_target_distance_apart():
+    triangle = [(0.0, 0.0), (3.0, 0.0), (1.5, 1.5 * math.sqrt(3))]  # every pair 3 m apart
+    assert spacing(triangle) == pytest.approx(1.0)
+    assert spacing([(0.0, 0.0), (4.0, 0.0)]) == pytest.approx(2 / 3)  # a tent: 1 m off costs a third
+    assert spacing([(0.0, 0.0), (2.0, 0.0)]) == pytest.approx(2 / 3)
+    assert spacing([(0.0, 0.0), (0.0, 0.0)]) == 0.0 and spacing([(0.0, 0.0), (6.0, 0.0)]) == 0.0
+    assert spacing([(0.0, 0.0), (9.0, 0.0)]) == 0.0  # never negative
+    # 2026-11-11: blues bunched 0.6 m apart still feel the pull: each metre apart pays the same
+    assert spacing([(0.0, 0.0), (1.6, 0.0)]) - spacing([(0.0, 0.0), (0.6, 0.0)]) == pytest.approx(1 / 3)
+    assert spacing([(0.0, 0.0), (4.0, 0.0)], target=4.0) == pytest.approx(1.0)
+    assert spacing([(0.0, 0.0)]) == 0.0  # nobody to space from
+
+
+def test_spacing_distance_must_be_positive():
+    with pytest.raises(ValueError, match="spacing_distance"):
+        config_from_dict({**MOVING, "rl": {**MOVING["rl"], "reward": {"base": "pass_catch", "spacing_distance": 0.0}}})
+
+
+def test_moving_practice_needs_the_pass_catch_reward():
+    with pytest.raises(ValueError, match="pass_catch"):
+        config_from_dict({**MOVING, "rl": {**MOVING["rl"], "reward": {"base": "pass_practice"}}})
+### END AI GENERATED
 
 
 def test_moving_practice_trains_end_to_end(tmp_path):
