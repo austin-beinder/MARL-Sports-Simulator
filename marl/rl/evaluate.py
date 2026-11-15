@@ -22,6 +22,10 @@
 #     frac_passed (episodes with at least one pass). (Austin Beinder)
 #   - 2026-11-11: Records kicks per episode; summarize adds pass_rate (passes
 #     per kick, over all the episodes). (Austin Beinder)
+#   - 2026-11-13: Records return passes per episode; summarize adds
+#     return_share (returns per pass). (Austin Beinder)
+#   - 2026-11-13: Records pickups and calls; summarize adds called_share and
+#     miscalled_per_pickup. (Austin Beinder)
 # Prompt summary: Implement Phase 3 step 8 of the issue #7 plan (PPO update +
 #   training loop); evaluation is called by the loop.
 # Human review:   Pending review
@@ -114,6 +118,10 @@ def run_episodes(
                 mean_reward=base_sum / s["step"],
                 passes=memory.passes,  # AI GENERATED (2026-11-09)
                 kicks=memory.kicks,  # AI GENERATED (2026-11-11)
+                returns=memory.returns,  # AI GENERATED (2026-11-13)
+                pickups=memory.pickups,  # AI GENERATED (2026-11-13)
+                called=memory.called,  # AI GENERATED (2026-11-13)
+                miscalled=memory.miscalled,  # AI GENERATED (2026-11-13)
             )
         )
     return records
@@ -150,6 +158,8 @@ def summarize(records: Sequence[EpisodeRecord]) -> dict[str, float]:
         "frac_passed": float(np.mean([r.passes > 0 for r in records])) if len(records) else nan,
         ### END AI GENERATED
         "pass_rate": _pass_rate(records),  # AI GENERATED (2026-11-11)
+        "return_share": _return_share(records),  # AI GENERATED (2026-11-13)
+        **_call_stats(records),  # AI GENERATED (2026-11-13)
     }
     for st in START_TYPES:
         sel = lengths[[r.start_type == st for r in records]] if len(records) else lengths
@@ -163,6 +173,23 @@ def _pass_rate(records: Sequence[EpisodeRecord]) -> float:
     """Passes completed per kick over all the episodes (nan without kicks)."""
     kicks = sum(r.kicks for r in records)
     return sum(r.passes for r in records) / kicks if kicks else float("nan")
+
+
+def _return_share(records: Sequence[EpisodeRecord]) -> float:
+    """2026-11-13: the share of passes that went straight back to the blue who passed to the kicker
+    (A -> B -> A; nan without passes). With three blues, 0 is a perfect rotation A -> B -> C -> A."""
+    passes = sum(r.passes for r in records)
+    return sum(r.returns for r in records) / passes if passes else float("nan")
+
+
+def _call_stats(records: Sequence[EpisodeRecord]) -> dict[str, float]:
+    """2026-11-13, per blue pickup of the ball: how well the blue who got it had called for it
+    (called_share, 0 to 1) and how loudly the others had (miscalled_per_pickup). nan without pickups."""
+    pickups = sum(r.pickups for r in records)
+    if not pickups:
+        return {"called_share": float("nan"), "miscalled_per_pickup": float("nan")}
+    return {"called_share": sum(r.called for r in records) / pickups,
+            "miscalled_per_pickup": sum(r.miscalled for r in records) / pickups}
 ### END AI GENERATED
 
 

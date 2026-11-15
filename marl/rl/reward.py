@@ -38,6 +38,21 @@
 #   - 2026-11-11: With a minimum pass distance d, the receiver must also have
 #     been d from the kick point when the ball was kicked (the blues ran as a
 #     pack, kicked the ball ahead and chased it down). (Austin Beinder)
+#   - 2026-11-13: rl.reward.return_pass_factor: pass_catch pays a pass straight
+#     back to the blue who passed to the kicker (A -> B -> A) this fraction;
+#     PassMemory counts those returns. (Austin Beinder)
+#   - 2026-11-13: kicker_clearance stops once the kicked ball has stopped
+#     loose (the kicker may fetch its own miss). (Austin Beinder)
+#   - 2026-11-13: The call_accuracy shaping term (rl.call_enabled): a "got it"
+#     call pays when the caller gets the ball. PassMemory tracks calls and
+#     pickups. (Austin Beinder)
+#   - 2026-11-14: call_accuracy is no longer part of the team reward: the call
+#     head gets its own per-blue reward (call_values, blue_pickup), weighted by
+#     the term's coef (RewardModule.call_coef). The claim_ball scenario's base
+#     reward (claim) and the call_yield shaping term. (Austin Beinder)
+#   - 2026-11-14: The dead_ball shaping term (claim's urgency for the catch
+#     stages), and receiver_spacing leaves out the blue nearest a dead ball,
+#     so fetching it doesn't cost the team its spacing. (Austin Beinder)
 # Prompt summary: Implement Phase 3 step 5 of the issue #7 plan (reward
 #   module + registry).
 # Human review:   Pending review
@@ -96,12 +111,46 @@ Pass practice to the time limit (2026-11-11; pass_practice_moving, no red, blues
 
 * ``pass_catch`` (base) -- each completed pass pays on the step it is caught: 1, or 0.75 to 1 by
   its length with ``rl.reward.pass_length_bonus``. Nothing else; a miss just costs the time to
-  get the ball back.
+  get the ball back. 2026-11-13: a return pass (straight back to the blue who passed to the
+  kicker, ``s["ball"]["passer"]`` at the kick: A -> B -> A) pays ``rl.reward.return_pass_factor``
+  times that (1 = no difference, the default). The blues passed back and forth 88% of the time,
+  the third blue idle; with three blues a full pay for every pass means rotating A -> B -> C -> A.
+  ``rl.passer_obs`` shows the blues the same passer, so they can tell which pass is which.
+* ``call_accuracy`` (2026-11-13; needs ``rl.call_enabled``) -- a "got it" call. Two blues that
+  both hung back from a stopped loose ball (median 8 s) each had nothing telling them the other
+  would go. 2026-11-14: NOT part of the team reward any more. As a team term (a pickup paid the
+  getter's call lead less every other blue's) the three blues' calls cancelled out in the one
+  shared number, and after 4M steps calling had fallen to 3% of steps, the getter calling less
+  than its teammates. Now the call head has its own reward, per blue, scored in hindsight
+  (``call_values``): a call at step t is worth +1 to blue i if the next blue pickup, within
+  CALL_LEAD steps, is i's; -0.5 if it is a teammate's; 0 if nobody picks the ball up in time;
+  less 0.02 for calling at all (CALL_RIGHT, CALL_WRONG, CALL_STEP_COST). The PPO update scores the call head with that alone
+  (``Actor.evaluate_split``), weighted by this term's coef (``RewardModule.call_coef``); the
+  other heads keep the team advantage. The term function below is what the logs (``called_share``,
+  ``miscalled_per_pickup``) measure; it never adds to the team reward.
 * ``receiver_spacing`` (shaping, NOT potential-based) -- every step, how close each pair of blues
   is to ``rl.reward.spacing_distance`` apart (3 m by default): the mean over pairs of the tent
   ``max(0, 1 - |d - target| / target)``, 0 for blues on top of each other or twice the target
   apart, 1 when every pair is exactly the target apart, and straight lines between. So the blues
-  spread out into passing range of each other, ready for the next pass.
+  spread out into passing range of each other, ready for the next pass. 2026-11-14: while the
+  ball is dead (loose and slower than DEAD_BALL_SPEED), the blue nearest it is left out (with three
+  or more blues), so going to fetch it doesn't cost the team its spacing; the others still spread.
+
+Claiming a loose ball (2026-11-14; claim_ball: a loose ball, no red, ends when a blue gets it):
+
+* ``claim`` (base) -- -1 every step until a blue picks the ball up (0 on that step). With the
+  (1 - gamma) scale an episode of L steps returns -(1 - gamma^L): the sooner the better.
+* ``call_yield`` (shaping, NOT potential-based; needs ``rl.call_enabled``) -- "if a teammate
+  called it, stay away". Each step, every blue NOT calling in ``s`` while a teammate was, and the
+  ball still loose in ``s_next``, pays its closeness to the ball, 1 - distance / YIELD_DISTANCE
+  (0 from YIELD_DISTANCE out); picking up a ball a teammate called costs YIELD_STEAL. Calls are
+  read from ``s``: what the blue could see when it moved.
+* ``dead_ball`` (shaping, NOT potential-based; 2026-11-14) -- claim's urgency for the stages that
+  aren't claim_ball: -1 every step the ball is dead in ``s_next`` (nobody holds it and it moves
+  slower than DEAD_BALL_SPEED, so a pass in flight is free). In the catch stages the blues hung
+  about 1.5 m off a stopped ball (half of every episode, a third of misses never fetched), since
+  nothing there charged for it. Every dead step also makes a miss cost more, so keep the coef well
+  below (catch value) / (dead steps per miss), or holding the ball beats kicking it.
 
 A pass is a blue's kick picked up by a different blue with nobody else touching it first. With
 ``rl.reward.min_pass_distance`` d > 0 (2026-11-10), the catch must also be at least d from where
@@ -120,6 +169,8 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass  # AI GENERATED
 from typing import Any, Callable, NamedTuple
+
+import numpy as np  # AI GENERATED (2026-11-14: call_values)
 
 from marl.common.config import (
     BASE_REWARD_TERMS,
@@ -182,6 +233,10 @@ class PassStep(NamedTuple):
     # latest kick; inf before any kick
     closest: float = math.inf
     length: float = 0.0  # 2026-11-10: how far the latest completed pass went, kick point to catch point (m)
+    returned: bool = False  # 2026-11-13: this step's pass went straight back to the blue who passed to the kicker
+    stopped: bool = False  # 2026-11-13: the kick in play has come to a stop loose (it can't reach anyone by itself)
+    call_credit: float = 0.0  # 2026-11-13: this step's pickups: the getter's call less the others' (see CALL_LEAD)
+    callers: int = 0  # 2026-11-13: blues calling in s_next
 
 
 ### AI GENERATED (2026-11-10: a minimum pass distance, rl.reward.min_pass_distance)
@@ -211,6 +266,18 @@ class PassMemory:
     # 2026-11-11: the blues who stood min_distance or more from the kick point at the latest kick
     # (the only ones who can complete it); None = anyone (no minimum, or no state to tell from)
     receivers: frozenset[int] | None = None
+    # 2026-11-13: who passed the ball to the blue whose kick is in play (s["ball"]["passer"] at the
+    # kick; None if nobody did, or the env doesn't report it), and the passes back to that blue
+    return_to: int | None = None
+    returns: int = 0
+    stopped: bool = False  # 2026-11-13: see PassStep.stopped
+    # 2026-11-13: calls. call_streaks[i] = the steps blue i had called in a row up to the latest
+    # state (None until the first update); pickups = blue pickups of the ball; called / miscalled =
+    # the getters' call lead and the other blues' at those pickups, summed (0 to 1 each).
+    call_streaks: list[int] | None = None
+    pickups: int = 0
+    called: float = 0.0
+    miscalled: float = 0.0
 
     def _far_enough(self, ball) -> bool:  # AI GENERATED (2026-11-10)
         """The ball is min_distance from the kick point (always, with no minimum or no kick point)."""
@@ -225,7 +292,7 @@ class PassMemory:
     def update(self, info: dict, s: dict | None = None, s_next: dict | None = None) -> PassStep:
         """``s`` and ``s_next`` (2026-11-09) feed the closest approach; without them it stays inf.
         They also give the kick point (2026-11-10); without them every catch counts, however short."""
-        in_play, completed = self.kicker, False
+        in_play, completed, returned = self.kicker, False, False  # AI GENERATED (2026-11-13: returned)
         for event in info["events"]:
             if event["type"] == "kick":
                 self.kicker = in_play = event["agent"][1]  # blue kicks are the only kicks (ICD §6)
@@ -237,6 +304,8 @@ class PassMemory:
                     b["id"] for b in s["blue"]
                     if b["id"] != self.kicker and math.dist(b["pos"][:2], self.kick_point) >= self.min_distance)
                 ### END AI GENERATED
+                self.return_to = s["ball"].get("passer") if s is not None else None  # AI GENERATED (2026-11-13)
+                self.stopped = False  # AI GENERATED (2026-11-13): a new kick is moving
             elif event["type"] == "possession_change" and event["to"] is not None:
                 to = event["to"]
                 ### AI GENERATED (2026-11-10: a catch has to be min_distance from the kick point)
@@ -247,6 +316,10 @@ class PassMemory:
                     completed = True
                     self.passes += 1
                     self.length = math.dist(caught_at, self.kick_point) if caught_at and self.kick_point else 0.0
+                    ### AI GENERATED (2026-11-13: a pass straight back)
+                    returned = to[1] == self.return_to
+                    self.returns += returned
+                    ### END AI GENERATED
                 ### END AI GENERATED
                 self.kicker = None  # someone has the ball: no kick in play any more
         if in_play is not None and s is not None and s_next is not None:
@@ -254,7 +327,39 @@ class PassMemory:
             for blue in s_next["blue"]:
                 if blue["id"] != in_play and self._a_target(blue["pos"]):  # AI GENERATED (2026-11-10)
                     self.closest = min(self.closest, _segment_distance(blue["pos"], a, b))
-        return PassStep(in_play, completed, self.passes, self.closest, self.length)
+        ### AI GENERATED (2026-11-13: a kick that has stopped loose is over for kicker_clearance)
+        vel = s_next["ball"].get("vel") if s_next is not None else None  # hand-built test states may lack it
+        if (self.kicker is not None and vel is not None and not _anyone_holds(s_next)
+                and math.hypot(*vel[:2]) < DEAD_BALL_SPEED):
+            self.stopped = True
+        credit, callers = self._calls(info, s, s_next)  # AI GENERATED (2026-11-13)
+        return PassStep(in_play, completed, self.passes, self.closest, self.length, returned,
+                        self.stopped and in_play is not None, credit, callers)
+        ### END AI GENERATED
+
+    ### AI GENERATED (2026-11-13: calls)
+    def _calls(self, info: dict, s: dict | None, s_next: dict | None) -> tuple[float, int]:
+        """This step's call credit (each blue pickup: the getter's call lead less the other blues')
+        and the blues calling in s_next. A call's lead is min(1, steps called in a row / CALL_LEAD),
+        counted up to s: what the teammates could see when they acted."""
+        if s is None or s_next is None:
+            return 0.0, 0
+        if self.call_streaks is None:
+            self.call_streaks = [int(bool(b.get("calling"))) for b in s["blue"]]
+        credit = 0.0
+        for event in info["events"]:
+            to = event.get("to") if event["type"] == "possession_change" else None
+            if to is not None and to[0] == "blue":
+                lead = [min(1.0, k / CALL_LEAD) for k in self.call_streaks]
+                right, wrong = lead[to[1]], sum(lead) - lead[to[1]]
+                credit += right - wrong
+                self.pickups += 1
+                self.called += right
+                self.miscalled += wrong
+        calling = [bool(b.get("calling")) for b in s_next["blue"]]
+        self.call_streaks = [k + 1 if c else 0 for k, c in zip(self.call_streaks, calling)]
+        return credit, sum(calling)
+    ### END AI GENERATED
 
 
 def _segment_distance(p, a, b) -> float:
@@ -268,6 +373,15 @@ def _segment_distance(p, a, b) -> float:
 
 def _blue_holds(s: dict) -> bool:
     return any(b["has_possession"] for b in s["blue"])
+
+
+def _anyone_holds(s: dict) -> bool:  # AI GENERATED (2026-11-13)
+    return any(e["has_possession"] for e in s["blue"] + s.get("red", []))
+
+
+def _ball_dead(s: dict) -> bool:  # AI GENERATED (2026-11-14): loose and stopped (DEAD_BALL_SPEED)
+    vel = s.get("ball", {}).get("vel")  # hand-built test states may lack it: never dead
+    return vel is not None and not _anyone_holds(s) and math.hypot(*vel[:2]) < DEAD_BALL_SPEED
 
 
 def passing_drill(s, actions, s_next, effective_terminal, truncated, info, cfg) -> float:
@@ -302,12 +416,17 @@ def pass_completed(s, actions, s_next, effective_terminal, truncated, info, cfg)
 # The kicker isn't marked in o_i: it has to tell from the ball running away from it.
 KICKER_CLEARANCE = 1.5  # m, centre to centre
 KICKER_REGRAB = 10.0  # a re-grab costs as much as 10 steps right on the ball
+# 2026-11-13: once the kicked ball has slowed below DEAD_BALL_SPEED loose (it rolls ln(1.3) / 0.4
+# = 0.66 m more at most), the kick is over for this term: no charge for standing near it or picking
+# it back up. Before, a miss that stopped kept charging the kicker until somebody else fetched it,
+# and the ball sat loose 40% of the time (a median 8 s, half the time to the end of the episode).
+DEAD_BALL_SPEED = 0.3  # m/s
 
 
 def kicker_clearance(s, actions, s_next, effective_terminal, truncated, info, cfg) -> float:
     kicker = info["pass"].kicker
-    if kicker is None:
-        return 0.0  # no kick in play
+    if kicker is None or info["pass"].stopped:  # AI GENERATED (2026-11-13: stopped)
+        return 0.0  # no kick in play, or it has stopped: the kicker may fetch it
     me = next(b for b in s_next["blue"] if b["id"] == kicker)
     if me["has_possession"]:
         return -KICKER_REGRAB  # took its own kick back (or it rebounded straight to it)
@@ -354,7 +473,9 @@ def pass_practice(s, actions, s_next, effective_terminal, truncated, info, cfg) 
 ### AI GENERATED (2026-11-11: pass practice to the time limit)
 def pass_catch(s, actions, s_next, effective_terminal, truncated, info, cfg) -> float:
     p = info["pass"]
-    return _catch_value(p, cfg) if p.completed else 0.0
+    if not p.completed:
+        return 0.0
+    return _catch_value(p, cfg) * (cfg.rl.reward.return_pass_factor if p.returned else 1.0)  # AI GENERATED (2026-11-13)
 
 
 # receiver_spacing: how close each pair of blues is to rl.reward.spacing_distance apart, averaged
@@ -369,6 +490,11 @@ def pass_catch(s, actions, s_next, effective_terminal, truncated, info, cfg) -> 
 def receiver_spacing(s, actions, s_next, effective_terminal, truncated, info, cfg) -> float:
     target = cfg.rl.reward.spacing_distance
     spots = [b["pos"][:2] for b in s_next["blue"]]
+    ### AI GENERATED (2026-11-14: the blue fetching a dead ball isn't held to the spacing)
+    if len(spots) >= 3 and _ball_dead(s_next):
+        ball = s_next["ball"]["pos"][:2]
+        del spots[min(range(len(spots)), key=lambda i: math.dist(spots[i], ball))]
+    ### END AI GENERATED
     gaps = [math.dist(a, b) for i, a in enumerate(spots) for b in spots[i + 1:]]
     if not gaps:
         return 0.0  # a lone blue has nobody to space from
@@ -376,8 +502,111 @@ def receiver_spacing(s, actions, s_next, effective_terminal, truncated, info, cf
 ### END AI GENERATED
 
 
+### AI GENERATED (2026-11-13: a "got it" call)
+# call_accuracy: see the module docstring. With coef c, a pickup the getter called for at least
+# CALL_LEAD steps earns c, each other blue's full-length call costs c, and calling costs
+# c * CALL_COST a step (a whole episode of one blue calling: 3c, three right calls' worth).
+CALL_LEAD = 10  # steps (0.5 s) of calling in a row for a call's full credit
+CALL_COST = 0.01  # per blue calling, per step
+
+
+def call_accuracy(s, actions, s_next, effective_terminal, truncated, info, cfg) -> float:
+    p = info["pass"]
+    return p.call_credit - CALL_COST * p.callers
+### END AI GENERATED
+
+
+### AI GENERATED (2026-11-14: the call head's own per-blue reward)
+# A call at step t is scored by the next blue pickup in the CALL_LEAD steps after it (transitions
+# t+1 .. t+CALL_LEAD: a call shows in s_{t+1}, so teammates see it from step t+1 on): +1 for the
+# blue who got the ball, CALL_WRONG for each other blue, 0 when nobody got it in time, less
+# CALL_STEP_COST for calling at all. So a full CALL_LEAD-step call by the getter sums to CALL_LEAD
+# (like the team term's full credit, 1, in units of 1 / CALL_LEAD), and a blue calling the whole
+# time pays CALL_STEP_COST every step it isn't about to get the ball.
+# The penalties are small on purpose. With -1 and 0.1 (the team term's ratio) calling lost on
+# average: most steps have no pickup coming, and near one two of three blues are wrong. The head
+# learned "never call" (one shared bias) long before "call when I'm about to get it" (a function
+# of the state), and once its chance of calling was near 0 the gradient vanished: claim_ball warm
+# from go_to_target fell silent in 20k steps (call entropy 0.28 -> 0.02, the getter calling ~1%).
+# With -0.5 and 0.02 the getter had called for 80-90% of pickups by 85k steps (mock, 2026-11-14).
+CALL_RIGHT, CALL_WRONG = 1.0, -0.5
+CALL_STEP_COST = 0.02
+
+
+def blue_pickup(info: dict) -> int | None:
+    """The blue who got the ball during this step (the first, if several did), or None."""
+    for event in info["events"]:
+        to = event.get("to") if event["type"] == "possession_change" else None
+        if to is not None and to[0] == "blue":
+            return to[1]
+    return None
+
+
+def call_values(pickups, episode_end, n_agents: int, lead: int = CALL_LEAD,
+                cost: float = CALL_STEP_COST) -> tuple[np.ndarray, np.ndarray]:
+    """What calling at each step would have been worth to each blue, in hindsight.
+
+    ``pickups`` [T]: the blue who got the ball in transition t (-1: nobody). ``episode_end`` [T]:
+    transition t ended its episode. Returns ``(q, valid)``, both [T, N]: q[t, i] is what a call by
+    blue i at step t earns (see CALL_RIGHT; the same whether or not i called), and valid is False
+    where the window runs past the end of the rollout with the episode still going (the next
+    rollout holds the answer: those steps are left out of the call loss).
+    """
+    pickups = np.asarray(pickups, dtype=int)
+    episode_end = np.asarray(episode_end, dtype=bool)
+    T = len(pickups)
+    q = np.zeros((T, n_agents))
+    valid = np.ones((T, n_agents), dtype=bool)
+    for t in range(T):
+        for k in range(1, lead + 1):
+            if episode_end[t + k - 1]:
+                break  # the episode ended first: nobody picked it up in time
+            if t + k >= T:
+                valid[t] = False  # still going at the end of the rollout: unknown
+                break
+            getter = pickups[t + k]
+            if getter >= 0:
+                q[t] = CALL_WRONG
+                q[t, getter] = CALL_RIGHT
+                break
+    return q - cost, valid
+
+
+# claim (claim_ball's base): -1 a step until a blue has the ball.
+def claim(s, actions, s_next, effective_terminal, truncated, info, cfg) -> float:
+    return 0.0 if _blue_holds(s_next) else -1.0
+
+
+# call_yield: see the module docstring. With coef c, a blue standing on a ball a teammate called
+# pays about c a step, and taking it costs YIELD_STEAL * c.
+YIELD_DISTANCE = 1.5  # m, centre to centre (like KICKER_CLEARANCE)
+YIELD_STEAL = 10.0  # like KICKER_REGRAB: as much as 10 steps right on the ball
+
+
+def call_yield(s, actions, s_next, effective_terminal, truncated, info, cfg) -> float:
+    calling = [bool(b.get("calling")) for b in s["blue"]]
+    if not any(calling) or _anyone_holds(s):
+        return 0.0  # nobody called, or the ball wasn't loose
+    getter = blue_pickup(info)
+    if getter is not None and not calling[getter]:
+        return -YIELD_STEAL  # took a ball a teammate had called
+    if _anyone_holds(s_next):
+        return 0.0
+    ball = s_next["ball"]["pos"][:2]
+    return -sum(max(0.0, 1.0 - math.dist(b["pos"][:2], ball) / YIELD_DISTANCE)
+                for b, called in zip(s_next["blue"], calling) if not called)
+
+
+# dead_ball: see the module docstring. With coef c, a dead ball costs c a step until somebody
+# picks it up (or 30c a second). In catch_moving_longer (~85 dead steps per miss, a catch worth
+# ~0.9), c = 0.003 makes a miss cost ~0.25, so a kick is still worth taking at a 30% catch rate.
+def dead_ball(s, actions, s_next, effective_terminal, truncated, info, cfg) -> float:
+    return -1.0 if _ball_dead(s_next) else 0.0
+### END AI GENERATED
+
+
 PASS_TERMS = frozenset({"passing_drill", "pass_progress", "pass_completed", "pass_practice",  # the terms that read info["pass"]
-                        "kicker_clearance", "pass_catch"})  # AI GENERATED (2026-11-11)
+                        "kicker_clearance", "pass_catch", "call_accuracy"})  # AI GENERATED (2026-11-11; call_accuracy 2026-11-13)
 ### END AI GENERATED
 
 
@@ -402,6 +631,7 @@ BASE_TERMS: dict[str, Term] = {
     "passing_drill": passing_drill,  # AI GENERATED (2026-11-08)
     "pass_practice": pass_practice,  # AI GENERATED (2026-11-09)
     "pass_catch": pass_catch,  # AI GENERATED (2026-11-11)
+    "claim": claim,  # AI GENERATED (2026-11-14)
 }
 SHAPING_TERMS: dict[str, Term] = {
     "pbrs_ball_acquisition": pbrs_ball_acquisition,
@@ -409,6 +639,9 @@ SHAPING_TERMS: dict[str, Term] = {
     "pass_completed": pass_completed,  # AI GENERATED (2026-11-08)
     "kicker_clearance": kicker_clearance,  # AI GENERATED (2026-11-11)
     "receiver_spacing": receiver_spacing,  # AI GENERATED (2026-11-11)
+    "call_accuracy": call_accuracy,  # AI GENERATED (2026-11-13)
+    "call_yield": call_yield,  # AI GENERATED (2026-11-14)
+    "dead_ball": dead_ball,  # AI GENERATED (2026-11-14)
     "pbrs_red_distance": _deferred("pbrs_red_distance", "#15"),
 }
 
@@ -423,6 +656,7 @@ class RewardModule:
         self._base = BASE_TERMS[rw.base]
         self._shaping: list[tuple[Term, float]] = []
         self.needs_memory = rw.base in PASS_TERMS  # AI GENERATED (2026-11-08)
+        self.call_coef = 0.0  # AI GENERATED (2026-11-14): > 0 when call_accuracy is on
         for t in rw.shaping:
             if t.name not in SHAPING_TERMS:
                 raise ValueError(f"unknown shaping term {t.name!r}; choose from {sorted(SHAPING_TERMS)}")
@@ -430,8 +664,13 @@ class RewardModule:
                 continue
             if t.name in SHAPING_TERMS_DEFERRED:
                 raise NotImplementedError(f"shaping term {t.name!r} is interface-only (#15)")
-            self._shaping.append((SHAPING_TERMS[t.name], t.coef))
             self.needs_memory |= t.name in PASS_TERMS  # AI GENERATED (2026-11-08)
+            ### AI GENERATED (2026-11-14: the call's own reward, not the team's)
+            if t.name == "call_accuracy":
+                self.call_coef = t.coef  # weights the call head's own loss (see call_values)
+                continue
+            ### END AI GENERATED
+            self._shaping.append((SHAPING_TERMS[t.name], t.coef))
         self.scale = 1.0 - cfg.gamma
         self._cfg = cfg
 

@@ -23,12 +23,20 @@
 #   - 2026-11-11: receiver_spacing is a tent: every metre apart pays the same.
 #   - 2026-11-11: With a minimum pass distance the receiver must have stood that
 #     far from the kick point at the kick (no chasing down a ball kicked ahead).
+#   - 2026-11-13: The env's passer, and rl.reward.return_pass_factor for a
+#     pass straight back. (Austin Beinder)
+#   - 2026-11-13: A stopped kick no longer charges the kicker; the
+#     call_accuracy term. (Austin Beinder)
+#   - 2026-11-14: call_accuracy no longer adds to the team reward (the call
+#     head has its own, tests/test_calls.py): these tests read the term itself.
+#     (Austin Beinder)
 # Prompt summary: A curriculum stage with three frozen blues and no red, where
 #   the holder is rewarded for kicking the ball near a teammate and most for a
 #   catch; three stages with the teammates further and further away.
 # Human review:   Pending review
 # ==============================================================================
 import math
+import types  # AI GENERATED (2026-11-13)
 
 import numpy as np
 import pytest
@@ -518,4 +526,148 @@ def test_chasing_your_own_kick_costs_more_than_standing_back():
     still, chase = kick_and_follow(cfg, chase=False), kick_and_follow(cfg, chase=True)
     assert -3.0 < still < 0  # a firm kick clears 1.5 m in ~0.3 s: a small, unavoidable cost
     assert chase < still - 1.0
+### END AI GENERATED
+
+
+### AI GENERATED (2026-11-13: who passed to the holder, and passes straight back)
+ROTATE = {"rl": {"reward": {"return_pass_factor": 0.5}}}
+
+
+def relay(receivers):
+    """Blue 0 holds the ball; each holder in turn kicks it at the next blue in ``receivers``.
+    Returns the passer the env reports after each catch, what each catch paid, and the memory."""
+    cfg = with_overrides(config_from_dict(MOVING), ROTATE)
+    env = PyBulletEnv(cfg.shared)
+    try:
+        env.reset(seed=0)
+        s = env.set_state_for_testing(blue_pos=[[0, 0], [3, 0], [3, 3]], red_pos=[], holder=("blue", 0), step=0)
+        assert s["ball"]["passer"] is None
+        rm = RewardModule(cfg)
+        memory, passers, paid = rm.new_episode(), [], []
+        for _ in range(cfg.shared.max_episode_steps):
+            holder = next((b["id"] for b in s["blue"] if b["has_possession"]), None)
+            act = actions()
+            if holder is not None and memory.kicks == memory.passes < len(receivers):
+                aim = np.subtract(s["blue"][receivers[memory.kicks]]["pos"], s["ball"]["pos"])
+                act = actions(kicker=holder, kick_vec=tuple(0.6 * aim / np.linalg.norm(aim)))
+            s_next, term, trunc, info = env.step(act)
+            base = rm.parts(s, act, s_next, term, trunc, info, memory).base
+            if base:
+                paid.append(base)
+                passers.append(s_next["ball"]["passer"])
+            s = s_next
+            if term or trunc or memory.passes == len(receivers):
+                break
+        return passers, paid, memory
+    finally:
+        env.close()
+
+
+def test_passing_on_to_the_third_blue_pays_in_full():
+    passers, paid, memory = relay([1, 2])  # 0 -> 1 -> 2
+    assert passers == [0, 1] and paid == [1.0, 1.0] and memory.returns == 0
+
+
+def test_a_pass_straight_back_pays_the_return_factor():
+    passers, paid, memory = relay([1, 0])  # 0 -> 1 -> 0
+    assert passers == [0, 1] and paid == [1.0, 0.5] and memory.returns == 1
+
+
+def test_the_passer_survives_a_regrab_and_clears_on_any_other_pickup():
+    env = types.SimpleNamespace(_kicked_by=None, _passer=None)
+
+    def track(*events):
+        PyBulletEnv._track_passer(env, list(events))
+        return env._passer
+
+    assert track(caught_by(0)) is None  # a loose ball nobody kicked
+    assert track(KICK_0, RELEASE_0) is None and track(caught_by(1)) == 0  # 0 passed to 1
+    assert track({"type": "kick", "agent": ("blue", 1)}) == 0 and track(caught_by(1)) == 0  # 1's own kick back
+    assert track({"type": "possession_change", "from": ("blue", 1), "to": ("red", 0)}) is None  # a steal
+
+
+def test_return_pass_factor_must_be_in_0_1():
+    with pytest.raises(ValueError, match="return_pass_factor"):
+        config_from_dict({"rl": {"reward": {"return_pass_factor": 1.5}}})
+### END AI GENERATED
+
+
+### AI GENERATED (2026-11-13: a stopped kick is over for kicker_clearance; "got it" calls)
+def field(holder=None, ball=(1.0, 0.0), vel=(0.0, 0.0), calling=(), blues=((0.0, 0.0), (3.0, 0.0), (0.0, 3.0))):
+    """A 3v0 state with velocities: the ball held by ``holder`` or loose at ``ball`` moving at ``vel``;
+    the blues in ``calling`` are calling."""
+    return {"step": 0, "red": [],
+            "blue": [{"id": i, "pos": list(p), "vel": [0.0, 0.0], "has_possession": i == holder,
+                      "calling": i in calling} for i, p in enumerate(blues)],
+            "ball": {"pos": list(blues[holder] if holder is not None else ball), "vel": list(vel)}}
+
+
+def kick_then(rm, memory, ball_vel):
+    """Blue 0 kicks; the ball ends the step 0.6 m away moving at ``ball_vel``. Returns that step's shaping."""
+    return rm.parts(field(0), {}, field(ball=(0.6, 0.0), vel=ball_vel), False, False,
+                    practice_info(KICK_0, RELEASE_0), memory).shaping
+
+
+def test_a_kick_that_has_stopped_no_longer_charges_the_kicker():
+    rm = RewardModule(with_overrides(config_from_dict(MOVING), CLEAR))
+    moving = rm.new_episode()
+    assert kick_then(rm, moving, (2.0, 0.0)) < 0  # rolling away, the kicker 0.6 m behind it: charged
+    regrab = rm.parts(field(ball=(0.6, 0.0), vel=(2.0, 0.0)), {}, field(0), False, False,
+                      practice_info(caught_by(0)), moving).shaping
+    assert regrab == pytest.approx(-0.025 * KICKER_REGRAB)  # taking a moving kick back: the full charge
+    stopped = rm.new_episode()
+    assert kick_then(rm, stopped, (0.1, 0.0)) == 0.0  # stopped at once (a dead ball): no charge
+    near = rm.parts(field(ball=(0.6, 0.0)), {}, field(ball=(0.6, 0.0)), False, False, practice_info(), stopped)
+    fetch = rm.parts(field(ball=(0.6, 0.0)), {}, field(0), False, False, practice_info(caught_by(0)), stopped)
+    assert near.shaping == 0.0 and fetch.shaping == 0.0  # standing by it and fetching it are free
+
+
+CALLS = {"rl": {"call_enabled": True,
+                "reward": {"shaping": [{"name": "call_accuracy", "enabled": True, "coef": 1.0}]}}}
+
+
+def calls_then_pickup(callers, steps, getter=1):
+    """``callers`` call for ``steps`` steps while the ball rolls loose; then ``getter`` picks it up.
+    Returns the pickup step's call_accuracy and the memory."""
+    from marl.rl.reward import call_accuracy  # AI GENERATED (2026-11-14: the term itself, not the team reward)
+    cfg = with_overrides(config_from_dict(MOVING), CALLS)
+    rm = RewardModule(cfg)
+    memory = rm.new_episode()
+    loose = field(ball=(1.5, 1.5), vel=(1.0, 0.0), calling=callers)
+    for _ in range(steps):
+        rm.parts(loose, {}, loose, False, False, practice_info(), memory)
+    ### AI GENERATED (2026-11-14)
+    end, info = field(getter, calling=callers), practice_info(caught_by(getter))
+    info["pass"] = memory.update(info, loose, end)
+    return call_accuracy(loose, {}, end, False, False, info, cfg), memory
+    ### END AI GENERATED
+
+
+def test_a_call_pays_when_the_caller_gets_the_ball():
+    from marl.rl.reward import CALL_COST, CALL_LEAD
+    full, memory = calls_then_pickup({1}, CALL_LEAD)
+    assert full == pytest.approx(1.0 - CALL_COST)  # called for 0.5 s+: full credit, less this step's cost
+    assert (memory.pickups, memory.called, memory.miscalled) == (1, 1.0, 0.0)
+    late, _ = calls_then_pickup({1}, 2)
+    assert late == pytest.approx(3 / CALL_LEAD - CALL_COST)  # only just called (3 steps by the pickup): less
+    wrong, memory = calls_then_pickup({2}, CALL_LEAD)
+    assert wrong == pytest.approx(-1.0 - CALL_COST) and memory.miscalled == 1.0  # blue 2 called, blue 1 got it
+    silent, _ = calls_then_pickup(set(), CALL_LEAD)
+    assert silent == 0.0
+
+
+### AI GENERATED (2026-11-14: the call's reward is its own, not the team's)
+def test_call_accuracy_is_not_in_the_team_reward():
+    rm = RewardModule(with_overrides(config_from_dict(MOVING), CALLS))
+    memory = rm.new_episode()
+    held = field(0, calling={1, 2})
+    assert rm.parts(held, {}, held, False, False, practice_info(), memory).shaping == 0.0
+    assert rm.call_coef == 1.0  # it weights the call head's own loss instead
+### END AI GENERATED
+
+
+def test_call_accuracy_needs_calls_enabled():
+    with pytest.raises(ValueError, match="call_enabled"):
+        config_from_dict({**MOVING, "rl": {**MOVING["rl"], "reward": {"base": "pass_catch", "shaping": [
+            {"name": "call_accuracy", "enabled": True, "coef": 1.0}]}}})
 ### END AI GENERATED

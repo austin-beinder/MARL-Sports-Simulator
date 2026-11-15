@@ -17,6 +17,7 @@
 #   - 2026-11-09: pass_practice_moving uses the same spawn. (Austin Beinder)
 #   - 2026-11-11: The catch_start_mix option: a share of keepaway resets use
 #     the pass practice layout, plus red. (Austin Beinder)
+#   - 2026-11-14: claim_ball: always a loose ball. (Austin Beinder)
 # Prompt summary: Implement Phase 3 step 2 of the issue #7 plan (spawn sampler)
 #   as a small numpy-only module the env owner can reuse.
 # Human review:   Pending review
@@ -113,7 +114,8 @@ def sample_spawn(
     missing = RESET_OPTION_KEYS - set(options)
     if unknown or missing:
         raise ValueError(f"reset options: unknown {sorted(unknown)}, missing {sorted(missing)}")
-    if scenario not in ("keepaway", "goto_target", "passing_drill", "pass_practice", "pass_practice_moving"):  # AI GENERATED (drills)
+    if scenario not in ("keepaway", "goto_target", "passing_drill", "pass_practice", "pass_practice_moving",  # AI GENERATED (drills)
+                        "claim_ball"):  # AI GENERATED (2026-11-14)
         raise ValueError(f"unknown scenario {scenario!r}")
 
     clearance = float(options["min_clearance"])
@@ -144,6 +146,8 @@ def sample_spawn(
     # Draw the start type FIRST, so it depends only on the seed (ICD §2).
     if scenario == "goto_target":
         start_type, holder = START_TARGET, None
+    elif scenario == "claim_ball":  # AI GENERATED (2026-11-14): always a loose ball (start_mix doesn't apply)
+        start_type, holder = START_FREE_BALL, None
     elif rng.random() < float(options["start_mix"]):
         start_type, holder = START_POSSESSION, int(rng.integers(n_blue))
     else:

@@ -18,6 +18,10 @@
 #     (Austin Beinder)
 #   - 2026-11-09: The same for pass_practice (config.FROZEN_SCENARIOS).
 #     (Austin Beinder)
+#   - 2026-11-13: The call head behind rl.call_enabled: a Bernoulli, never
+#     masked (teammates always see the call). (Austin Beinder)
+#   - 2026-11-14: Actor.evaluate_split and Actor.head_log_prob, so PPO can
+#     give the call head its own per-blue advantage. (Austin Beinder)
 # Prompt summary: Implement Phase 3 step 6 of the issue #7 plan (actor/critic
 #   + Beta movement head + action adapter).
 # Human review:   Pending review
@@ -83,6 +87,10 @@ MOVE = "move"  # head name (matches the ICD §6 action key)
 KICK_TRIGGER = "kick_trigger"  # head names = the ICD §6 action keys
 KICK_VEC = "kick_vec"
 KICK_PRIOR = 0.05  # the untrained policy's chance of kicking on a step where it holds the ball
+# 2026-11-13: a "got it" call (rl.call_enabled). The env echoes it to the teammates' next
+# observations, so it always matters: no mask, and its entropy always counts.
+CALL = "call"
+CALL_PRIOR = 0.1  # the untrained policy's chance of calling on a step
 ### END AI GENERATED
 CRITIC_INPUTS = ("global", "local")
 
@@ -144,6 +152,7 @@ class Actor(nn.Module):
         beta_eps: float = 1e-6,
         kick_enabled: bool = False,  # AI GENERATED
         move_enabled: bool = True,  # AI GENERATED (2026-11-08)
+        call_enabled: bool = False,  # AI GENERATED (2026-11-13)
     ):
         super().__init__()
         if not 0.0 < beta_eps < 0.5:
@@ -160,6 +169,9 @@ class Actor(nn.Module):
         if kick_enabled:
             self.heads[KICK_TRIGGER] = BernoulliHead(hidden_sizes[-1], KICK_PRIOR)
             self.heads[KICK_VEC] = BetaHead(hidden_sizes[-1], action_dim=2)
+        self.call_enabled = call_enabled  # 2026-11-13
+        if call_enabled:
+            self.heads[CALL] = BernoulliHead(hidden_sizes[-1], CALL_PRIOR)
         ### END AI GENERATED
 
     def distributions(self, obs: torch.Tensor) -> dict[str, Distribution]:  # AI GENERATED (Distribution)
@@ -197,14 +209,38 @@ class Actor(nn.Module):
         doesn't depend on the samples) and the per-head entropies (for logging).
         The kick heads' entropies count only in states where the agent holds the ball.
         """
-        dists = self.distributions(obs)
+        return self._score(obs, samples, self.distributions(obs))  # AI GENERATED (2026-11-14: shared with evaluate_split)
+
+    def _score(
+        self, obs: torch.Tensor, samples: dict[str, torch.Tensor], dists: dict[str, Distribution]
+    ) -> tuple[torch.Tensor, torch.Tensor, dict[str, torch.Tensor]]:
         ### AI GENERATED (kick-head entropy gated by possession, #10)
         holds = (obs[..., OWN_POSSESSION] > 0.5).float()
         moves = 1.0 if self.move_enabled else 0.0  # 2026-11-08: a frozen blue's move head has no entropy bonus
-        head_entropy = {name: d.entropy().sum(-1) * (moves if name == MOVE else holds) for name, d in dists.items()}
+        weight = {MOVE: moves, CALL: 1.0}  # 2026-11-13: the call always counts; the kick heads only when holding
+        head_entropy = {name: d.entropy().sum(-1) * weight.get(name, holds) for name, d in dists.items()}
         ### END AI GENERATED
         entropy = torch.stack(list(head_entropy.values())).sum(0)
         return _joint_log_prob(dists, samples, _head_masks(obs, samples, self.move_enabled)), entropy, head_entropy  # AI GENERATED (masks)
+
+    ### AI GENERATED (2026-11-14: the call head's own advantage)
+    def evaluate_split(
+        self, obs: torch.Tensor, samples: dict[str, torch.Tensor]
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, dict[str, torch.Tensor]]:
+        """Like ``evaluate``, but the log-prob comes in two parts: every head except the call [B],
+        and the call head alone [B] (zeros without one). Their sum is ``evaluate``'s log-prob."""
+        dists = self.distributions(obs)
+        logp, entropy, head_entropy = self._score(obs, samples, dists)
+        if CALL not in samples:
+            return logp, torch.zeros_like(logp), entropy, head_entropy
+        call = dists[CALL].log_prob(samples[CALL]).sum(-1)
+        return logp - call, call, entropy, head_entropy
+
+    @torch.no_grad()
+    def head_log_prob(self, obs: torch.Tensor, samples: dict[str, torch.Tensor], head: str) -> torch.Tensor:
+        """One head's log-prob [B] of stored samples, unmasked (the rollout stores the call's)."""
+        return self.distributions(obs)[head].log_prob(samples[head]).sum(-1)
+    ### END AI GENERATED
 
 
 ### AI GENERATED
@@ -278,7 +314,8 @@ def build_networks(cfg: Config, obs_dim: int, state_dim: int) -> tuple[Actor, Cr
     """Actor + critic sized from the config. Seed torch first for a reproducible init."""
     hidden = cfg.rl.ppo.hidden_sizes
     actor = Actor(obs_dim, hidden, cfg.rl.beta_eps, kick_enabled=cfg.rl.kick_enabled,  # AI GENERATED (kick_enabled)
-                  move_enabled=cfg.shared.scenario not in FROZEN_SCENARIOS)  # AI GENERATED (2026-11-08: frozen blues)
+                  move_enabled=cfg.shared.scenario not in FROZEN_SCENARIOS,  # AI GENERATED (2026-11-08: frozen blues)
+                  call_enabled=cfg.rl.call_enabled)  # AI GENERATED (2026-11-13)
     critic = Critic(critic_input_dim(cfg.rl.critic_input, obs_dim, state_dim), hidden)
     return actor, critic
 

@@ -46,6 +46,17 @@
 #   - 2026-11-13: catch_moving runs up to 2M steps, catch_moving_longer and
 #     catch_moving_longest up to 500k each (all three were still improving
 #     at their caps).
+#   - 2026-11-13: rl.passer_obs and, in the catch stages, return_pass_factor
+#     = 0.5: a pass straight back pays half, so the blues rotate the ball.
+#   - 2026-11-13: rl.call_enabled (a "got it" call) and, in the catch
+#     stages, the call_accuracy shaping term (coef 0.2).
+#   - 2026-11-14: The claim_ball stage after go_to_target: 3 blues, a loose
+#     ball, the episode ends when one gets it; each call is paid to its own
+#     blue (call_accuracy, now coef 1 everywhere) and call_yield charges blues
+#     who crowd a ball a teammate called.
+#   - 2026-11-14: The catch stages charge for a dead ball (dead_ball, coef
+#     0.003) and add call_yield (coef 0.01): the blues hovered ~1.5 m off a
+#     stopped ball, half of every episode.
 # Prompt summary: A 3v1 passing drill against a slow red with the blues frozen
 #   in range of each other: a small reward for kicking toward a teammate, a big
 #   one for lasting, nothing before the first pass; in a new curriculum TOML.
@@ -56,14 +67,19 @@
 # stage, so this needs PyBullet.
 #   1. go_to_target: movement warm-up. No red; the ball is a fixed target and the reward is minus
 #      the distance to it.
+#   1b. claim_ball (2026-11-14): three blues, no red, a loose ball anywhere; the episode ends when
+#      a blue picks it up, and every step until then costs 1. Practice for the "got it" call: a
+#      blue's call pays it +1 a step if it gets the ball within 0.5 s, -0.5 if a teammate does, and
+#      blues that crowd a ball a teammate called pay for it (call_yield).
 #   2. free_ball: 1v1 keep-away from a loose ball, which starts 1, 2, then 3 m from blue.
 #   3. catch_moving: pass practice with no red and everyone free to move, for the full 15 s. Each
 #      catch by a teammate pays 1 if the ball went at least 2 m; the blues are also paid for
 #      standing 3 m apart.
 #   4-5. catch_moving_longer / _longest: the same, but longer catches pay a bit more, and the
 #      last stage needs 3 m passes (blues 4 m apart).
-#      Stages 3-5 also charge the kicker for staying near its own kick (kicker_clearance), and
-#      gate on the share of kicks caught.
+#      Stages 3-5 also charge the kicker for staying near its own kick (kicker_clearance), charge
+#      every step the ball sits stopped and loose (dead_ball) and crowding a called ball
+#      (call_yield), and gate on the share of kicks caught.
 #   6. keepaway_from_catch: 3v1 keep-away that starts in the catch layout (a blue with the ball,
 #      teammates 3.9 m away, red at least 3 m off), then less and less often (all, half, none),
 #      the rest from random positions with a blue holding the ball.
@@ -91,6 +107,17 @@ kick_enabled = true
 # from-scratch network on the same task kept them ~2.6 m apart.
 new_player_init = "random"
 ### END AI GENERATED
+### AI GENERATED (2026-11-13)
+# Each blue sees which blue passed the ball to its holder (s["ball"]["passer"]), so the holder
+# can tell a pass back from a pass on (return_pass_factor in the catch stages pays them
+# differently). A warm start from a checkpoint without it adds the flags' columns at random.
+passer_obs = true
+# A "got it" call each blue can raise, which its teammates see; in every stage so the observation
+# layout stays the same. The catch stages pay for calls that come true (call_accuracy).
+# 2026-11-14: call_accuracy pays each blue for its own calls, to the call head only (the team
+# reward never sees it); its coef weights that against the team's PPO loss (1 = as much).
+call_enabled = true
+### END AI GENERATED
 
 [[stage]]
 name = "go_to_target"
@@ -100,6 +127,33 @@ scenario = "goto_target"
 n_red = 0
 [stage.overrides.rl.reward]
 base = "goto_target"
+
+### AI GENERATED (2026-11-14: practice for the "got it" call)
+# claim_ball: three blues and a loose ball anywhere on the field, no red. The episode ends as
+# soon as a blue picks the ball up (or after 15 s); every step before that costs 1 (base claim),
+# so the team wants the ball fast.
+#   - call_accuracy (coef 1): each blue's call is scored on its own (the call head's own reward,
+#     not the team's): +1 a step for calling in the 0.5 s before it gets the ball, -0.5 a step for
+#     calling in the 0.5 s before a teammate gets it, and 0.02 a step for calling at all. So the
+#     blue who'll get there first should call, and nobody else.
+#   - call_yield (coef 0.2): while a teammate is calling, a blue that isn't pays up to 0.2 a step
+#     for being within 1.5 m of the ball, and 2 for picking it up. So a call means "leave it to
+#     me". It is cheaper than a slow pickup (1 a step), so blues still go for a ball nobody calls.
+# In catch_moving a stopped loose ball sat a median 8 s with the nearest blues hanging back, and
+# after 4M steps of calls paid through the team reward, the getter called less than its teammates.
+# Warm-started from go_to_target (1v0): the two new blues' input columns start random.
+[[stage]]
+name = "claim_ball"
+total_steps = 500_000     # no gate
+[stage.overrides.shared]
+scenario = "claim_ball"
+n_blue = 3
+n_red = 0
+[stage.overrides.rl.reward]
+base = "claim"
+shaping = [{ name = "call_accuracy", enabled = true, coef = 1.0 },
+           { name = "call_yield", enabled = true, coef = 0.2 }]
+### END AI GENERATED
 
 # [[stage]]
 # name = "free_ball"
@@ -141,6 +195,31 @@ base = "goto_target"
 # movement head nearly deterministic (entropy -2.2, "everyone runs to the ball"), and with the
 # default the blues never tried standing apart: they stayed a median 0.5 m apart through all
 # 500k catch steps, and the catch rate rose only because they stopped kicking.
+# return_pass_factor 0.5 (2026-11-13, all three catch stages): a pass straight back to the blue
+# who passed to the kicker (A -> B -> A) pays half. At 1M steps 88% of passes went straight
+# back: two blues passed back and forth while the third stood beside one of them as a backup
+# catcher (kicks toward the pair: 91% caught, else 79%). Passing on (A -> B -> C -> A) pays in
+# full, and with the 2 m minimum every pass on needs all three blues 2 m apart: a triangle.
+# call_accuracy (2026-11-13, all three catch stages): each time a blue gets the ball it
+# earns credit for having called for it (full credit after 0.5 s of calling), and every other
+# blue that was calling pays the same; calling costs a little every step. 2026-11-14: paid to
+# each blue's own call head, not the team (coef 1, was 0.2; see claim_ball): as a team reward
+# calling fell to 3% of steps, the getter calling less than its teammates. At 470k steps (rotation run)
+# a stopped loose ball sat a median 8 s, half the time to the end of the episode: the nearest
+# blues hung back, none knowing who would go. A call says who will.
+# dead_ball and call_yield (2026-11-14, all three catch stages): claim_ball's rewards, scaled
+# down. At catch_moving's end and 340k steps into catch_moving_longer the ball still sat stopped
+# and loose about half of every episode, the nearest blue ~1.5 m off it, and a third of the dead
+# balls were never fetched: claim_ball's -1 a step was gone, so nothing hurried them.
+#   - dead_ball (coef 0.003): every step the ball is loose and slower than 0.3 m/s costs 0.003.
+#     It also makes every miss dearer, which is why it is small. At 0.005 the latest
+#     catch_moving_longer checkpoint (3 kicks, ~170 dead steps an episode) would have paid 0.86 an
+#     episode against 0.89 of catch pay, so holding the ball forever nearly broke even; at 0.003
+#     a miss costs ~0.25.
+#     While the ball is dead, receiver_spacing leaves out the blue nearest it, so fetching it
+#     doesn't cost the spacing pay.
+#   - call_yield (coef 0.01): while a teammate calls, a blue that isn't pays up to 0.01 a step
+#     near the loose ball, and 0.1 for taking it (a catch still nets 0.9).
 [[stage]]
 name = "catch_moving"
 total_steps = 2_000_000   # 2026-11-13: was 1M (2026-11-12: 300k); still climbing at each cap: 5% -> 24% caught by 300k, 84% by 1M
@@ -159,8 +238,12 @@ ent_coef = 0.01            # 10x the default: see the catch_moving comment (2026
 [stage.overrides.rl.reward]
 base = "pass_catch"
 shaping = [{ name = "kicker_clearance", enabled = true, coef = 0.025 },
-           { name = "receiver_spacing", enabled = true, coef = 0.03 }]  # see the catch_moving comment
+           { name = "receiver_spacing", enabled = true, coef = 0.03 },
+           { name = "call_accuracy", enabled = true, coef = 1.0 },  # see the catch_moving comment
+           { name = "dead_ball", enabled = true, coef = 0.003 },    # 2026-11-14: see catch_moving
+           { name = "call_yield", enabled = true, coef = 0.01 }]    # 2026-11-14: see catch_moving
 min_pass_distance = 2.0     # m from the kick point (2026-11-11)
+return_pass_factor = 0.5    # a pass straight back pays half (2026-11-13, see catch_moving)
 ### END AI GENERATED
 
 ### AI GENERATED (2026-11-10: catch_moving with real passes only; 2026-11-11: 2 then 3 m)
@@ -177,7 +260,7 @@ min_pass_distance = 2.0     # m from the kick point (2026-11-11)
 # fresh in each (the reward changes every stage).
 [[stage]]
 name = "catch_moving_longer"
-total_steps = 500_000     # 2026-11-13: was 100k; 73% caught at the cap
+total_steps = 2_000_000     # 2026-11-13: was 100k; 73% caught at the cap
 threshold = 0.9
 confidence = 2.0
 window = 50
@@ -193,13 +276,17 @@ ent_coef = 0.01            # 10x the default: see the catch_moving comment (2026
 [stage.overrides.rl.reward]
 base = "pass_catch"
 shaping = [{ name = "kicker_clearance", enabled = true, coef = 0.025 },
-           { name = "receiver_spacing", enabled = true, coef = 0.03 }]  # see the catch_moving comment
+           { name = "receiver_spacing", enabled = true, coef = 0.03 },
+           { name = "call_accuracy", enabled = true, coef = 1.0 },  # see the catch_moving comment
+           { name = "dead_ball", enabled = true, coef = 0.003 },    # 2026-11-14: see catch_moving
+           { name = "call_yield", enabled = true, coef = 0.01 }]    # 2026-11-14: see catch_moving
 min_pass_distance = 2.0     # m from the kick point
+return_pass_factor = 0.5    # a pass straight back pays half (2026-11-13, see catch_moving)
 pass_length_bonus = true
 
 [[stage]]
 name = "catch_moving_longest"
-total_steps = 500_000     # 2026-11-13: was 100k; the catch rate went 5% -> 46% in 100k, still rising
+total_steps = 2_000_000     # 2026-11-13: was 100k; the catch rate went 5% -> 46% in 100k, still rising
 threshold = 0.9
 confidence = 2.0
 window = 50
@@ -215,8 +302,12 @@ ent_coef = 0.01            # 10x the default: see the catch_moving comment (2026
 [stage.overrides.rl.reward]
 base = "pass_catch"
 shaping = [{ name = "kicker_clearance", enabled = true, coef = 0.025 },
-           { name = "receiver_spacing", enabled = true, coef = 0.03 }]  # see the catch_moving comment
+           { name = "receiver_spacing", enabled = true, coef = 0.03 },
+           { name = "call_accuracy", enabled = true, coef = 1.0 },  # see the catch_moving comment
+           { name = "dead_ball", enabled = true, coef = 0.003 },    # 2026-11-14: see catch_moving
+           { name = "call_yield", enabled = true, coef = 0.01 }]    # 2026-11-14: see catch_moving
 min_pass_distance = 3.0     # m from the kick point
+return_pass_factor = 0.5    # a pass straight back pays half (2026-11-13, see catch_moving)
 pass_length_bonus = true
 spacing_distance = 4.0      # m apart, so a pass makes ~3.2 m (2026-11-11)
 ### END AI GENERATED
@@ -231,7 +322,7 @@ spacing_distance = 4.0      # m apart, so a pass makes ~3.2 m (2026-11-11)
 # No kicker_clearance: the survival reward takes over, as in keepaway_3v1.
 [[stage]]
 name = "keepaway_from_catch"
-total_steps = 500_000
+total_steps = 2_000_000
 threshold = 0.5           # survival fraction (of 300 steps) the gate's lower bound must reach
 option = "catch_start_mix"
 levels = [1.0, 0.5, 0.0]  # share of resets in the catch layout
@@ -261,7 +352,7 @@ catch_start_mix = 0.0     # the stage's real task, which eval.csv measures
 # its step cap either way (the last stage), and eval.csv measures the 3 m task throughout.
 [[stage]]
 name = "keepaway_3v1"
-total_steps = 1_000_000
+total_steps = 5_000_000
 threshold = 0.5           # survival fraction (of 300 steps) the gate's lower bound must reach
 option = "max_ball_dist"
 levels = [1.0, 2.0, 3.0]  # metres from blue

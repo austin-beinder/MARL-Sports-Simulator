@@ -27,6 +27,14 @@
 #   - 2026-11-11: pass_practice_moving no longer ends when a kick plays out:
 #     it runs to the time limit, with as many kicks as the blues like.
 #     (Austin Beinder)
+#   - 2026-11-13: s["ball"]["passer"] (ICD §5): the blue whose kick the
+#     holder picked up. (Austin Beinder)
+#   - 2026-11-13: The optional "call" action, echoed as each blue's "calling"
+#     in s. (Austin Beinder)
+#   - 2026-11-14: The claim_ball scenario: a loose ball, no red, terminated
+#     when a blue picks it up. (Austin Beinder)
+#   - 2026-11-14: In the GUI, a blue who calls turns a brighter blue
+#     (Player.show_calling). (Austin Beinder)
 # Prompt summary: Integrate the MARL layer with the PyBullet env through an
 #   adapter with MockEnv's reset/step interface.
 # Human review:   Pending review
@@ -73,7 +81,7 @@ import numpy as np
 
 from marl.common.config import FROZEN_SCENARIOS, PASS_PRACTICE_SCENARIOS, SharedConfig  # AI GENERATED (drill sets)
 from marl.common.spawn import RESET_OPTION_KEYS, sample_spawn
-from marl.envs.mock_env import parse_actions
+from marl.envs.mock_env import parse_actions, parse_calls  # AI GENERATED (2026-11-13: parse_calls)
 from pybulletGame import Entity, KeepAwayConfig, KeepAwayEnv
 
 _UNSET = object()
@@ -85,13 +93,19 @@ class PyBulletEnv:
     def __init__(self, cfg: SharedConfig, render_mode: str | None = None, print_collisions: bool = False):
         """render_mode="human" opens the pybullet GUI (only if this process has no pybullet connection
         yet). print_collisions turns on the sim's collision debug prints, for the whole process."""
-        if cfg.scenario not in ("keepaway", "goto_target", "passing_drill", *PASS_PRACTICE_SCENARIOS):  # AI GENERATED (drills)
+        if cfg.scenario not in ("keepaway", "goto_target", "passing_drill", *PASS_PRACTICE_SCENARIOS,  # AI GENERATED (drills)
+                                "claim_ball"):  # AI GENERATED (2026-11-14)
             raise NotImplementedError(f"the PyBullet env doesn't implement scenario {cfg.scenario!r}")
         self.cfg = cfg
         self.n_blue, self.n_red = cfg.n_blue, cfg.n_red
         self._frozen = cfg.scenario in FROZEN_SCENARIOS  # AI GENERATED (2026-11-08): blues stand still
         self._one_kick = cfg.scenario == "pass_practice"  # AI GENERATED (2026-11-09; frozen only 2026-11-11): ends when the kick plays out
         self._kicker: int | None = None  # AI GENERATED (2026-11-09): who kicked this episode (pass_practice)
+        ### AI GENERATED (2026-11-13: s["ball"]["passer"], see _track_passer)
+        self._kicked_by: int | None = None  # the blue whose kick the loose ball is from
+        self._passer: int | None = None
+        self._calls = [False] * cfg.n_blue  # each blue's latest call, echoed in s (ICD §5)
+        ### END AI GENERATED
         Entity.print_collisions = print_collisions
         episode_time = cfg.max_episode_steps * cfg.control_k * cfg.physics_dt
         self._game = KeepAwayEnv(
@@ -152,6 +166,10 @@ class PyBulletEnv:
         if not self._ready:
             raise RuntimeError("call reset() before step(); there is no auto-reset (ICD §4)")
         move, triggers, kick_vecs = parse_actions(actions, self.n_blue)
+        self._calls = parse_calls(actions, self.n_blue)  # AI GENERATED (2026-11-13): echoed in s (ICD §5)
+        if self._game.render_mode == "human":  # AI GENERATED (2026-11-14): callers turn a brighter blue in the GUI
+            for blue, calling in zip(self._game.blues, self._calls):
+                blue.show_calling(calling)
         if self._frozen:  # AI GENERATED (2026-11-08): passing_drill ignores move (still validated above)
             move = np.zeros_like(move)
         # ICD §6: release velocity = max_kick_speed * kick_vec / max(1, |kick_vec|). The game applies a
@@ -170,6 +188,10 @@ class PyBulletEnv:
             if self._kicker is not None and not terminated:
                 terminated = self._kick_played_out()
         ### END AI GENERATED
+        ### AI GENERATED (2026-11-14: claim_ball ends when a blue gets the ball)
+        if self.cfg.scenario == "claim_ball" and self._game.ball.possession_player is not None:
+            terminated = True
+        ### END AI GENERATED
         truncated = (not terminated) and self._step >= self.cfg.max_episode_steps
         if terminated or truncated:
             self._ready = False  # no auto-reset; the returned state is the true final state
@@ -180,7 +202,26 @@ class PyBulletEnv:
             {"type": "possession_change", "from": self._holder_id(old), "to": self._holder_id(new)}
             for _, old, new in self._game.possession_events
         ]
+        self._track_passer(events)  # AI GENERATED (2026-11-13)
         return self._state(), bool(terminated), truncated, self._info(events, kick_applied)
+
+    ### AI GENERATED (2026-11-13)
+    def _track_passer(self, events: list[dict]) -> None:
+        """s["ball"]["passer"]: the blue who passed the ball to its holder. A blue who picks up a
+        teammate's kick was passed to by that teammate; one who picks its own kick back up keeps
+        the passer it had; any other pickup (a loose ball nobody kicked, a red) clears it. Every
+        kick counts, however short: the RL side's pass rules (minimum distance) don't apply."""
+        for event in events:
+            if event["type"] == "kick":
+                self._kicked_by = event["agent"][1]
+            elif event["type"] == "possession_change" and event["to"] is not None:
+                team, i = event["to"]
+                if team != "blue" or self._kicked_by is None:
+                    self._passer = None
+                elif self._kicked_by != i:
+                    self._passer = self._kicked_by
+                self._kicked_by = None
+    ### END AI GENERATED
 
     ### AI GENERATED (2026-11-09)
     def _kick_played_out(self) -> bool:
@@ -243,6 +284,8 @@ class PyBulletEnv:
         self._game.reset(seed=self._seed, options=options)
         self._ready = True
         self._kicker = None  # AI GENERATED (2026-11-09): a fresh pass_practice episode has its kick to come
+        self._kicked_by = self._passer = None  # AI GENERATED (2026-11-13): nobody has passed yet
+        self._calls = [False] * self.n_blue  # AI GENERATED (2026-11-13): nor called
 
     def _holder_id(self, player: Any) -> tuple[str, int] | None:
         if player is None:
@@ -265,9 +308,11 @@ class PyBulletEnv:
 
         return {
             "step": self._step,
-            "blue": [entity(i, b) for i, b in enumerate(game.blues)],
+            "blue": [{**entity(i, b), "calling": self._calls[i]}  # AI GENERATED (2026-11-13: ICD §5)
+                     for i, b in enumerate(game.blues)],
             "red": [entity(j, r) for j, r in enumerate(game.reds)],
-            "ball": {"pos": xy(game.ball.position), "vel": xy(game.ball.velocity)},
+            "ball": {"pos": xy(game.ball.position), "vel": xy(game.ball.velocity),
+                     "passer": self._passer},  # AI GENERATED (2026-11-13: ICD §5)
         }
 
     def _info(self, events: list[dict], kick_applied: list[bool] | None = None) -> dict:

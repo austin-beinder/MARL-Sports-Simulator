@@ -4,6 +4,8 @@ This file was largely copy pasted from entity.py.
 All modifications were human generated or found via Google.
 Except: AI edits 2026-10-31 (Claude Code, Austin Beinder): physics_client on every pybullet call,
 and only the actual carrier can lose the ball to an opponent's touch. See the AI GENERATED markers.
+AI edit 2026-11-14 (Claude Code, Austin Beinder): show_calling, a brighter blue while a blue player
+calls "got it" (watch only).
 """
 
 import numpy as np
@@ -35,6 +37,8 @@ class Player(Entity):
         else:
             #elif self == Team.BLUE:
             rgbaColor=[0, 0, 1, 1]
+        self.base_color = rgbaColor  # AI GENERATED (2026-11-14: restored by show_calling)
+        self.calling = False  # AI GENERATED (2026-11-14)
 
         super().__init__(
             radius=radius,
@@ -55,6 +59,20 @@ class Player(Entity):
                          physicsClientId=self.client)  # AI GENERATED (physicsClientId)
         p.changeDynamics(self.body_id, 1, linearDamping=1.25, angularDamping=10.05, maxJointVelocity=maxJointVelocity,
                          physicsClientId=self.client)  # AI GENERATED (physicsClientId)
+
+    ### AI GENERATED (2026-11-14)
+    CALLING_COLOR = [0.3, 0.65, 1.0, 1.0]  # a brighter blue than the team's [0, 0, 1]
+
+    def show_calling(self, calling: bool) -> None:
+        """Recolor the player while it calls "got it" (ICD §5 calling), back to its team color after.
+        Only the GUI shows it, so headless training doesn't need to call this."""
+        calling = bool(calling)
+        if calling == self.calling:
+            return
+        self.calling = calling
+        p.changeVisualShape(self.body_id, 2, rgbaColor=self.CALLING_COLOR if calling else self.base_color,
+                            physicsClientId=self.client)
+    ### END AI GENERATED
 
     def update_collisions(self):
         """Refresh collided_entities with whatever this entity is touching as of the last stepSimulation."""

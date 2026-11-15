@@ -9,6 +9,8 @@
 #     (design #18, #21, #23; KL-1 fix location).
 #   - 2026-11-07: Kick actions: to_env_actions takes the trigger and kick
 #     samples, and actions_from_samples maps a whole sample dict. (Austin Beinder)
+#   - 2026-11-13: The call head's sample becomes the optional "call" key.
+#     (Austin Beinder)
 # Prompt summary: Implement Phase 3 step 6 of the issue #7 plan (actor/critic
 #   + Beta movement head + action adapter).
 # Human review:   Pending review
@@ -32,11 +34,12 @@ from typing import Any
 import numpy as np
 
 
-def to_env_actions(move01: Any, trigger: Any = None, kick01: Any = None) -> dict:
+def to_env_actions(move01: Any, trigger: Any = None, kick01: Any = None, call: Any = None) -> dict:
     """[N, 2] clamped movement samples in [0, 1] -> ``{"blue": [...]}`` (ICD §6).
 
     ``trigger`` ([N] or [N, 1], values 0 / 1) and ``kick01`` ([N, 2] clamped samples in
-    [0, 1]) are the kick heads' samples; leave both out for "never kick".
+    [0, 1]) are the kick heads' samples; leave both out for "never kick". ``call`` ([N] or
+    [N, 1], 0 / 1; 2026-11-13) adds each blue's "call" key; left out, the actions have none.
     """
     move01 = _unit_samples(move01, "movement")
     frac = 2.0 * move01 - 1.0
@@ -54,12 +57,21 @@ def to_env_actions(move01: Any, trigger: Any = None, kick01: Any = None) -> dict
         kick = 2.0 * _unit_samples(kick01, "kick") - 1.0
         if len(kick) != n:
             raise ValueError(f"expected {n} kick samples, got {len(kick)}")
-    return {
+    out = {
         "blue": [
             {"move": [float(mx), float(my)], "kick_trigger": trig, "kick_vec": [float(kx), float(ky)]}
             for (mx, my), trig, (kx, ky) in zip(frac, triggers, kick)
         ]
     }
+    ### AI GENERATED (2026-11-13: the call head)
+    if call is not None:
+        c = np.asarray(call, dtype=np.float64).reshape(-1)
+        if c.shape != (n,) or not np.all((c == 0.0) | (c == 1.0)):
+            raise ValueError(f"expected {n} call samples, each 0 or 1, got {call!r}")
+        for a, x in zip(out["blue"], c):
+            a["call"] = int(x)
+    ### END AI GENERATED
+    return out
 
 
 def actions_from_samples(samples: dict[str, Any]) -> dict:
@@ -67,9 +79,10 @@ def actions_from_samples(samples: dict[str, Any]) -> dict:
     def arr(x: Any) -> np.ndarray:
         return x.numpy() if hasattr(x, "numpy") else np.asarray(x)
 
+    call = arr(samples["call"]) if "call" in samples else None  # AI GENERATED (2026-11-13)
     if "kick_trigger" in samples:
-        return to_env_actions(arr(samples["move"]), arr(samples["kick_trigger"]), arr(samples["kick_vec"]))
-    return to_env_actions(arr(samples["move"]))
+        return to_env_actions(arr(samples["move"]), arr(samples["kick_trigger"]), arr(samples["kick_vec"]), call=call)
+    return to_env_actions(arr(samples["move"]), call=call)  # AI GENERATED (call)
 
 
 def _unit_samples(x: Any, what: str) -> np.ndarray:

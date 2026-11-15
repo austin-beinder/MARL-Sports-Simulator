@@ -14,6 +14,9 @@
 #     as well as 2v2, and added a keep-away truncation test. (Austin Beinder)
 #   - 2026-11-07: The PyBullet env kicks now: the kick test also checks the
 #     kick event and the release (the mock still skips it). (Austin Beinder)
+#   - 2026-11-13: s["ball"] has "passer" (None at reset). (Austin Beinder)
+#   - 2026-11-13: Each blue has "calling" (False at reset), echoing its
+#     optional "call" action. (Austin Beinder)
 # Prompt summary: Implement Phase 3 step 3 of the issue #7 plan (mock env +
 #   ICD conformance tests).
 # Human review:   Pending review
@@ -104,9 +107,11 @@ def test_reset_state_format(make_env, shared):
     assert [b["id"] for b in s["blue"]] == list(range(sc.n_blue))
     assert [r["id"] for r in s["red"]] == list(range(sc.n_red))
     for ent in s["blue"] + s["red"]:
-        assert set(ent) == {"id", "pos", "vel", "has_possession"}
+        calling = {"calling"} if ent in s["blue"] else set()  # AI GENERATED (2026-11-13: blues only)
+        assert set(ent) == {"id", "pos", "vel", "has_possession"} | calling  # AI GENERATED (calling)
         assert len(ent["pos"]) == 2 and len(ent["vel"]) == 2
-    assert set(s["ball"]) == {"pos", "vel"}
+    assert set(s["ball"]) == {"pos", "vel", "passer"} and s["ball"]["passer"] is None  # AI GENERATED (2026-11-13: passer)
+    assert not any(b["calling"] for b in s["blue"])  # AI GENERATED (2026-11-13)
     assert sum(e["has_possession"] for e in s["blue"] + s["red"]) <= 1
     assert info == {"events": [], "kick_applied": [False] * sc.n_blue}
     assert_plain(s, "s")
@@ -323,3 +328,19 @@ def test_goto_target_n_red_zero(make_env):
         if trunc:
             break
     assert s["step"] == sc.max_episode_steps
+
+
+### AI GENERATED (2026-11-13: the optional call action, echoed in s)
+def test_calls_are_echoed_and_checked(make_env):
+    env, sc = make_env({"shared": {"n_blue": 2}})
+    env.reset(seed=0, options=sc.start.to_reset_options())
+    acts = zero_actions(2)
+    acts["blue"][1]["call"] = 1
+    s, *_ = env.step(acts)
+    assert [b["calling"] for b in s["blue"]] == [False, True]
+    s, *_ = env.step(zero_actions(2))  # no call key: not calling
+    assert [b["calling"] for b in s["blue"]] == [False, False]
+    acts["blue"][1]["call"] = 2
+    with pytest.raises(ValueError, match="call"):
+        env.step(acts)
+### END AI GENERATED

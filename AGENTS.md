@@ -156,13 +156,16 @@ configs/*.toml -> marl.common.config.Config
 
   Kicking is on in every stage, so it needs PyBullet.
 - `curriculum/passing_3v1.toml` aims at monkey in the middle: `go_to_target`,
-  `free_ball`, `catch_moving` (moving pass practice for the full 15 s,
+  `claim_ball` (3v0, call practice, 500k steps, no gate), `free_ball`, `catch_moving` (moving pass practice for the full 15 s,
   teammates start 3.9 m away, `kicker_clearance` and `receiver_spacing`,
   minimum pass 2 m), then `catch_moving_longer` / `_longest` (minimum pass
   2, 3 m, length bonus on), all three with both terms (blues 4 m apart in
   the 3 m stage; with no minimum the blues huddled and tapped the ball)
   and `rl.ppo.ent_coef = 0.01` (10x the default: movement had stopped
-  exploring after `free_ball`, and the blues stayed bunched; `free_ball`
+  exploring after `free_ball`, and the blues stayed bunched) and
+  `return_pass_factor = 0.5` (at 1M steps 88% of passes went straight
+  back, the third blue idle) and `call_accuracy` (coef 1); `rl.passer_obs`
+  and `rl.call_enabled` are on in every stage (`free_ball`
   and `go_to_target_again` are commented out for now), then
   `keepaway_from_catch` (3v1 keep-away whose resets start in the catch
   layout, `shared.start.catch_start_mix` stepped 1, 0.5, 0), then a short
@@ -204,9 +207,55 @@ configs/*.toml -> marl.common.config.Config
   mean over blue pairs of the tent `max(0, 1 - |d - target| / target)`, target
   `rl.reward.spacing_distance` (default 3 m, centre to centre). A pass
   between blues d apart travels about d - 0.8 m, so the spacing has to be
-  about 0.8 m more than `min_pass_distance`.
+  about 0.8 m more than `min_pass_distance`. While the ball is dead (loose,
+  below 0.3 m/s) it leaves out the blue nearest the ball (3+ blues), so
+  fetching it doesn't cost the spacing pay.
+  `rl.reward.return_pass_factor` (default 1) is what a pass straight back to
+  the blue who passed to the kicker (A -> B -> A) pays, as a fraction; with
+  three blues and a minimum pass distance, full pay for every pass means
+  rotating A -> B -> C -> A in a triangle. Who passed comes from the env:
+  `s["ball"]["passer"]` (ICD §5, PyBullet; always None in the mock), and
+  `rl.passer_obs = true` adds a "passed to the holder" flag to the self
+  block and each teammate slot of `o_i` and to each blue in the critic's
+  state, so the blues can tell the passes apart (a warm start adds the flag
+  columns like new players'). `return_share` in `train.csv` / `eval.csv` is
+  returns per pass.
+  `rl.call_enabled` adds a "got it" call: a Bernoulli `call` head (never
+  masked), the optional `call` action (ICD §6), echoed by both envs as each
+  blue's `calling` in `s` (ICD §5; in the PyBullet GUI a calling blue turns a
+  brighter blue, `Player.show_calling`), and a calling flag after the passer flag
+  in `o_i` and the critic's state. `call_accuracy` (needs `call_enabled`)
+  is not part of the team reward: the call head gets its own per-blue
+  reward instead (as a team term the blues' calls cancelled out, and calling
+  fell to 3% of steps). `reward.call_values` scores each call in hindsight:
+  +1 to blue i for a call at step t if the next blue pickup in steps
+  t+1..t+10 is i's, -0.5 if it's a teammate's, 0 if nobody picks up in time,
+  minus 0.02 for calling (with -1 and 0.1, calling lost on average and the
+  head fell silent in 20k steps). The buffer turns that into `A = q · (a - p)`
+  (`compute_call_advantages`; a = called, p = the rollout's call
+  probability), and `PPOUpdater(call_coef=...)` gives the call head its own
+  clipped surrogate (`Actor.evaluate_split`), weighted by the term's coef;
+  the other heads keep the team advantage. Steps whose window runs past the
+  rollout end are left out. With `call_accuracy` off the call head stays
+  in the team ratio. `called_share` and `miscalled_per_pickup` in the CSVs
+  measure it (the term function, `call_loss` in `train.csv`). `kicker_clearance` stops once the kicked ball has
+  stopped loose (below 0.3 m/s), so the kicker may fetch its own miss: dead
+  balls used to sit a median 8 s.
   `curriculum/passing_only_3v1.toml` runs it as `catch_moving` (plain
   reward), then `catch_moving_long` (1 m minimum pass, length bonus).
+- The `claim_ball` scenario (both envs, `n_red = 0`): a loose ball anywhere
+  (`max_ball_dist` applies, `start_mix` doesn't), `terminated` when a blue
+  picks it up. Base reward `claim`: -1 a step until then. The `call_yield`
+  shaping term (needs `call_enabled`) charges each blue that isn't calling,
+  while a teammate is (read from `s`), `1 - d / 1.5 m` a step for being near
+  the loose ball, and 10 for taking it. With `call_accuracy` it is call
+  practice: the blue who'll get there first calls, the others leave it.
+  The catch stages of `passing_3v1.toml` keep both ideas, scaled down:
+  `call_yield` (coef 0.01) and the `dead_ball` shaping term (any scenario):
+  -1 a step while the ball is loose and below 0.3 m/s, coef 0.003. The blues
+  had hovered ~1.5 m off a stopped ball half of every episode. Every dead
+  step also makes a miss cost more, so keep the coef small, or holding the
+  ball forever beats kicking it.
 - The `passing_drill` scenario (PyBullet only, needs kicking): the blues
   are frozen on a circle of `shared.start.drill_radius` round red, and one
   starts with the ball. `PyBulletEnv` zeroes their `move`. The actor masks
@@ -261,7 +310,7 @@ configs/*.toml -> marl.common.config.Config
   `max_speed × free_speed_factor` without it (default 1.0). Slow blue down
   with `free_speed_factor`, not `max_speed`: `max_speed` is also the
   velocity unit in every observation and the action scale.
-- Both envs support `keepaway` and `goto_target` and any team sizes the config
+- Both envs support `keepaway`, `goto_target` and `claim_ball` and any team sizes the config
   allows; only `PyBulletEnv` runs `passing_drill`, `pass_practice` and
   `pass_practice_moving`. Only `PyBulletEnv` kicks; `MockEnv` raises on a kick it would have
   to apply. `PyBulletEnv` also needs `physics_dt = 1/240` (pybullet's fixed

@@ -37,6 +37,12 @@ Usage:
   2026-11-11: §9: the catch_start_mix reset option (keepaway).
   2026-11-11: §9: pass_practice_moving runs to the time limit (no one-kick
     limit); the RL side pays each catch when it happens.
+  2026-11-13: §5: s["ball"]["passer"], the blue who passed the ball to its
+    holder (always None in the mock). Decision by Austin Beinder.
+  2026-11-13: §5, §6: the optional "call" action, echoed as each blue's
+    "calling" in s (both envs). Decision by Austin Beinder.
+  2026-11-14: §9, §10: the claim_ball scenario (a loose ball, no red,
+    terminated when a blue gets it; both envs). Decision by Austin Beinder.
 Prompt summary: Draft the Gym/RL interface control document (issue #11) from
   the student's issue #7 design decisions, for teammates to review.
 Human review:   Pending review (student added the axis convention, 2026-10-10)
@@ -128,11 +134,23 @@ s = {
         {"id": 0, "pos": [x, y], "vel": [vx, vy], "has_possession": bool},
         ...
     ],
-    "ball": {"pos": [x, y], "vel": [vx, vy]},
+    "ball": {"pos": [x, y], "vel": [vx, vy], "passer": int | None},  # passer: added 2026-11-13
 }
 ```
 
 - At most one entity has `has_possession = True`. All False means the ball is loose.
+- **`ball.passer` (added 2026-11-13):** the id of the blue who passed the ball to its current (or, while
+  it is loose, its latest) blue holder, else None.
+  - A blue who picks up a teammate's kick was passed to by that teammate.
+  - A blue who picks its own kick back up keeps the passer it had.
+  - Any other pickup (a loose ball nobody kicked, a red taking it) clears it.
+  - Every kick counts, however short; the RL side's pass rules (§9, minimum distance) don't apply.
+  - The RL side uses it to tell a pass on from a pass straight back (`rl.reward.return_pass_factor`),
+    and to show each blue who passed (`rl.passer_obs`). The mock can't kick, so it is always None there.
+  - Optional for the RL side's parser: a hand-built state without it has no passer.
+- **Blue `calling` (added 2026-11-13):** each blue entry also has `"calling": bool`, the `call` it sent
+  on the latest step (§6; False at reset). Reds have no `calling`. Optional for the RL side's parser,
+  like `passer`.
 - **A returned `s` is a snapshot (added 2026-10-14).**
   - Each `reset()` / `step()` call returns a new `s`.
   - The env never modifies a returned `s` afterwards, neither in later `step()` calls nor in `reset()`.
@@ -160,6 +178,7 @@ actions = {
             "move":         [mx, my],   # floats, each in [-1, 1]
             "kick_trigger": 0 or 1,     # int
             "kick_vec":     [kx, ky],   # floats, each in [-1, 1]
+            "call":         0 or 1,     # int, OPTIONAL (added 2026-11-13; missing = 0)
         },
         ...
     ]
@@ -181,6 +200,9 @@ actions = {
   always sends `kick_trigger = 0`, `kick_vec = [0, 0]`. The format is the same either way.
 - **Kick order:** the kick happens before the step's first physics tick, so its `kick` event comes
   before the `possession_change` (kicker → `None`) it causes.
+- **Call (added 2026-11-13):** a "got it" signal with no physical effect. The env only echoes it: each
+  blue's `calling` in the returned `s` (§5) is its `call` from this step (False without the key).
+  Both envs do this. The RL side sends it only with `rl.call_enabled`.
 - Red agents aren't in `actions`; red is scripted inside the env.
 - Malformed actions (wrong length, NaN, out of range, wrong type) should **raise an error**, not be
   silently fixed. (The RL side guarantees valid ranges and types; an error means a bug.)
@@ -294,6 +316,11 @@ options = {
   every episode runs to the time limit (`truncated`), and the blues pass as often as they like. After
   a miss somebody has to fetch the loose ball. The RL side pays each catch on the step it happens
   (`pass_catch`), with the same RL-side options.
+- `claim_ball` (2026-11-14, both envs): `n_red = 0`, any `n_blue`. Every episode starts with a loose
+  ball (the free-ball spawn; `start_mix` doesn't apply, `max_ball_dist` does), and it is `terminated`
+  on the step a blue picks the ball up (`truncated` at the time limit if nobody does). Practice for
+  the `call` (§6): the RL side pays -1 a step until the pickup, scores each blue's calls by who got
+  the ball, and charges blues that crowd a ball a teammate called.
 
 ## 10. Shared configuration
 
@@ -302,7 +329,7 @@ teammate's call. Both sides validate the config **at load**.
 
 | Key                                 | Default       | Notes                                                    |
 | ----------------------------------- | ------------- | -------------------------------------------------------- |
-| `scenario`                          | `keepaway`    | or `goto_target`, `passing_drill`, `pass_practice`, `pass_practice_moving` (§9) |
+| `scenario`                          | `keepaway`    | or `goto_target`, `passing_drill`, `pass_practice`, `pass_practice_moving`, `claim_ball` (§9) |
 | `n_blue`, `n_red`                   | 1, 1          | milestone 1 is 1v1; `n_red = 0` in goto_target, pass_practice |
 | `physics_dt`                        | 1/240 s       |                                                          |
 | `control_k`                         | 12            | → 20 Hz control                                          |

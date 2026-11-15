@@ -24,6 +24,12 @@
 #     (Austin Beinder)
 #   - 2026-11-11: EpisodeRecord.kicks, the blue kicks in the episode.
 #     (Austin Beinder)
+#   - 2026-11-13: The featurizer's rl.passer_obs flags; EpisodeRecord.returns,
+#     the passes straight back to the blue who passed to the kicker. (Austin Beinder)
+#   - 2026-11-13: The call flags (rl.call_enabled); EpisodeRecord.pickups and
+#     called / miscalled, for the call accuracy. (Austin Beinder)
+#   - 2026-11-14: Each buffer row also gets the step's blue pickup and the call
+#     head's log-prob, for the call head's own advantage. (Austin Beinder)
 # Prompt summary: Implement Phase 3 step 7 of the issue #7 plan (buffer +
 #   GAE); the rollout collector moved here from step 8 because it owns the
 #   next_value contract that GAE depends on.
@@ -59,9 +65,9 @@ from marl.common.config import Config
 from marl.common.spawn import START_FREE_BALL, START_POSSESSION, START_TARGET
 from marl.rl.actions import actions_from_samples, commanded_speed_fraction  # AI GENERATED (actions_from_samples)
 from marl.rl.buffer import RolloutBuffer
-from marl.rl.networks import MOVE, Actor, Critic, critic_input, critic_input_dim
+from marl.rl.networks import CALL, MOVE, Actor, Critic, critic_input, critic_input_dim  # AI GENERATED (CALL)
 from marl.rl.obs import ObsBuilder
-from marl.rl.reward import RewardModule, effective_terminal
+from marl.rl.reward import RewardModule, blue_pickup, effective_terminal  # AI GENERATED (blue_pickup)
 from marl.rl.state import StateFlattener, parse_state
 
 
@@ -71,8 +77,9 @@ class Featurizer:
     def __init__(self, cfg: Config):
         sc = cfg.shared
         self.n_blue, self.n_red = sc.n_blue, sc.n_red
-        self.obs_builder = ObsBuilder(sc, cfg.rl.obs_ordering, cfg.rl.obs_mode)
-        self.flattener = StateFlattener(sc, cfg.rl.horizon_mode)
+        self.obs_builder = ObsBuilder(sc, cfg.rl.obs_ordering, cfg.rl.obs_mode, cfg.rl.passer_obs,  # AI GENERATED (passer_obs,
+                                      cfg.rl.call_enabled)  # call flags, 2026-11-13)
+        self.flattener = StateFlattener(sc, cfg.rl.horizon_mode, cfg.rl.passer_obs, cfg.rl.call_enabled)  # AI GENERATED (flags)
         self.critic_mode = cfg.rl.critic_input
         self.obs_dim = self.obs_builder.dim
         self.state_dim = self.flattener.dim
@@ -103,6 +110,12 @@ class EpisodeRecord:
     mean_reward: float
     passes: int = 0  # AI GENERATED (2026-11-09): passes completed (a blue's kick caught by another blue)
     kicks: int = 0  # AI GENERATED (2026-11-11): blue kicks (passes / kicks = the pass completion rate)
+    returns: int = 0  # AI GENERATED (2026-11-13): passes straight back to the blue who passed to the kicker
+    ### AI GENERATED (2026-11-13: calls)
+    pickups: int = 0  # blue pickups of the ball (catches, fetching a loose ball, re-grabs)
+    called: float = 0.0  # how well the blue who picked it up had called for it, summed (0 to 1 each)
+    miscalled: float = 0.0  # how loudly the other blues had called for those pickups, summed
+    ### END AI GENERATED
 
 
 @dataclass(frozen=True)
@@ -158,6 +171,10 @@ class RolloutCollector:
             with torch.no_grad():
                 samples, log_prob = self.actor.act(torch.from_numpy(obs))
                 value = self._value if self._value is not None else self.critic(torch.from_numpy(cin))
+            ### AI GENERATED (2026-11-14: the call's part of the log-prob, for its own advantage)
+            call_lp = (self.actor.head_log_prob(torch.from_numpy(obs), samples, CALL).numpy()
+                       if CALL in samples else None)
+            ### END AI GENERATED
             move = samples[MOVE].numpy()
             actions = actions_from_samples(samples)  # AI GENERATED (kick heads too)
             speed += float(commanded_speed_fraction(move).mean())
@@ -185,6 +202,8 @@ class RolloutCollector:
                 terminated=terminated,
                 truncated=truncated,
                 effective_terminal=eff,
+                pickup=blue_pickup(info),  # AI GENERATED (2026-11-14)
+                call_log_prob=call_lp,  # AI GENERATED (2026-11-14)
             )
             if terminated or truncated:
                 episodes.append(
@@ -196,6 +215,10 @@ class RolloutCollector:
                         mean_reward=self._ep_base / s_next["step"],
                         passes=self._reward_memory.passes,  # AI GENERATED (2026-11-09)
                         kicks=self._reward_memory.kicks,  # AI GENERATED (2026-11-11)
+                        returns=self._reward_memory.returns,  # AI GENERATED (2026-11-13)
+                        pickups=self._reward_memory.pickups,  # AI GENERATED (2026-11-13)
+                        called=self._reward_memory.called,  # AI GENERATED (2026-11-13)
+                        miscalled=self._reward_memory.miscalled,  # AI GENERATED (2026-11-13)
                     )
                 )
                 self._s = None  # no auto-reset (ICD §4): the next step starts a new episode

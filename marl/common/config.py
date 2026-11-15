@@ -39,6 +39,12 @@
 #     rl.reward.spacing_distance. (Austin Beinder)
 #   - 2026-11-12: rl.new_player_init (zero | random): how a warm start that
 #     grows a team sets the new players' input columns. (Austin Beinder)
+#   - 2026-11-13: rl.passer_obs and rl.reward.return_pass_factor (pass
+#     rotation). (Austin Beinder)
+#   - 2026-11-13: rl.call_enabled and the call_accuracy shaping term name.
+#   - 2026-11-14: The claim_ball scenario (base reward claim) and the
+#     call_yield shaping term, which needs rl.call_enabled. (Austin Beinder)
+#   - 2026-11-14: The dead_ball shaping term name. (Austin Beinder)
 # Prompt summary: Implement Phase 3 step 1 of the issue #7 plan (config +
 #   validation) following the student's design decisions.
 # Human review:   Pending review
@@ -73,7 +79,8 @@ from typing import Any
 # name -> (built values, interface-only values). Interface-only values raise
 # NotImplementedError ("design the interface, defer the implementation", #21).
 OPTIONS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
-    "scenario": (frozenset({"keepaway", "goto_target", "passing_drill", "pass_practice", "pass_practice_moving"}), frozenset()),  # AI GENERATED (drills)
+    "scenario": (frozenset({"keepaway", "goto_target", "passing_drill", "pass_practice", "pass_practice_moving",
+                               "claim_ball"}), frozenset()),  # AI GENERATED (drills; claim_ball 2026-11-14)
     "critic_input": (frozenset({"local", "global"}), frozenset()),
     "horizon_mode": (frozenset({"infinite"}), frozenset({"finite"})),
     "obs_ordering": (frozenset({"distance"}), frozenset({"index"})),
@@ -85,11 +92,14 @@ OPTIONS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
 # Reward term names (#14). The registry in marl/rl/reward.py must match these
 # (a test checks it); they live here so the config can be validated at load.
 BASE_REWARD_TERMS: frozenset[str] = frozenset({"survival", "goto_target", "passing_drill", "pass_practice",
-                                              "pass_catch"})  # AI GENERATED (drills; pass_catch 2026-11-11)
+                                              "pass_catch", "claim"})  # AI GENERATED (drills; pass_catch 2026-11-11; claim 2026-11-14)
 ### AI GENERATED (pass_progress, pass_completed: 2026-11-08, for the passing drill; kicker_clearance,
 ### receiver_spacing: 2026-11-11)
 SHAPING_TERMS_BUILT: frozenset[str] = frozenset({"pbrs_ball_acquisition", "pass_progress", "pass_completed",
-                                                 "kicker_clearance", "receiver_spacing"})
+                                                 "kicker_clearance", "receiver_spacing",
+                                                 "call_accuracy",  # 2026-11-13
+                                                 "call_yield",  # 2026-11-14
+                                                 "dead_ball"})  # 2026-11-14
 ### END AI GENERATED
 SHAPING_TERMS_DEFERRED: frozenset[str] = frozenset({"pbrs_red_distance"})  # #15
 
@@ -101,6 +111,7 @@ SCENARIO_BASE_REWARD: dict[str, str] = {
     "passing_drill": "passing_drill",  # AI GENERATED (2026-11-08)
     "pass_practice": "pass_practice",  # AI GENERATED (2026-11-09)
     "pass_practice_moving": "pass_catch",  # AI GENERATED (2026-11-11): paid per catch, to the time limit
+    "claim_ball": "claim",  # AI GENERATED (2026-11-14): -1 a step until a blue has the ball
 }
 # The scenarios whose blues can't move: the env ignores their move actions and the actor masks
 # the movement head out of PPO (2026-11-09).
@@ -188,6 +199,9 @@ class RewardConfig:
     min_pass_distance: float = 0.0  # m: a catch nearer the kick point is no pass; 0 = any catch counts
     pass_length_bonus: bool = False  # pass_practice, pass_catch: a catch pays 0.75 to 1 by its length, not a flat 1
     spacing_distance: float = 3.0  # 2026-11-11, receiver_spacing: the blue-to-blue distance (m, centre to centre) it pays for
+    # 2026-11-13, pass_catch: what a pass straight back to the blue who passed to the kicker pays,
+    # as a fraction of a pass to anyone else (1 = no difference)
+    return_pass_factor: float = 1.0
     ### END AI GENERATED
 
 
@@ -223,6 +237,15 @@ class RLConfig:
     # a 1v0 go_to_target actor warm-started into 3v0 pass practice barely saw its teammates after
     # 180k steps (their columns ~6x weaker than the ball's), and the blues never spread out.
     new_player_init: str = "zero"
+    # 2026-11-13: each blue's observation (and the critic's state) flags the blue who passed the
+    # ball to its holder (s["ball"]["passer"]), so the holder can tell a pass back from a pass on.
+    # A warm start from a checkpoint without the flags adds their columns like new players' ones.
+    passer_obs: bool = False
+    # 2026-11-13: a "got it" call: each blue gets a Bernoulli call head, the env echoes each blue's
+    # latest call in s (s["blue"][i]["calling"]), and every blue sees its teammates' calls in o_i
+    # (and the critic in its state). The call_accuracy shaping term pays for calls that come true
+    # (2026-11-14: the call head alone, per blue, not the team reward).
+    call_enabled: bool = False
     ### END AI GENERATED
     reward: RewardConfig = field(default_factory=RewardConfig)
     ppo: PPOConfig = field(default_factory=PPOConfig)
@@ -406,6 +429,8 @@ def _validate_shared(s: SharedConfig) -> None:
     elif s.scenario in PASS_PRACTICE_SCENARIOS:  # 2026-11-09
         _require(s.n_blue >= 2 and s.n_red == 0, f"{s.scenario} needs n_blue >= 2 (someone to pass to) and n_red = 0")
     ### END AI GENERATED
+    elif s.scenario == "claim_ball":  # AI GENERATED (2026-11-14)
+        _require(s.n_red == 0, "claim_ball needs n_red = 0 (the episode ends when a blue gets the ball)")  # AI GENERATED
     else:  # goto_target (ICD §9)
         _require(s.n_blue == 1 and s.n_red == 0, "goto_target needs n_blue = 1, n_red = 0")
     _require(s.physics_dt > 0, "shared.physics_dt must be > 0")
@@ -475,6 +500,11 @@ def _validate_rl(cfg: Config) -> None:
             raise NotImplementedError(f"shaping term {term.name!r} is interface-only for milestone 1 (#15)")
     _require(rw.min_pass_distance >= 0, "rl.reward.min_pass_distance must be >= 0")  # AI GENERATED (2026-11-10)
     _require(rw.spacing_distance > 0, "rl.reward.spacing_distance must be > 0")  # AI GENERATED (2026-11-11)
+    _require(0 <= rw.return_pass_factor <= 1, "rl.reward.return_pass_factor must be in [0, 1]")  # AI GENERATED (2026-11-13)
+    _require(rl.call_enabled or not any(t.name == "call_accuracy" and t.enabled for t in rw.shaping),  # AI GENERATED (2026-11-13)
+             "the call_accuracy shaping term needs rl.call_enabled = true")  # AI GENERATED (2026-11-13)
+    _require(rl.call_enabled or not any(t.name == "call_yield" and t.enabled for t in rw.shaping),  # AI GENERATED (2026-11-14)
+             "the call_yield shaping term needs rl.call_enabled = true")  # AI GENERATED (2026-11-14)
 
     p = rl.ppo
     for name in ("rollout_steps", "num_minibatches", "update_epochs"):

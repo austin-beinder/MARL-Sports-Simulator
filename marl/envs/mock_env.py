@@ -13,6 +13,12 @@
 #   - 2026-11-08: Refuses the passing_drill scenario (it needs kicks).
 #     (Austin Beinder)
 #   - 2026-11-09: Refuses pass_practice and pass_practice_moving too. (Austin Beinder)
+#   - 2026-11-13: s["ball"]["passer"] (ICD §5), always None: the mock can't
+#     kick, so nobody ever passes. (Austin Beinder)
+#   - 2026-11-13: The optional "call" action, echoed as each blue's "calling"
+#     in s (parse_calls). (Austin Beinder)
+#   - 2026-11-14: The claim_ball scenario: a loose ball, no red, terminated
+#     when a blue picks it up. (Austin Beinder)
 #   - 2026-10-10: Generated this entire file: a kinematic 2D mock env that
 #     implements docs/ICD.md v0.2 (action repeat, per-tick termination, walls,
 #     possession radius, carry slowdown, pursuit red, goto_target scenario,
@@ -63,7 +69,7 @@ class MockEnv:
         self.n_blue, self.n_red = cfg.n_blue, cfg.n_red
         half = np.asarray(cfg.field_size, dtype=float) / 2.0
         self._lo, self._hi = -half + cfg.player_radius, half - cfg.player_radius
-        self._possession = cfg.scenario == "keepaway"  # goto_target: ball is an immobile target
+        self._possession = cfg.scenario in ("keepaway", "claim_ball")  # goto_target: ball is an immobile target  # AI GENERATED (claim_ball)
         self._ready = False
 
     # --- API (ICD §4) ----------------------------------------------------------
@@ -94,6 +100,7 @@ class MockEnv:
         self._ball_vel = np.zeros(2)
         self._holder: Holder = ("blue", sp.holder) if sp.holder is not None else None
         self._step = 0
+        self._calls = [False] * self.n_blue  # AI GENERATED (2026-11-13): nobody calls at reset
         self._ready = True
         return self._state(), self._info([])
 
@@ -101,6 +108,7 @@ class MockEnv:
         if not self._ready:
             raise RuntimeError("call reset() before step(); there is no auto-reset (ICD §4)")
         move, triggers, _ = self._parse_actions(actions)
+        self._calls = parse_calls(actions, self.n_blue)  # AI GENERATED (2026-11-13): echoed in s (ICD §5)
 
         # Start-of-step rule (ICD §3): kicks use possession at the start of the block.
         for i, trig in enumerate(triggers):
@@ -122,6 +130,11 @@ class MockEnv:
             if self._holder is not None and self._holder[0] == "red":
                 terminated = True  # mid-block termination (ICD §3): stop the block now
                 break
+            ### AI GENERATED (2026-11-14: claim_ball ends when a blue gets the ball)
+            if self._holder is not None and self.cfg.scenario == "claim_ball":
+                terminated = True
+                break
+            ### END AI GENERATED
         self._step += 1
         truncated = (not terminated) and self._step >= self.cfg.max_episode_steps
         if terminated or truncated:
@@ -223,12 +236,15 @@ class MockEnv:
 
     def _state(self) -> dict:
         def entity(team: str, i: int, pos: np.ndarray, vel: np.ndarray) -> dict:
-            return {
+            e = {
                 "id": i,
                 "pos": [float(pos[0]), float(pos[1])],
                 "vel": [float(vel[0]), float(vel[1])],
                 "has_possession": self._holder == (team, i),
             }
+            if team == "blue":  # AI GENERATED (2026-11-13): the blue's latest call (ICD §5)
+                e["calling"] = bool(getattr(self, "_calls", [False] * self.n_blue)[i])
+            return e
 
         return {
             "step": self._step,
@@ -237,6 +253,7 @@ class MockEnv:
             "ball": {
                 "pos": [float(self._ball_pos[0]), float(self._ball_pos[1])],
                 "vel": [float(self._ball_vel[0]), float(self._ball_vel[1])],
+                "passer": None,  # AI GENERATED (2026-11-13): no kicks, so no passes (ICD §5)
             },
         }
 
@@ -267,8 +284,12 @@ def parse_actions(actions: Any, n_blue: int) -> tuple[np.ndarray, list[int], np.
         where = f"actions['blue'][{i}]"
         if not isinstance(a, dict):
             raise TypeError(f"{where} must be a dict")
-        if set(a) != {"move", "kick_trigger", "kick_vec"}:
-            raise ValueError(f"{where} must have keys move, kick_trigger, kick_vec; got {sorted(a)}")
+        if not {"move", "kick_trigger", "kick_vec"} <= set(a) <= {"move", "kick_trigger", "kick_vec", "call"}:  # AI GENERATED (call)
+            raise ValueError(f"{where} must have keys move, kick_trigger, kick_vec (and optionally call); got {sorted(a)}")
+        ### AI GENERATED (2026-11-13: the optional call, ICD §6)
+        if "call" in a and (type(a["call"]) is not int or a["call"] not in (0, 1)):
+            raise ValueError(f"{where}['call'] must be an int 0 or 1, got {a['call']!r}")
+        ### END AI GENERATED
         move[i] = _vec2(a["move"], f"{where}['move']")
         kick_vecs[i] = _vec2(a["kick_vec"], f"{where}['kick_vec']")
         trig = a["kick_trigger"]
@@ -280,6 +301,11 @@ def parse_actions(actions: Any, n_blue: int) -> tuple[np.ndarray, list[int], np.
     norm = np.linalg.norm(move, axis=1, keepdims=True)
     move = np.where(norm > 1.0, move / np.maximum(norm, 1e-12), move)  # 2-norm speed cap (ICD §6)
     return move, triggers, kick_vecs
+
+
+def parse_calls(actions: dict, n_blue: int) -> list[bool]:  # AI GENERATED (2026-11-13)
+    """Each blue's call (ICD §6, optional, default 0) from actions ``parse_actions`` accepted."""
+    return [bool(a.get("call", 0)) for a in actions["blue"][:n_blue]]
 ### END AI GENERATED
 
 

@@ -16,6 +16,10 @@
 #     the removed players' input columns are dropped. (Austin Beinder)
 #   - 2026-11-12: rl.new_player_init = "random" starts new players' columns
 #     at the fresh network's init instead of zero. (Austin Beinder)
+#   - 2026-11-13: warm_start also adds (or drops) per-slot features, e.g. the
+#     rl.passer_obs flags, like new players' columns. (Austin Beinder)
+#   - 2026-11-13: ... and the rl.call_enabled flags; a new call head keeps its
+#     fresh init. (Austin Beinder)
 # Prompt summary: Implement Phase 3 step 8 of the issue #7 plan (PPO update +
 #   training loop).
 # Human review:   Pending review
@@ -42,6 +46,10 @@ init, so the outputs change a little at first but the new players are visible fr
 Teams may also shrink (2026-11-09): a player slot the new layout doesn't have loses its columns,
 so the network forgets those weights (e.g. red's, going 1v1 -> 3v0; they come back as zero
 columns if red returns later). Every slot both layouts have keeps its weights.
+
+Slots may also gain features at their end (2026-11-13: ``rl.passer_obs`` adds a flag to the self
+block, each teammate slot and each blue in the critic's state). The new features' columns start
+like new players' (zero, or random with ``rl.new_player_init = "random"``); dropped ones go.
 """
 
 from __future__ import annotations
@@ -106,8 +114,8 @@ def warm_start(actor: Actor, critic: Critic, ckpt: dict[str, Any], cfg: Config) 
     one reward, so after goto_target (-distance) it would be wrong for keep-away (+1 per step),
     and it starts fresh instead. The actor always loads.
 
-    If the team sizes differ from the checkpoint's config, the first layers' input columns are
-    remapped: new players' columns are zero (or, with ``cfg.rl.new_player_init = "random"``, keep
+    If the team sizes (or, 2026-11-13, ``rl.passer_obs``) differ from the checkpoint's config, the
+    first layers' input columns are remapped: new players' (and features') columns are zero (or, with ``cfg.rl.new_player_init = "random"``, keep
     the networks' fresh init, 2026-11-12), removed players' columns are dropped (see the module
     docstring). Raises if the critic would load but its input mode changed.
     """
@@ -117,9 +125,15 @@ def warm_start(actor: Actor, critic: Critic, ckpt: dict[str, Any], cfg: Config) 
     load_critic = old.shared.scenario == cfg.shared.scenario and old.rl.reward == cfg.rl.reward
     if load_critic and old.rl.critic_input != cfg.rl.critic_input:
         raise ValueError(f"can't warm start a {cfg.rl.critic_input!r} critic from a {old.rl.critic_input!r} one")
-    if (o.n_blue, o.n_red) != (n.n_blue, n.n_red):
-        obs_cols = _column_map(obs_blocks(o.n_blue, o.n_red), obs_blocks(n.n_blue, n.n_red))
-        state_cols = _column_map(state_blocks(o.n_blue, o.n_red), state_blocks(n.n_blue, n.n_red))
+    ### AI GENERATED (2026-11-13: the layouts may also differ in the passer / call flags)
+    old_obs = obs_blocks(o.n_blue, o.n_red, old.rl.passer_obs, old.rl.call_enabled)
+    new_obs = obs_blocks(n.n_blue, n.n_red, cfg.rl.passer_obs, cfg.rl.call_enabled)
+    old_state = state_blocks(o.n_blue, o.n_red, old.rl.passer_obs, old.rl.call_enabled)
+    new_state = state_blocks(n.n_blue, n.n_red, cfg.rl.passer_obs, cfg.rl.call_enabled)
+    if (old_obs, old_state) != (new_obs, new_state):
+        obs_cols = _column_map(old_obs, new_obs)
+        state_cols = _column_map(old_state, new_state)
+    ### END AI GENERATED
         random = cfg.rl.new_player_init == "random"  # AI GENERATED (2026-11-12)
         actor_sd["trunk.0.weight"] = _grow(actor_sd["trunk.0.weight"], *obs_cols,
                                            fresh=actor.state_dict()["trunk.0.weight"] if random else None)
@@ -138,15 +152,19 @@ def warm_start(actor: Actor, critic: Critic, ckpt: dict[str, Any], cfg: Config) 
 
 def _column_map(old_blocks, new_blocks) -> tuple[np.ndarray, np.ndarray, int]:
     """The old input columns that survive, where each goes in the new layout (slot k of a block
-    stays slot k; slots past the new count are dropped, 2026-11-09), and the new input size."""
+    stays slot k; slots past the new count are dropped, 2026-11-09; feature f of a slot stays
+    feature f, and features past the new width are dropped, 2026-11-13), and the new input size."""
     kept, mapping, old_start, new_start = [], [], 0, 0
     for (name, width, old_slots), (new_name, new_width, new_slots) in zip(old_blocks, new_blocks, strict=True):
-        assert name == new_name and width == new_width
-        n = width * min(old_slots, new_slots)
-        kept.extend(range(old_start, old_start + n))
-        mapping.extend(range(new_start, new_start + n))
+        assert name == new_name
+        ### AI GENERATED (2026-11-13: per-slot features may be added or dropped at the end)
+        for slot in range(min(old_slots, new_slots)):
+            for f in range(min(width, new_width)):
+                kept.append(old_start + slot * width + f)
+                mapping.append(new_start + slot * new_width + f)
+        ### END AI GENERATED
         old_start += width * old_slots
-        new_start += width * new_slots
+        new_start += new_width * new_slots
     return np.asarray(kept, dtype=np.int64), np.asarray(mapping, dtype=np.int64), new_start
 
 
