@@ -35,10 +35,8 @@
 #   - 2026-11-13: Curriculum run figures (--curriculum RUN_DIR): every stage
 #     of a curriculum run on one step axis, and a close-up of its
 #     pass_practice_moving stages. (Austin Beinder)
-# Prompt summary: Implement Phase 3 step 11 of the issue #7 plan (plots for the
-#   midterm from the 5-seed keep-away runs); later, the task 2 plotting
-#   refactor (records, manifests, N-arm figures).
-# Human review:   Pending review
+#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters; no
+#     behaviour change. (Austin Beinder)
 # ==============================================================================
 """Report figures. Reads only CSVs that training, ``scripts/evaluate.py`` and
 ``scripts/calibrate.py`` already wrote, so making figures never re-runs anything.
@@ -736,13 +734,16 @@ def curriculum_stages(run_dir: str | Path) -> list[tuple[Path, dict[str, Any], d
 
 
 def _stage_data(d: Path) -> tuple[list[dict[str, str]], list[dict[str, str]], bool]:
-    """A stage's train.csv rows, its stochastic eval.csv rows, and whether it finished (final.pt)."""
-    evals = [r for r in read_csv(d / "eval.csv") if r["mode"] == "stochastic"] if (d / "eval.csv").exists() else []
+    """A stage's train.csv rows, its stochastic eval.csv rows, and whether it finished
+    (final.pt)."""
+    evals = ([r for r in read_csv(d / "eval.csv") if r["mode"] == "stochastic"]
+             if (d / "eval.csv").exists() else [])
     return read_csv(d / "train.csv"), evals, (d / "checkpoints" / "final.pt").exists()
 
 
 def _nan_col(rows: Sequence[dict[str, str]], key: str) -> np.ndarray:
-    """A column as floats, NaN where it's missing or empty (e.g. the gate columns of an ungated stage)."""
+    """A column as floats, NaN where it's missing or empty (e.g. the gate columns of an ungated
+    stage)."""
     return np.array([float(r[key]) if r.get(key) not in (None, "") else np.nan for r in rows])
 
 
@@ -785,18 +786,21 @@ def fig_curriculum(run_dir: str | Path, out_dir: Path) -> Path:
                 ax.axvspan(off, end, color=STAGE_BAND, zorder=0, linewidth=0)
             if not finished:
                 ax.axvline(x[-1], color=MUTED, linewidth=0.8, linestyle=":")
-        team = f"{sh['n_blue']}v{sh['n_red']}" + (f", red {sh['red_max_speed']:g} m/s" if sh["n_red"] else "")
+        team = f"{sh['n_blue']}v{sh['n_red']}" + (
+            f", red {sh['red_max_speed']:g} m/s" if sh["n_red"] else "")
         done = (f"{x[-1] - off:.0f}k steps" if finished
                 else f"unfinished: {x[-1] - off:.0f}k / {stage['total_steps'] / 1e3:.0f}k")
-        labels.append(((off + end) / 2, end - off, limit, f"{stage['name']}\n{sh['scenario']}, {team}\n{done}",
+        labels.append(((off + end) / 2, end - off, limit,
+                       f"{stage['name']}\n{sh['scenario']}, {team}\n{done}",
                        stage["name"]))
 
         ax = axes[0]
         ax.plot(x, _trailing_mean(_nan_col(train, "ep_len_mean"), 10) * dt, color=ACCENT,
                 label="training, 10-iteration mean" if first else None)
         if evals:
-            ax.plot(off + _nan_col(evals, "env_steps") / 1e3, _nan_col(evals, "len_mean") * dt, color=SERIES_2,
-                    linewidth=1.5, marker="o", markersize=3, label="eval, the stage's real task" if first else None)
+            ax.plot(off + _nan_col(evals, "env_steps") / 1e3, _nan_col(evals, "len_mean") * dt,
+                    color=SERIES_2, linewidth=1.5, marker="o", markersize=3,
+                    label="eval, the stage's real task" if first else None)
         ax.hlines(limit, off, end, color=INK_2, linestyle="--", linewidth=1)
 
         ax = axes[1]
@@ -807,14 +811,17 @@ def fig_curriculum(run_dir: str | Path, out_dir: Path) -> Path:
                     label="gate lower bound (must reach the threshold)" if first_gate else None)
             ax.hlines(stage["threshold"], off, end, color=INK_2, linestyle="--", linewidth=1)
             if stage["threshold"] != last_threshold:  # label each new threshold once
-                ax.text(off, stage["threshold"] + 0.03, f"{stage['threshold']:g}", fontsize=8, color=INK_2)
+                ax.text(off, stage["threshold"] + 0.03, f"{stage['threshold']:g}", fontsize=8,
+                        color=INK_2)
             last_threshold, first_gate = stage["threshold"], False
             if "levels" in stage:
                 level = _nan_col(train, "cur_level")
-                ax.text(x[0], 0.02, f" {stage['option']} = {stage['levels'][0]:g}", fontsize=8, color=INK_2)
+                ax.text(x[0], 0.02, f" {stage['option']} = {stage['levels'][0]:g}", fontsize=8,
+                        color=INK_2)
                 for i in np.flatnonzero(np.diff(level) > 0):
                     ax.axvline(x[i + 1], color=MUTED, linewidth=0.8, linestyle=":")
-                    ax.text(x[i + 1], 0.02, f" → {stage['levels'][int(level[i + 1])]:g}", fontsize=8, color=INK_2)
+                    ax.text(x[i + 1], 0.02, f" → {stage['levels'][int(level[i + 1])]:g}",
+                            fontsize=8, color=INK_2)
         else:
             ax.text((off + end) / 2, 0.5, "no gate", ha="center", fontsize=8, color=INK_2)
 
@@ -822,11 +829,14 @@ def fig_curriculum(run_dir: str | Path, out_dir: Path) -> Path:
         off = end
 
     narrow = 0
-    for mid, width, top, full, short in labels:  # narrow stages get only their name, staggered, with a leader line
+    # narrow stages get only their name, staggered, with a leader line
+    for mid, width, top, full, short in labels:
         if width / off > 0.15:
             axes[0].text(mid, top * 1.08, full, ha="center", va="bottom", fontsize=8, color=INK_2)
         else:
-            axes[0].annotate(short, (mid, top), (mid + 0.01 * off * (narrow % 3 - 1), top * (1.1 + 0.3 * (narrow % 3))),
+            axes[0].annotate(short, (mid, top),
+                             (mid + 0.01 * off * (narrow % 3 - 1),
+                              top * (1.1 + 0.3 * (narrow % 3))),
                              ha="center", va="bottom", fontsize=7.5, color=INK_2,
                              arrowprops=dict(arrowstyle="-", color=AXIS, linewidth=0.6))
             narrow += 1
@@ -847,7 +857,8 @@ def fig_catch_stages(run_dir: str | Path, out_dir: Path) -> Path | None:
     """The run's pass_practice_moving stages up close: passes per episode, the share of kicks caught
     (what their gate measures), and the shaping reward and kicks per step. None if it has none."""
     run_dir = Path(run_dir)
-    stages = [s for s in curriculum_stages(run_dir) if s[2]["shared"]["scenario"] == "pass_practice_moving"]
+    stages = [s for s in curriculum_stages(run_dir)
+              if s[2]["shared"]["scenario"] == "pass_practice_moving"]
     if not stages:
         return None
     fig, axes = plt.subplots(3, 1, figsize=(10, 8), sharex=True, layout="constrained")
@@ -860,22 +871,29 @@ def fig_catch_stages(run_dir: str | Path, out_dir: Path) -> Path | None:
         eval_style = dict(color=SERIES_2, linewidth=1.5, marker="o", markersize=4)
         axes[0].plot(x, _trailing_mean(_nan_col(train, "ep_passes_mean"), 5), color=ACCENT,
                      label="training, 5-iteration mean" if first else None)
-        axes[0].plot(ex, _nan_col(evals, "passes_mean"), **eval_style, label="eval" if first else None)
+        axes[0].plot(ex, _nan_col(evals, "passes_mean"), **eval_style,
+                     label="eval" if first else None)
         axes[1].plot(x, _nan_col(train, "gate_mean"), color=ACCENT,
                      label="gate mean (passes / kicks over the gate window)" if first else None)
-        axes[1].plot(x, _nan_col(train, "gate_lower"), color=CONTEXT, label="gate lower bound" if first else None)
-        axes[1].plot(ex, _nan_col(evals, "pass_rate"), **eval_style, label="eval: share of kicks caught" if first else None)
+        axes[1].plot(x, _nan_col(train, "gate_lower"), color=CONTEXT,
+                     label="gate lower bound" if first else None)
+        axes[1].plot(ex, _nan_col(evals, "pass_rate"), **eval_style,
+                     label="eval: share of kicks caught" if first else None)
         end = _stage_span(off, x, stage, finished)
         if "threshold" in stage:
             axes[1].hlines(stage["threshold"], off, end, color=INK_2, linestyle="--", linewidth=1)
-            axes[1].text(off, stage["threshold"] + 0.02, f" threshold {stage['threshold']:g}", fontsize=8, color=INK_2)
+            axes[1].text(off, stage["threshold"] + 0.02, f" threshold {stage['threshold']:g}",
+                         fontsize=8, color=INK_2)
         axes[2].plot(x, _nan_col(train, "reward_shaping_mean_unscaled"), color=ACCENT,
                      label="shaping reward (all terms)" if first else None)
-        axes[2].plot(x, _nan_col(train, "kicks_per_step"), color=SERIES_2, label="kicks per step (all blues)" if first else None)
+        axes[2].plot(x, _nan_col(train, "kicks_per_step"), color=SERIES_2,
+                     label="kicks per step (all blues)" if first else None)
         for ax in axes:
             ax.axvline(off, color=MUTED, linewidth=0.8, linestyle=":")
-        axes[0].text(off, 0.98 - 0.1 * (k % 2), f" {stage['name']}", transform=axes[0].get_xaxis_transform(),
-                     fontsize=9, va="top", color=INK_2)  # alternate heights so short stages' names don't collide
+        # alternate heights so short stages' names don't collide
+        axes[0].text(off, 0.98 - 0.1 * (k % 2), f" {stage['name']}",
+                     transform=axes[0].get_xaxis_transform(),
+                     fontsize=9, va="top", color=INK_2)
         off = end
     axes[0].set_ylabel("passes per episode")
     axes[0].legend(loc="best", fontsize=8)
@@ -904,8 +922,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--out", type=Path, default=Path("runs/figures"))
     ### AI GENERATED (2026-11-13)
     ap.add_argument("--curriculum", type=Path, nargs="+", metavar="RUN_DIR",
-                    help="curriculum run folder(s), e.g. runs/curriculum_passing_3v1_pybullet_seed0: plot their "
-                         "progress (<run>_progress, plus <run>_catch if they have pass practice stages) instead of "
+                    help="curriculum run folder(s), e.g. "
+                         "runs/curriculum_passing_3v1_pybullet_seed0: plot their "
+                         "progress (<run>_progress, plus <run>_catch if they have pass practice "
+                         "stages) instead of "
                          "the report figures")
     ### END AI GENERATED
     args = ap.parse_args(argv)

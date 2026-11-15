@@ -7,9 +7,8 @@
 #   - 2026-11-07: Generated this entire file: tests for kicking on the RL side
 #     and in the PyBullet adapter (config gating, the kick heads and their
 #     masks, the action adapter, a kicking rollout, and training end to end).
-# Prompt summary: Wire kicking in: PyBullet game + ICD adapter + config + the
-#   actor's kick heads (Bernoulli trigger, Beta kick vector, possession masks).
-# Human review:   Pending review
+#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters and fixed
+#     the new warnings; no behaviour change. (Austin Beinder)
 # ==============================================================================
 import csv
 import math
@@ -30,7 +29,8 @@ from marl.rl.train import train
 
 OBS_DIM = 17  # 1v1 observation size
 SMALL = {
-    "rl": {"kick_enabled": True, "ppo": {"rollout_steps": 64, "num_minibatches": 4, "update_epochs": 1}},
+    "rl": {"kick_enabled": True,
+           "ppo": {"rollout_steps": 64, "num_minibatches": 4, "update_epochs": 1}},
     "run": {"env": "pybullet", "total_steps": 128, "eval_every": 2, "eval_episodes": 3},
 }
 
@@ -62,8 +62,8 @@ def test_adapter_passes_kick_speed_and_ball_damping_to_the_game():
     sc = config_from_dict({"shared": {"max_kick_speed": 4.0, "ball_damping": 0.5}}).shared
     env = PyBulletEnv(sc)
     try:
-        assert env._game.config.max_kick_speed == 4.0
-        assert env._game.config.ball_damping == 0.5
+        assert env._game.config.max_kick_speed == 4.0  # pylint: disable=protected-access
+        assert env._game.config.ball_damping == 0.5  # pylint: disable=protected-access
     finally:
         env.close()
 
@@ -74,13 +74,16 @@ def test_adapter_kick_releases_the_ball_and_reports_it():
     env = PyBulletEnv(sc)
     try:
         env.reset(seed=0)
-        env.set_state_for_testing(blue_pos=[[-5, 0]], red_pos=[[6, 4]], ball_pos=[-5, 0], holder=("blue", 0))
-        s, term, trunc, info = env.step({"blue": [{"move": [0.0, 0.0], "kick_trigger": 1, "kick_vec": [0.5, 0.0]}]})
+        env.set_state_for_testing(blue_pos=[[-5, 0]], red_pos=[[6, 4]], ball_pos=[-5, 0],
+                                  holder=("blue", 0))
+        s, _, _, info = env.step(
+            {"blue": [{"move": [0.0, 0.0], "kick_trigger": 1, "kick_vec": [0.5, 0.0]}]})
         assert info["kick_applied"] == [True]
         assert info["events"][0] == {"type": "kick", "agent": ("blue", 0)}
         assert {"type": "possession_change", "from": ("blue", 0), "to": None} in info["events"]
         assert not s["blue"][0]["has_possession"]
-        # kick_vec [0.5, 0] -> 0.5 * max_kick_speed = 3 m/s, minus a little slowdown during the step
+        # kick_vec [0.5, 0] -> 0.5 * max_kick_speed = 3 m/s, minus a little slowdown during the
+        # step
         assert 2.5 < s["ball"]["vel"][0] <= 3.0 and abs(s["ball"]["vel"][1]) < 0.05
     finally:
         env.close()
@@ -91,8 +94,10 @@ def test_adapter_kick_speed_is_capped_by_the_kick_vec_length():
     env = PyBulletEnv(sc)
     try:
         env.reset(seed=0)
-        env.set_state_for_testing(blue_pos=[[-5, -3]], red_pos=[[6, 4]], ball_pos=[-5, -3], holder=("blue", 0))
-        s, *_ = env.step({"blue": [{"move": [0.0, 0.0], "kick_trigger": 1, "kick_vec": [1.0, 1.0]}]})
+        env.set_state_for_testing(blue_pos=[[-5, -3]], red_pos=[[6, 4]], ball_pos=[-5, -3],
+                                  holder=("blue", 0))
+        s, *_ = env.step(
+            {"blue": [{"move": [0.0, 0.0], "kick_trigger": 1, "kick_vec": [1.0, 1.0]}]})
         speed = math.hypot(*s["ball"]["vel"])
         assert 5.0 < speed <= sc.max_kick_speed  # |kick_vec| = sqrt(2) is scaled back to 1
     finally:
@@ -154,7 +159,8 @@ def test_rollout_and_update_log_probs_agree():
     # The PPO ratio must start at exactly 1 (the ratio guard checks this every update)
     actor = Actor(OBS_DIM, kick_enabled=True)
     with torch.no_grad():
-        actor.heads[KICK_TRIGGER].linear.bias.fill_(0.0)  # kick half the time, so every mask case shows up
+        # kick half the time, so every mask case shows up
+        actor.heads[KICK_TRIGGER].linear.bias.fill_(0.0)
     obs = obs_holding([True, False] * 32)
     samples, logp_act = actor.act(obs)
     logp_eval, _, _ = actor.evaluate(obs, samples)
@@ -171,12 +177,14 @@ def test_movement_checkpoint_warm_starts_the_kick_actor():
     }
     assert result.unexpected_keys == []
     obs = torch.randn(4, OBS_DIM)
-    torch.testing.assert_close(kicking.distributions(obs)[MOVE].mean, moving.distributions(obs)[MOVE].mean)
+    torch.testing.assert_close(kicking.distributions(obs)[MOVE].mean,
+                               moving.distributions(obs)[MOVE].mean)
 
 
 # --- Action adapter --------------------------------------------------------------------
 def test_kick_samples_map_to_icd_actions():
-    acts = to_env_actions(np.array([[0.5, 0.5], [0.75, 0.25]]), np.array([[1.0], [0.0]]), np.array([[1.0, 0.5], [0.25, 0.75]]))
+    acts = to_env_actions(np.array([[0.5, 0.5], [0.75, 0.25]]), np.array([[1.0], [0.0]]),
+                          np.array([[1.0, 0.5], [0.25, 0.75]]))
     assert acts == {
         "blue": [
             {"move": [0.0, 0.0], "kick_trigger": 1, "kick_vec": [1.0, 0.0]},
@@ -193,12 +201,14 @@ def test_actions_from_samples_with_and_without_kick_heads():
         acts = actions_from_samples(samples)
         assert len(acts["blue"]) == 2
         if not kick_enabled:
-            assert all(a["kick_trigger"] == 0 and a["kick_vec"] == [0.0, 0.0] for a in acts["blue"])
+            assert all(a["kick_trigger"] == 0 and a["kick_vec"] == [0.0, 0.0]
+                       for a in acts["blue"])
 
 
 @pytest.mark.parametrize(
     "trigger, kick",
-    [(np.array([1.0]), None), (None, np.array([[0.5, 0.5]])), (np.array([0.5]), np.array([[0.5, 0.5]])),
+    [(np.array([1.0]), None), (None, np.array([[0.5, 0.5]])),
+     (np.array([0.5]), np.array([[0.5, 0.5]])),
      (np.array([1.0, 0.0]), np.array([[0.5, 0.5]])), (np.array([1.0]), np.array([[1.5, 0.5]]))],
 )
 def test_bad_kick_samples_raise(trigger, kick):
@@ -208,7 +218,8 @@ def test_bad_kick_samples_raise(trigger, kick):
 
 # --- Rollout and training on PyBullet ----------------------------------------------------
 def test_kicking_rollout_on_pybullet():
-    cfg = config_from_dict({**SMALL, "shared": {"start": {"start_mix": 1.0}}})  # blue always starts with the ball
+    # blue always starts with the ball
+    cfg = config_from_dict({**SMALL, "shared": {"start": {"start_mix": 1.0}}})
     feat = Featurizer(cfg)
     actor, critic = build_networks(cfg, feat.obs_dim, feat.state_dim)
     with torch.no_grad():
@@ -221,7 +232,8 @@ def test_kicking_rollout_on_pybullet():
     finally:
         env.close()
     assert stats.kicks_per_step > 0
-    assert buf.samples[KICK_TRIGGER].shape == (64, 1, 1) and buf.samples[KICK_VEC].shape == (64, 1, 2)
+    assert (buf.samples[KICK_TRIGGER].shape == (64, 1, 1)
+            and buf.samples[KICK_VEC].shape == (64, 1, 2))
 
 
 @pytest.mark.parametrize("shared", [{}, {"n_blue": 2, "n_red": 2}])
@@ -229,7 +241,7 @@ def test_training_with_kicks_on_pybullet_runs_end_to_end(tmp_path, shared):
     cfg = config_from_dict({**SMALL, "shared": shared})
     res = train(cfg, tmp_path / "kick", log=lambda _m: None)
     assert res.final_eval["episodes"] == 3 and res.final_eval_deterministic["episodes"] == 3
-    with open(res.out_dir / "train.csv", newline="") as f:
+    with open(res.out_dir / "train.csv", newline="", encoding="utf-8") as f:
         assert "kicks_per_step" in next(csv.DictReader(f))
     _, actor, _ = load_actor(res.out_dir / "checkpoints" / "final.pt")  # rebuilds the kick heads
     assert set(actor.heads) == {MOVE, KICK_TRIGGER, KICK_VEC}

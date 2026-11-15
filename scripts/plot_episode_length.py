@@ -6,9 +6,11 @@
 # Usage:
 #   - 2026-11-07: Generated this entire file: plots episode length over
 #     training from the text a training or curriculum run prints.
-# Prompt summary: Plot the episode length from pasted training output.
-# Human review:   Pending review
+#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters and
+#     removed the unused math import; no behaviour change. (Austin Beinder)
 # ==============================================================================
+# pylint: disable=line-too-long
+# (the docstring quotes a printed training line verbatim)
 """
 Plot episode length over training from the lines a training run prints (copied from the
 terminal), so you don't need the run's CSV files.
@@ -41,9 +43,9 @@ What is drawn:
 The figure goes next to the log file (my_log.png), or to episode_length.png when reading pasted
 text, unless --out says otherwise.
 """
+# pylint: enable=line-too-long
 
 import argparse
-import math
 import re
 import sys
 from pathlib import Path
@@ -62,14 +64,16 @@ INK_SECONDARY = "#52514e"
 GRID = "#e4e3df"
 SURFACE = "#fcfcfb"
 
-TRAIN_LINE = re.compile(r"^\s*it\s+(\d+)/(\d+)\s*\|\s*steps\s+([\d,]+)\s*\|\s*ep_len\s+([\d.]+|nan)")
+TRAIN_LINE = re.compile(
+    r"^\s*it\s+(\d+)/(\d+)\s*\|\s*steps\s+([\d,]+)\s*\|\s*ep_len\s+([\d.]+|nan)")
 LEVEL = re.compile(r"\blvl\s+(\d+)\s*=\s*([\d.]+)")
 EVAL_LINE = re.compile(r"^\s*eval@\s*(\d+)\s*\[stoch\]\s*len\s+([\d.]+|nan)\s*\+/-\s*([\d.]+|nan)")
 STAGE_LINE = re.compile(r"^\[curriculum\] stage (\d+)/\d+ (\S+):")
 
 
 class Log:
-    """What the printed lines say, on one step axis (later stages continue where earlier ones ended)."""
+    """What the printed lines say, on one step axis (later stages continue where earlier ones
+    ended)."""
 
     def __init__(self):
         self.train_steps, self.train_len = [], []
@@ -83,7 +87,8 @@ class Log:
         last_steps = 0
         steps_per_iteration = None
         level = None
-        pending_evals = []  # eval lines can come before the stage's first "it" line says how long an iteration is
+        # eval lines can come before the stage's first "it" line says how long an iteration is
+        pending_evals = []
 
         for line in lines:
             if m := STAGE_LINE.match(line):
@@ -94,7 +99,8 @@ class Log:
 
             if m := TRAIN_LINE.match(line):
                 iteration, steps = int(m.group(1)), int(m.group(3).replace(",", ""))
-                if steps < last_steps:  # a new run without a stage line: keep going after the last one
+                # a new run without a stage line: keep going after the last one
+                if steps < last_steps:
                     offset += last_steps
                     level = None
                 steps_per_iteration = steps / iteration
@@ -119,7 +125,8 @@ class Log:
                     self._add_eval(offset + iteration * steps_per_iteration, length, std)
 
         if not self.train_steps:
-            raise SystemExit("found no training lines (\"it 12/488 | steps ... | ep_len ...\") in the input")
+            raise SystemExit("found no training lines (\"it 12/488 | steps ... | ep_len ...\") "
+                             "in the input")
 
     def _add_eval(self, step, length, std):
         self.eval_steps.append(step)
@@ -139,17 +146,20 @@ def plot(log: Log, title: str, time_limit: int, threshold: float | None, out: Pa
         lo = [m - s for m, s in zip(log.eval_len, log.eval_std)]
         hi = [m + s for m, s in zip(log.eval_len, log.eval_std)]
         ax.fill_between(log.eval_steps, lo, hi, color=EVAL_COLOR, alpha=0.12, linewidth=0)
-        ax.plot(log.eval_steps, log.eval_len, color=EVAL_COLOR, linewidth=2.0, marker="o", markersize=5,
-                markeredgecolor=SURFACE, markeredgewidth=1.2, label="evaluation, real task (mean ± 1 sd)")
+        ax.plot(log.eval_steps, log.eval_len, color=EVAL_COLOR, linewidth=2.0, marker="o",
+                markersize=5, markeredgecolor=SURFACE, markeredgewidth=1.2,
+                label="evaluation, real task (mean ± 1 sd)")
 
     # Training: the printed iterations
-    ax.plot(log.train_steps, log.train_len, color=TRAIN_COLOR, linewidth=2.0, marker="o", markersize=5,
-            markeredgecolor=SURFACE, markeredgewidth=1.2, label="training episodes (printed iterations)")
+    ax.plot(log.train_steps, log.train_len, color=TRAIN_COLOR, linewidth=2.0, marker="o",
+            markersize=5, markeredgecolor=SURFACE, markeredgewidth=1.2,
+            label="training episodes (printed iterations)")
 
     if threshold is not None:
         gate = threshold * time_limit
         ax.axhline(gate, color=INK_SECONDARY, linestyle=(0, (4, 3)), linewidth=1.2)
-        ax.text(x_max, gate, f"  gate {gate:.0f} ({threshold:g})", color=INK_SECONDARY, fontsize=8, va="center")
+        ax.text(x_max, gate, f"  gate {gate:.0f} ({threshold:g})", color=INK_SECONDARY,
+                fontsize=8, va="center")
 
     for step, name in log.stage_starts:
         if step > 0:
@@ -159,14 +169,18 @@ def plot(log: Log, title: str, time_limit: int, threshold: float | None, out: Pa
     for step, value in log.level_changes:
         ax.axvline(step, color=GRID, linewidth=1.0, linestyle=":")
         label = "ball anywhere" if value == 0 else f"ball ≤ {value:g} m"
-        ax.text(step, time_limit * 0.98, f" {label}", color=INK_SECONDARY, fontsize=7, va="top", rotation=90)
+        ax.text(step, time_limit * 0.98, f" {label}", color=INK_SECONDARY, fontsize=7, va="top",
+                rotation=90)
 
     ax.set_ylim(0, top)
     ax.set_xlim(0, x_max * 1.02)
     ax.set_xlabel("environment steps", color=INK_SECONDARY)
-    ax.set_ylabel(f"episode length (control steps; {time_limit} = time limit)", color=INK_SECONDARY)
-    ax.set_title(f"Episode length over training{': ' + title if title else ''}", color=INK, loc="left", fontsize=12)
-    ax.xaxis.set_major_formatter(FuncFormatter(lambda x, _: f"{x / 1e6:.2f}M" if x >= 1e6 else f"{x / 1e3:.0f}k"))
+    ax.set_ylabel(f"episode length (control steps; {time_limit} = time limit)",
+                  color=INK_SECONDARY)
+    ax.set_title(f"Episode length over training{': ' + title if title else ''}", color=INK,
+                 loc="left", fontsize=12)
+    ax.xaxis.set_major_formatter(
+        FuncFormatter(lambda x, _: f"{x / 1e6:.2f}M" if x >= 1e6 else f"{x / 1e3:.0f}k"))
     ax.grid(axis="y", color=GRID, linewidth=0.8)
     ax.set_axisbelow(True)
     for side in ("top", "right"):
@@ -182,26 +196,32 @@ def plot(log: Log, title: str, time_limit: int, threshold: float | None, out: Pa
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description="Plot episode length from a training run's printed output.")
+    ap = argparse.ArgumentParser(
+        description="Plot episode length from a training run's printed output.")
     ap.add_argument("log", help="a text file with the copied terminal output, or - to paste it in")
-    ap.add_argument("--threshold", type=float, help="draw the stage's gate (e.g. 0.5 -> 150 of 300 steps)")
+    ap.add_argument("--threshold", type=float,
+                    help="draw the stage's gate (e.g. 0.5 -> 150 of 300 steps)")
     ap.add_argument("--time-limit", type=int, default=300, help="max_episode_steps (default 300)")
-    ap.add_argument("--title", default=None, help="text after 'Episode length over training:' (default: the file name)")
-    ap.add_argument("--out", type=Path, help="default: next to the log file, or episode_length.png for pasted text")
+    ap.add_argument("--title", default=None,
+                    help="text after 'Episode length over training:' (default: the file name)")
+    ap.add_argument("--out", type=Path,
+                    help="default: next to the log file, or episode_length.png for pasted text")
     args = ap.parse_args(argv)
 
     if args.log == "-":
         lines, title, out = sys.stdin.read().splitlines(), "", Path("episode_length.png")
     else:
         path = Path(args.log)
-        lines, title, out = path.read_text(encoding="utf-8").splitlines(), path.stem, path.with_suffix(".png")
+        lines, title, out = (path.read_text(encoding="utf-8").splitlines(), path.stem,
+                             path.with_suffix(".png"))
     if args.title is not None:
         title = args.title
 
     log = Log()
     log.read(lines)
     plot(log, title, args.time_limit, args.threshold, args.out or out)
-    print(f"read {len(log.train_steps)} training and {len(log.eval_steps)} evaluation lines; wrote {args.out or out}")
+    print(f"read {len(log.train_steps)} training and {len(log.eval_steps)} evaluation lines; "
+          f"wrote {args.out or out}")
     return 0
 
 

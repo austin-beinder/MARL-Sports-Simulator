@@ -8,9 +8,6 @@
 #     marl.plots.main.
 #   - 2026-11-01: Rewrote the docstring for records and ad-hoc plots (task 2).
 #   - 2026-11-13: Docstring: the --curriculum option. (Austin Beinder)
-# Prompt summary: Implement Phase 3 step 11 of the issue #7 plan (plots for the
-#   midterm from the 5-seed keep-away runs).
-# Human review:   Pending review
 # ==============================================================================
 """Make figures from finished runs. Run from the repo root with the venv active.
 

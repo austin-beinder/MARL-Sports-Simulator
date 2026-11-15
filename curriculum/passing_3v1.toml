@@ -57,10 +57,6 @@
 #   - 2026-11-14: The catch stages charge for a dead ball (dead_ball, coef
 #     0.003) and add call_yield (coef 0.01): the blues hovered ~1.5 m off a
 #     stopped ball, half of every episode.
-# Prompt summary: A 3v1 passing drill against a slow red with the blues frozen
-#   in range of each other: a small reward for kicking toward a teammate, a big
-#   one for lasting, nothing before the first pass; in a new curriculum TOML.
-# Human review:   Pending review
 # ==============================================================================
 # Monkey in the middle, 3v1: blues that keep the ball away from red by passing round it, not by
 # running. (See the docstring in runner.py for how stages and gates work.) Kicking is on in every

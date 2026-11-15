@@ -54,9 +54,9 @@
 #     (rl.call_enabled). (Austin Beinder)
 #   - 2026-11-14: The PPO updater gets the call coef, and the buffer the call
 #     head's own advantage when call_accuracy is on. (Austin Beinder)
-# Prompt summary: Implement Phase 3 step 8 of the issue #7 plan (PPO update +
-#   training loop).
-# Human review:   Pending review
+#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters, and the
+#     nan checks use math.isnan instead of comparing a value with itself; no
+#     behaviour change. (Austin Beinder)
 # ==============================================================================
 """Training loop (walk-through steps 0-6) and its command-line entry point.
 
@@ -80,6 +80,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math  # AI GENERATED (2026-11-15)
 import stat  # AI GENERATED
 import time
 import tomllib
@@ -93,7 +94,8 @@ import torch
 
 from marl.common.config import Config, config_to_dict, load_config, with_overrides
 from marl.envs import make_env  # AI GENERATED
-from marl.rl.checkpoint import load_checkpoint, save_checkpoint, warm_start  # AI GENERATED (load_checkpoint, warm_start)
+# AI GENERATED (load_checkpoint, warm_start)
+from marl.rl.checkpoint import load_checkpoint, save_checkpoint, warm_start
 from marl.rl.eval_worker import make_evaluator  # AI GENERATED
 from marl.rl.evaluate import summarize
 from marl.rl.logger import CSVLogger
@@ -112,7 +114,8 @@ class TrainResult:
     critic: Critic
     final_eval: dict[str, Any]  # stochastic policy: the primary metric (#23)
     final_eval_deterministic: dict[str, Any]  # Beta mean: the secondary diagnostic
-    iterations: int = 0  # PPO iterations actually run (fewer than planned if a curriculum ended early)  # AI GENERATED
+    # PPO iterations actually run (fewer than planned if a curriculum ended early)  # AI GENERATED
+    iterations: int = 0
 
 
 def _print_flush(msg: str) -> None:
@@ -168,7 +171,8 @@ def train(
     evaluator = make_evaluator(cfg, featurizer, reward_fn)
     ### END AI GENERATED
     buf = make_buffer(cfg, featurizer, actor)
-    updater = PPOUpdater(actor, critic, cfg.rl.ppo, call_coef=reward_fn.call_coef)  # AI GENERATED (2026-11-14: call_coef)
+    # AI GENERATED (2026-11-14: call_coef)
+    updater = PPOUpdater(actor, critic, cfg.rl.ppo, call_coef=reward_fn.call_coef)
     shuffle_rng = np.random.default_rng(shuffle_seq)
 
     T = cfg.rl.ppo.rollout_steps
@@ -184,15 +188,19 @@ def train(
         old = ckpt["config"]["shared"]
         missing, critic_loaded = warm_start(actor, critic, ckpt, cfg)
         fresh = f" (fresh: {', '.join(missing)})" if missing else ""
-        start = "at zero" if cfg.rl.new_player_init == "zero" else "random"  # AI GENERATED (2026-11-12)
-        teams = (f" ({old['n_blue']}v{old['n_red']} -> {cfg.shared.n_blue}v{cfg.shared.n_red}, new inputs start {start})"
+        # AI GENERATED (2026-11-12)
+        start = "at zero" if cfg.rl.new_player_init == "zero" else "random"
+        teams = (f" ({old['n_blue']}v{old['n_red']} -> {cfg.shared.n_blue}v{cfg.shared.n_red}, "
+                 f"new inputs start {start})"
                  if (old["n_blue"], old["n_red"]) != (cfg.shared.n_blue, cfg.shared.n_red) else "")
         ### AI GENERATED (2026-11-13)
         for key, what in (("passer_obs", "passer"), ("call_enabled", "call")):  # call: 2026-11-13
             if ckpt["config"]["rl"].get(key, False) != getattr(cfg.rl, key):
-                teams += f" ({what} flags {'added, starting ' + start if getattr(cfg.rl, key) else 'dropped'})"
+                teams += (f" ({what} flags "
+                          f"{'added, starting ' + start if getattr(cfg.rl, key) else 'dropped'})")
         ### END AI GENERATED
-        critic_note = "" if critic_loaded else " (actor only: the critic starts fresh for the new task/reward)"
+        critic_note = ("" if critic_loaded
+                       else " (actor only: the critic starts fresh for the new task/reward)")
         log(f"[train] warm start from {init_from}{teams}{critic_note}{fresh}")
     ### END AI GENERATED
 
@@ -234,9 +242,11 @@ def train(
                 ### END AI GENERATED
                 t0 = time.perf_counter()
                 stats = collector.collect(buf)
-                cur = curriculum.update(stats.episodes) if curriculum is not None else {}  # AI GENERATED
+                # AI GENERATED
+                cur = curriculum.update(stats.episodes) if curriculum is not None else {}
                 buf.compute_advantages(cfg.gamma, cfg.rl.ppo.gae_lambda)
-                if reward_fn.call_coef > 0:  # AI GENERATED (2026-11-14): the call head's own advantage
+                # AI GENERATED (2026-11-14): the call head's own advantage
+                if reward_fn.call_coef > 0:
                     buf.compute_call_advantages()  # AI GENERATED
                 reward_mean = float(buf.rewards.mean())
                 pre = {
@@ -281,7 +291,8 @@ def train(
             train_env.close()
     ### END AI GENERATED
     log(f"[train] done in {time.perf_counter() - start:.0f} s -> {out_dir}")
-    return TrainResult(out_dir, actor, critic, final_eval, final_det, last_it)  # AI GENERATED (last_it)
+    # AI GENERATED (last_it)
+    return TrainResult(out_dir, actor, critic, final_eval, final_det, last_it)
 
 
 def _prepare_out_dir(out_dir: Path, overwrite: bool) -> Path:
@@ -326,7 +337,8 @@ def _train_line(r: dict[str, Any], n_iters: int) -> str:
     return (
         f"it {r['iteration']:>4}/{n_iters} | steps {r['env_steps']:>9,} | "
         f"ep_len {r['ep_len_mean']:6.1f} (n={r['ep_episodes']:>3}, trunc {r['ep_frac_truncated']:4.0%}) | "
-        f"passes {r['ep_passes_mean']:4.2f} ({r['ep_pass_rate']:4.0%} caught, "  # AI GENERATED (2026-11-09; rate 2026-11-11)
+        # AI GENERATED (2026-11-09; rate 2026-11-11)
+        f"passes {r['ep_passes_mean']:4.2f} ({r['ep_pass_rate']:4.0%} caught, "
         f"{r['ep_return_share']:4.0%} back) | "  # AI GENERATED (2026-11-13)
         + _call_text(r, "ep_") +  # AI GENERATED (2026-11-13)
         f"r/step {r['reward_mean_unscaled']:+7.3f} | ent {r['entropy']:+.3f} | vloss {r['value_loss']:.2e} | "
@@ -337,10 +349,11 @@ def _train_line(r: dict[str, Any], n_iters: int) -> str:
 
 ### AI GENERATED (2026-11-13)
 def _call_text(r: dict[str, Any], prefix: str) -> str:
-    """How well the blues called for the ball they got, when there were pickups and calls (rl.call_enabled)."""
+    """How well the blues called for the ball they got, when there were pickups and calls
+    (rl.call_enabled)."""
     called = r.get(f"{prefix}called_share", float("nan"))
     wrong = r.get(f"{prefix}miscalled_per_pickup", float("nan"))
-    if called != called or called + wrong == 0:  # nan, or nobody ever called
+    if math.isnan(called) or called + wrong == 0:  # nan, or nobody ever called
         return ""
     return f"calls {called:4.0%} right, {wrong:.2f} wrong | "
 ### END AI GENERATED
@@ -354,7 +367,7 @@ def _curriculum_text(r: dict[str, Any]) -> str:
         return ""
     text = f" | gate {r['gate_mean']:.2f} (low {r['gate_lower']:.2f})"
     value = r.get("cur_value", float("nan"))
-    if value == value:  # not nan: the stage has levels
+    if not math.isnan(value):  # not nan: the stage has levels
         text += f" lvl {r['cur_level']} = {value:g}"
     return text
 ### END AI GENERATED
@@ -365,9 +378,11 @@ def _eval_line(r: dict[str, Any]) -> str:
         f"  eval@{r['iteration']:>4} [{r['mode'][:5]}] len {r['len_mean']:6.1f} +/- {r['len_std']:5.1f} "
         f"(trunc {r['frac_truncated']:4.0%}) | possession {r['len_mean_possession']:6.1f} | "
         f"free_ball {r['len_mean_free_ball']:6.1f} | r/step {r['mean_reward']:+7.3f} | "
-        f"passes {r['passes_mean']:.2f} ({r['pass_rate']:4.0%} of kicks caught, "  # AI GENERATED (2026-11-09; rate 2026-11-11)
+        # AI GENERATED (2026-11-09; rate 2026-11-11)
+        f"passes {r['passes_mean']:.2f} ({r['pass_rate']:4.0%} of kicks caught, "
         f"{r['return_share']:4.0%} straight back)"  # AI GENERATED (2026-11-13)
-        + (" | " + _call_text(r, "").rstrip(" |") if _call_text(r, "") else "")  # AI GENERATED (2026-11-13)
+        # AI GENERATED (2026-11-13)
+        + (" | " + _call_text(r, "").rstrip(" |") if _call_text(r, "") else "")
     )
 
 
@@ -412,7 +427,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--out-dir", type=Path, help="default: <run.out_dir>/<config name>_<env>_seed<seed>")  # AI GENERATED
     ap.add_argument("--overwrite", action="store_true", help="replace an existing run in --out-dir")
     ap.add_argument("--init-from", type=Path, metavar="CHECKPOINT",
-                    help="start from this checkpoint's weights instead of a fresh init")  # AI GENERATED
+                    # AI GENERATED
+                    help="start from this checkpoint's weights instead of a fresh init")
     args = ap.parse_args(argv)
 
     overrides = parse_overrides(args.set)

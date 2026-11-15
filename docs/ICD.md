@@ -9,6 +9,7 @@ Usage:
     2026-09-27, 2026-10-03 and 2026-10-04). The AI turned those decisions
     into a specification format; the design choices are the student's.
   2026-10-10: Repaired this header after Prettier mangled it (no content change).
+  2026-10-10: The student added the axis convention.
   2026-10-10: v0.2. Merged the student's triage of a multi-agent panel review:
     the possession semantics section, mid-block termination, kick release
     formula, red speed, arena walls, max_episode_steps, the go-to-target
@@ -43,9 +44,6 @@ Usage:
     "calling" in s (both envs). Decision by Austin Beinder.
   2026-11-14: §9, §10: the claim_ball scenario (a loose ball, no red,
     terminated when a blue gets it; both envs). Decision by Austin Beinder.
-Prompt summary: Draft the Gym/RL interface control document (issue #11) from
-  the student's issue #7 design decisions, for teammates to review.
-Human review:   Pending review (student added the axis convention, 2026-10-10)
 -->
 
 # Gym ↔ RL Layer Interface Control Document (ICD)

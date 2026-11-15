@@ -19,9 +19,8 @@
 #   - 2026-11-11: Pass practice stages gate on the pass completion rate
 #     (passes / kicks per episode): pass_practice_moving episodes now have
 #     many kicks.
-# Prompt summary: Lay out a curriculum for keep-away: a possession stage, then
-#   a free-ball stage whose ball starts close and moves further away (CACTUS).
-# Human review:   Pending review
+#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters and fixed
+#     the new warnings; no behaviour change. (Austin Beinder)
 # ==============================================================================
 """
 Curriculum training: run a list of training stages in order, each one starting from the
@@ -71,9 +70,12 @@ stage that runs from any checkpoint instead.
 Run it from the repo root:
 
     python curriculum/runner.py curriculum/keepaway_1v1.toml --seed 0
-    python curriculum/runner.py my_curriculum.toml --env mock             # faster; only without kicking
-    python curriculum/runner.py curriculum/keepaway_1v1.toml --render     # watch it train (PyBullet only)
-    python curriculum/runner.py curriculum/passing_3v1.toml --seed 0 --start-at 3    # keep stages 1-2
+    # faster; only without kicking
+    python curriculum/runner.py my_curriculum.toml --env mock
+    # watch it train (PyBullet only)
+    python curriculum/runner.py curriculum/keepaway_1v1.toml --render
+    # keep stages 1-2
+    python curriculum/runner.py curriculum/passing_3v1.toml --seed 0 --start-at 3
 """
 
 import argparse
@@ -84,11 +86,12 @@ import shutil
 import sys
 import tomllib
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-if __package__ in (None, ""):  # run as a script (python curriculum/runner.py): make `marl` importable
+# run as a script (python curriculum/runner.py): make `marl` importable
+if __package__ in (None, ""):
     sys.path.insert(0, str(REPO_ROOT))
 
 import numpy as np  # noqa: E402
@@ -109,13 +112,16 @@ def say(message: str):
 class Stage:
     name: str
     total_steps: int  # the stage's step cap
-    threshold: float | None = None  # the gate: survival fraction (catch rate in pass_practice) to reach (0-1); None = no gate
+    # the gate: survival fraction (catch rate in pass_practice) to reach (0-1); None = no gate
+    threshold: float | None = None
     confidence: float = 2.0  # standard errors below the mean that must still reach the threshold
     window: int = 50  # how many recent training episodes the gate looks at
-    option: str | None = None  # the reset option this stage steps through levels, e.g. "max_ball_dist"
+    # the reset option this stage steps through levels, e.g. "max_ball_dist"
+    option: str | None = None
     levels: list[float] = field(default_factory=list)
     stop_when_passed: bool = True  # end the stage when the gate passes on the last level
-    overrides: dict = field(default_factory=dict)  # config overrides, e.g. {"shared": {"start": {...}}}
+    # config overrides, e.g. {"shared": {"start": {...}}}
+    overrides: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -138,15 +144,16 @@ def load_curriculum(path) -> Curriculum:
 
     stages = []
     for i, s in enumerate(data["stage"], 1):
-        _no_unknown_keys(s, {f.name for f in Stage.__dataclass_fields__.values()}, f"{path} stage {i}")
+        _no_unknown_keys(s, {f.name for f in fields(Stage)}, f"{path} stage {i}")
         stage = Stage(**s)
         if stage.option is not None and stage.option not in RESET_OPTION_KEYS:
-            raise ValueError(f"stage {stage.name!r}: option must be a reset option {sorted(RESET_OPTION_KEYS)}, "
-                             f"got {stage.option!r}")
+            raise ValueError(f"stage {stage.name!r}: option must be a reset option "
+                             f"{sorted(RESET_OPTION_KEYS)}, got {stage.option!r}")
         if (stage.option is None) != (not stage.levels):
             raise ValueError(f"stage {stage.name!r}: give both option and levels, or neither")
         if stage.levels and stage.threshold is None:
-            raise ValueError(f"stage {stage.name!r}: levels need a threshold (the gate that moves them up)")
+            raise ValueError(f"stage {stage.name!r}: levels need a threshold "
+                             "(the gate that moves them up)")
         if stage.window < 2 or stage.confidence < 0:
             raise ValueError(f"stage {stage.name!r}: window must be >= 2 and confidence >= 0")
         stages.append(stage)
@@ -156,7 +163,8 @@ def load_curriculum(path) -> Curriculum:
     config = Path(data["config"])
     return Curriculum(
         name=data["name"],
-        config=config if config.is_absolute() else REPO_ROOT / config,  # repo-relative, like the commands
+        # repo-relative, like the commands
+        config=config if config.is_absolute() else REPO_ROOT / config,
         env=data.get("env"),
         overrides=data.get("overrides", {}),
         stages=stages,
@@ -213,9 +221,11 @@ class StageCurriculum:
     the stage) when the gate passes.
     """
 
-    def __init__(self, stage: Stage, base_options: dict, max_episode_steps: int, log=say, catch_gate: bool = False):
+    def __init__(self, stage: Stage, base_options: dict, max_episode_steps: int, log=say,
+                 catch_gate: bool = False):
         self.stage = stage
-        self.catch_gate = catch_gate  # 2026-11-09: score episodes by passes / kicks (pass practice), not survival
+        # 2026-11-09: score episodes by passes / kicks (pass practice), not survival
+        self.catch_gate = catch_gate
         self.base_options = dict(base_options)
         self.max_episode_steps = max_episode_steps
         self.log = log
@@ -240,7 +250,8 @@ class StageCurriculum:
 
     def update(self, episodes) -> dict:
         if self.catch_gate:
-            self.gate.add(episode.passes / episode.kicks if episode.kicks else 0.0 for episode in episodes)  # 2026-11-11
+            self.gate.add(episode.passes / episode.kicks if episode.kicks else 0.0
+                          for episode in episodes)  # 2026-11-11
         else:
             self.gate.add(episode.length / self.max_episode_steps for episode in episodes)
         # Log the gate as it was when the decision was made, before a level change clears it
@@ -251,7 +262,8 @@ class StageCurriculum:
             if self.level < self.last_level:
                 self.level += 1
                 self.gate.clear()  # the new level has to earn its own pass
-                self.log(f"[curriculum] {self.stage.name}: gate passed (lower bound {row['gate_lower']:.3f} "
+                self.log(f"[curriculum] {self.stage.name}: gate passed "
+                         f"(lower bound {row['gate_lower']:.3f} "
                          f">= {self.stage.threshold}), {self.stage.option} -> {self.value():g}")
             elif not self.passed_last_level:
                 self.passed_last_level = True
@@ -263,7 +275,8 @@ class StageCurriculum:
 
 # ---------- Running a whole curriculum ----------
 
-def stage_configs(curriculum: Curriculum, seed: int | None = None, env: str | None = None) -> list[Config]:
+def stage_configs(curriculum: Curriculum, seed: int | None = None,
+                  env: str | None = None) -> list[Config]:
     """
     The resolved config of every stage, built up front so a typo in stage 3 fails before stage 1
     trains for an hour. Every level's value is checked too (e.g. max_ball_dist must exceed
@@ -275,7 +288,8 @@ def stage_configs(curriculum: Curriculum, seed: int | None = None, env: str | No
         run["env"] = env or curriculum.env
     if seed is not None:
         run["seed"] = seed
-    base = with_overrides(base, {**curriculum.overrides, "run": {**curriculum.overrides.get("run", {}), **run}})
+    base = with_overrides(base, {**curriculum.overrides,
+                                 "run": {**curriculum.overrides.get("run", {}), **run}})
 
     configs = []
     for stage in curriculum.stages:
@@ -283,13 +297,16 @@ def stage_configs(curriculum: Curriculum, seed: int | None = None, env: str | No
         overrides.setdefault("run", {})["total_steps"] = stage.total_steps
         cfg = with_overrides(base, overrides)
         for value in stage.levels:
-            with_overrides(cfg, {"shared": {"start": {stage.option: value}}})  # raises if a level is invalid
+            # raises if a level is invalid
+            with_overrides(cfg, {"shared": {"start": {stage.option: value}}})
         configs.append(cfg)
     return configs
 
 
-SUMMARY_COLUMNS = ["stage", "name", "iterations", "env_steps", "option", "level_reached", "value_reached",  # AI GENERATED
-                   "gate_passed", "eval_len_mean", "eval_frac_truncated", "eval_frac_passed", "out_dir"]  # AI GENERATED
+SUMMARY_COLUMNS = ["stage", "name", "iterations", "env_steps", "option",  # AI GENERATED
+                   "level_reached", "value_reached", "gate_passed",  # AI GENERATED
+                   "eval_len_mean", "eval_frac_truncated", "eval_frac_passed",  # AI GENERATED
+                   "out_dir"]  # AI GENERATED
 
 
 def default_out_dir(curriculum: Curriculum, cfg: Config) -> Path:
@@ -312,7 +329,10 @@ def stage_number(curriculum: Curriculum, start_at) -> int:
 
 
 def _earlier_summary_rows(path: Path, start: int) -> list[dict]:
-    """curriculum.csv's rows for the stages before `start` (kept when a curriculum restarts there)."""
+    """
+    curriculum.csv's rows for the stages before `start` (kept when a curriculum restarts
+    there).
+    """
     if start <= 1 or not path.exists():
         return []
     with open(path, newline="", encoding="utf-8") as f:
@@ -342,18 +362,21 @@ def run_curriculum(curriculum: Curriculum, *, seed=None, env=None, out_dir=None,
     if init_from is None and start > 1:
         init_from = stage_dirs[start - 2] / "checkpoints" / "final.pt"
     if init_from is not None and not Path(init_from).exists():
-        raise FileNotFoundError(f"{init_from} doesn't exist: stage {start} starts from it. Run the earlier stages "
-                                f"first, or pass --init-from with the checkpoint to start from")
+        raise FileNotFoundError(f"{init_from} doesn't exist: stage {start} starts from it. "
+                                f"Run the earlier stages first, or pass --init-from with the "
+                                f"checkpoint to start from")
     if not overwrite:
         taken = [d for d in stage_dirs[start - 1:] if d.exists() and any(d.iterdir())]
         if taken:
             raise FileExistsError(f"{taken[0]} already has a run; pass --overwrite to replace it")
     root.mkdir(parents=True, exist_ok=True)
-    kept = _earlier_summary_rows(root / "curriculum.csv", start)  # read before the summary file is rewritten
+    # read before the summary file is rewritten
+    kept = _earlier_summary_rows(root / "curriculum.csv", start)
     if curriculum_path is not None:
         shutil.copyfile(curriculum_path, root / "curriculum.toml")
     if start > 1 or init_from is not None:
-        log(f"[curriculum] starting at stage {start}/{len(configs)} {curriculum.stages[start - 1].name}"
+        log(f"[curriculum] starting at stage {start}/{len(configs)} "
+            f"{curriculum.stages[start - 1].name}"
             + (f", from {init_from}" if init_from is not None else ""))
     ### END AI GENERATED
 
@@ -365,13 +388,17 @@ def run_curriculum(curriculum: Curriculum, *, seed=None, env=None, out_dir=None,
             if k < start:  # AI GENERATED (2026-11-11): already trained; init_from is its final.pt
                 continue
             levels = f", {stage.option} levels {stage.levels}" if stage.option else ""
-            gate = f"gate {stage.threshold} over {stage.window} episodes" if stage.threshold is not None else "no gate"
-            log(f"[curriculum] stage {k}/{len(configs)} {stage.name} ({cfg.shared.scenario}, "
-                f"{cfg.shared.n_blue}v{cfg.shared.n_red}): up to {stage.total_steps:,} steps, {gate}{levels}")
-            controller = StageCurriculum(stage, cfg.shared.start.to_reset_options(), cfg.shared.max_episode_steps, log,
+            gate = (f"gate {stage.threshold} over {stage.window} episodes"
+                    if stage.threshold is not None else "no gate")
+            log(f"[curriculum] stage {k}/{len(configs)} {stage.name} "
+                f"({cfg.shared.scenario}, {cfg.shared.n_blue}v{cfg.shared.n_red}): "
+                f"up to {stage.total_steps:,} steps, {gate}{levels}")
+            controller = StageCurriculum(stage, cfg.shared.start.to_reset_options(),
+                                         cfg.shared.max_episode_steps, log,
                                          catch_gate=cfg.shared.scenario in PASS_PRACTICE_SCENARIOS)
-            result = train(cfg, stage_dir, overwrite=overwrite, log=log, init_from=init_from, curriculum=controller,
-                           render=render, print_collisions=print_collisions)
+            result = train(cfg, stage_dir, overwrite=overwrite, log=log, init_from=init_from,
+                           curriculum=controller, render=render,
+                           print_collisions=print_collisions)
             init_from = result.out_dir / "checkpoints" / "final.pt"
 
             row = {
@@ -388,7 +415,8 @@ def run_curriculum(curriculum: Curriculum, *, seed=None, env=None, out_dir=None,
                 "eval_frac_passed": result.final_eval.get("frac_passed", math.nan),  # 2026-11-09
                 "out_dir": str(result.out_dir),
             }
-            assert list(row) == SUMMARY_COLUMNS  # AI GENERATED (2026-11-11): kept rows use the same columns
+            # AI GENERATED (2026-11-11): kept rows use the same columns
+            assert list(row) == SUMMARY_COLUMNS
             summary.log(row)
             rows.append(row)
     log(f"[curriculum] done -> {root}")
@@ -396,19 +424,26 @@ def run_curriculum(curriculum: Curriculum, *, seed=None, env=None, out_dir=None,
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description="Train a curriculum: stages in order, each warm-started from the last.")
-    ap.add_argument("curriculum", type=Path, help="curriculum TOML, e.g. curriculum/keepaway_1v1.toml")
+    ap = argparse.ArgumentParser(
+        description="Train a curriculum: stages in order, each warm-started from the last.")
+    ap.add_argument("curriculum", type=Path,
+                    help="curriculum TOML, e.g. curriculum/keepaway_1v1.toml")
     ap.add_argument("--seed", type=int, help="override run.seed for every stage")
     ap.add_argument("--env", choices=("mock", "pybullet"), help="override the curriculum's env")
-    ap.add_argument("--out-dir", type=Path, help="default: <run.out_dir>/curriculum_<name>[_<env>]_seed<seed>")
-    ap.add_argument("--overwrite", action="store_true", help="replace an existing curriculum run in --out-dir")
+    ap.add_argument("--out-dir", type=Path,
+                    help="default: <run.out_dir>/curriculum_<name>[_<env>]_seed<seed>")
+    ap.add_argument("--overwrite", action="store_true",
+                    help="replace an existing curriculum run in --out-dir")
     ap.add_argument("--render", action="store_true",
-                    help="show the training env in the PyBullet GUI (slow; runs as fast as it can, not real time)")
-    ap.add_argument("--debug", action="store_true", help="turn on the PyBullet sim's collision prints")
+                    help="show the training env in the PyBullet GUI (slow; runs as fast as it "
+                         "can, not real time)")
+    ap.add_argument("--debug", action="store_true",
+                    help="turn on the PyBullet sim's collision prints")
     ### AI GENERATED (2026-11-11: restarting from a later stage)
     ap.add_argument("--start-at", default="1", metavar="STAGE",
-                    help="first stage to train (number from 1, or name); the earlier stages' output is kept and "
-                         "this stage starts from the previous stage's final.pt")
+                    help="first stage to train (number from 1, or name); the earlier "
+                         "stages' output is kept and this stage starts from the previous "
+                         "stage's final.pt")
     ap.add_argument("--init-from", type=Path, metavar="CHECKPOINT",
                     help="start the first trained stage from this checkpoint instead")
     ### END AI GENERATED
@@ -419,13 +454,15 @@ def main(argv=None) -> int:
         rows = run_curriculum(curriculum, seed=args.seed, env=args.env, out_dir=args.out_dir,
                               overwrite=args.overwrite, curriculum_path=args.curriculum,
                               render=args.render, print_collisions=args.debug,
-                              start_at=args.start_at, init_from=args.init_from)  # AI GENERATED (2026-11-11)
-    except (ValueError, NotImplementedError, FileNotFoundError, FileExistsError) as e:  # bad curriculum or config, e.g. kicking on the mock
+                              # AI GENERATED (2026-11-11)
+                              start_at=args.start_at, init_from=args.init_from)
+    except (ValueError, NotImplementedError, FileNotFoundError, FileExistsError) as e:
+        # bad curriculum or config, e.g. kicking on the mock
         ap.error(str(e))
     for row in rows:
         reached = f", {row['option']} reached {row['value_reached']:g}" if row["option"] else ""
-        say(f"  {row['stage']}. {row['name']}: {row['env_steps']:,} steps{reached}, gate passed: {row['gate_passed']}, "
-              f"eval len {row['eval_len_mean']:.1f}")
+        say(f"  {row['stage']}. {row['name']}: {row['env_steps']:,} steps{reached}, "
+            f"gate passed: {row['gate_passed']}, eval len {row['eval_len_mean']:.1f}")
     return 0
 
 

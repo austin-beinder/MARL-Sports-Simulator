@@ -11,9 +11,9 @@
 #   - 2026-11-07: The PyBullet env kicks now, so the kick test accepts a
 #     real kick there and still checks the mock's clean refusal. (Austin Beinder)
 #   - 2026-11-08: free_speed_factor (blue's speed without the ball). (Austin Beinder)
-# Prompt summary: Close the PyBullet integration gaps: test coverage for the
-#   behaviour the mock's own tests (test_mock_env.py) only check on the mock.
-# Human review:   Pending review
+#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters, an unused
+#     unpacked term/trunc replaced with _, and redefined-outer-name disabled
+#     for the pytest fixture; no behaviour change. (Austin Beinder)
 # ==============================================================================
 """Game behaviour both envs must share, run on the mock and on PyBullet.
 
@@ -22,6 +22,8 @@ tolerances that also fit the physics sim: PyBullet's damping takes about 1.6% of
 its possession is contact-based (``player_radius`` + the ball's 0.15 m radius to pick up a loose
 ball, two player radii for red to reach the carrier) instead of ``possession_radius``.
 """
+# pytest passes the make fixture in by name, which pylint reads as shadowing
+# pylint: disable=redefined-outer-name
 
 import math
 
@@ -206,8 +208,10 @@ def test_kick_with_possession_is_applied_or_refused_cleanly(make):
     env, cfg = make()
     before = env.set_state_for_testing(blue_pos=[[0, 0]], red_pos=[[7, 4]], holder=("blue", 0))
     try:
-        s, term, trunc, info = env.step({"blue": [{"move": [1.0, 0.0], "kick_trigger": 1, "kick_vec": [1.0, 0.0]}]})
-    except NotImplementedError:  # the mock has no ball physics; a refused kick must not change the state
+        s, _, _, info = env.step(
+            {"blue": [{"move": [1.0, 0.0], "kick_trigger": 1, "kick_vec": [1.0, 0.0]}]})
+    except NotImplementedError:
+        # the mock has no ball physics; a refused kick must not change the state
         assert env._state() == before
         return
     # A full kick (6 m/s) outruns the kicker (2 m/s), so the ball is loose after the step

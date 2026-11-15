@@ -8,12 +8,19 @@ AI edit 2026-11-07 (Claude Code, Austin Beinder): kicking (step's kicks argument
 ball_damping) and a space-bar kick on the joystick.
 AI edit 2026-11-07 (Claude Code, Austin Beinder): the ball's play_area, so kicks can't put the ball
 through a wall.
-AI edit 2026-11-07 (Claude Code, Austin Beinder): the GUI camera zooms so the field fills the window.
-AI edit 2026-11-07 (Claude Code, Austin Beinder): ball_damping 0.2 -> 0.4 (kicks max out near 5 m).
-AI edit 2026-11-07 (Claude Code, Austin Beinder): step() calls ball.check_held_contacts every physics
-step, so an opponent who was already touching when blue got the ball still takes it.
-AI edit 2026-11-08 (Claude Code, Austin Beinder): free_speed_multiplier (blue's speed without the ball).
-AI edit 2026-11-09 (Claude Code, Austin Beinder): a game with a real ball may have no red (pass practice).
+AI edit 2026-11-07 (Claude Code, Austin Beinder): the GUI camera zooms so the field fills the
+window.
+AI edit 2026-11-07 (Claude Code, Austin Beinder): ball_damping 0.2 -> 0.4 (kicks max out near
+5 m).
+AI edit 2026-11-07 (Claude Code, Austin Beinder): step() calls ball.check_held_contacts every
+physics step, so an opponent who was already touching when blue got the ball still takes it.
+AI edit 2026-11-08 (Claude Code, Austin Beinder): free_speed_multiplier (blue's speed without the
+ball).
+AI edit 2026-11-09 (Claude Code, Austin Beinder): a game with a real ball may have no red (pass
+practice).
+AI edit 2026-11-15 (Claude Code, Austin Beinder): pylint cleanup (wrapped lines over 100
+characters, kicks_applied set in __init__, the joystick script moved into main()); no behaviour
+change.
 
 The "gym" layer for the keep away game. It owns the pybullet simulation and is the only thing
 the RL code needs to talk to:
@@ -80,8 +87,9 @@ class KeepAwayConfig:
     ### END AI GENERATED
 
     ### AI GENERATED
-    # Ball (2026-11-07). A kick's speed is capped at max_kick_speed, which is also the ball's top speed.
-    # A ball sent off at v m/s rolls about ln(1 + v) / ball_damping metres: 4.9 m at 6 m/s, 3.5 m at 3 m/s.
+    # Ball (2026-11-07). A kick's speed is capped at max_kick_speed, which is also the ball's top
+    # speed. A ball sent off at v m/s rolls about ln(1 + v) / ball_damping metres: 4.9 m at 6 m/s,
+    # 3.5 m at 3 m/s.
     max_kick_speed: float = 6.0
     ball_damping: float = 0.4  # was 0.2 (~10 m kicks)
     ### END AI GENERATED
@@ -145,6 +153,8 @@ class KeepAwayEnv:
         ### AI GENERATED
         self.blues: list[Player] = []  # ordered by index; self.blue / self.red are the first of each team
         self.reds: list[Player] = []
+        # Which blue players kicked during the last step() call; reset() and step() refill it
+        self.kicks_applied: list[bool] = []
 
         cfg = self.config
         if cfg.n_blue < 1 or cfg.n_red < 0:
@@ -216,7 +226,8 @@ class KeepAwayEnv:
                          linear_damping=cfg.ball_damping, physics_client=c)
         self.ball.rng = self.rng
         self.ball.allow_teammate_handoff = cfg.teammate_handoff
-        self.ball.play_area = (cfg.field_length / 2, cfg.field_width / 2)  # kicks stay inside the walls
+        # kicks stay inside the walls
+        self.ball.play_area = (cfg.field_length / 2, cfg.field_width / 2)
         if cfg.ball_is_target:
             # No contacts at all (players, walls, floor), so nothing can move or hold the target
             for link in range(p.getNumJoints(self.ball.body_id, physicsClientId=c)):
@@ -233,9 +244,9 @@ class KeepAwayEnv:
         self.blue_total_hold_steps = 0  # all the time blue has had the ball this game
         self.winner = Team.NONE
         ### AI GENERATED
-        # Every change of ball holder during the last step() call, as (physics step, old holder, new holder)
-        # with holders being Player objects or None. Checked every physics step, so a possession that is
-        # gained and lost within one step() is still recorded.
+        # Every change of ball holder during the last step() call, as (physics step, old holder,
+        # new holder) with holders being Player objects or None. Checked every physics step, so a
+        # possession that is gained and lost within one step() is still recorded.
         self.possession_events = []
         self._last_holder = self.ball.possession_player
         # Which blue players kicked during the last step() call
@@ -246,8 +257,10 @@ class KeepAwayEnv:
             p.configureDebugVisualizer(p.COV_ENABLE_GUI, 0, physicsClientId=c)  # hide the side panels
             p.configureDebugVisualizer(p.COV_ENABLE_RENDERING, 1, physicsClientId=c)
             # Looking straight down with +x to the right and +y up the screen, matching the joystick
-            p.resetDebugVisualizerCamera(cameraDistance=self._camera_distance(), cameraYaw=0, cameraPitch=-89.9,
-                                         cameraTargetPosition=[0, 0, 0], physicsClientId=c)  # AI GENERATED (fit to the window)
+            # AI GENERATED (fit to the window)
+            p.resetDebugVisualizerCamera(cameraDistance=self._camera_distance(), cameraYaw=0,
+                                         cameraPitch=-89.9, cameraTargetPosition=[0, 0, 0],
+                                         physicsClientId=c)
 
         return self.get_observation(), self._info()
 
@@ -281,14 +294,16 @@ class KeepAwayEnv:
         if kicks is None:
             kicks = [None] * len(self.blues)
         if len(kicks) != len(self.blues):
-            raise ValueError(f"expected one kick (or None) per blue player ({len(self.blues)}), got {len(kicks)}")
+            raise ValueError(f"expected one kick (or None) per blue player ({len(self.blues)}), "
+                             f"got {len(kicks)}")
         self.possession_events = []
 
         # Kicks happen before the physics steps, so "holds the ball" means at the start of the step
         self.kicks_applied = [False] * len(self.blues)
         for i, (player, kick) in enumerate(zip(self.blues, kicks)):
             if kick is not None and self.ball.possession_player is player:
-                kick_velocity = self._clip_speed(np.asarray(kick, dtype=float)[:2], self.config.max_kick_speed)
+                kick_velocity = self._clip_speed(np.asarray(kick, dtype=float)[:2],
+                                                 self.config.max_kick_speed)
                 self.ball.kick_ball(kick_velocity[0], kick_velocity[1])
                 self.kicks_applied[i] = True
         ### END AI GENERATED
@@ -312,8 +327,8 @@ class KeepAwayEnv:
             self.ball.sync_from_pybullet()
             for player in (*self.blues, *self.reds):  # AI GENERATED (every player)
                 player.sync_from_pybullet()
-            # AI GENERATED (2026-11-07): an opponent already touching the carrier takes the ball too,
-            # not only on the first tick of a contact
+            # AI GENERATED (2026-11-07): an opponent already touching the carrier takes the ball
+            # too, not only on the first tick of a contact
             self.ball.check_held_contacts()
 
             self.game_steps += 1
@@ -516,11 +531,13 @@ class KeepAwayEnv:
         half_width = self.config.field_width / 2 + self.field.wall_thickness
         proj = p.getDebugVisualizerCamera(physicsClientId=self.client)[3]
         if not proj or proj[0] <= 0 or proj[5] <= 0:
-            return max(self.config.field_length, self.config.field_width * 1.6)  # the old fixed view
+            # the old fixed view
+            return max(self.config.field_length, self.config.field_width * 1.6)
         tan_vertical = 1.0 / proj[5]  # tan(half the vertical field of view)
         tan_horizontal = 1.0 / proj[0]  # the same for the horizontal one
         distance = max(half_width / tan_vertical, half_length / tan_horizontal) * margin
-        return distance + self.field.wall_height  # the camera distance is to the floor; the wall tops are higher
+        # the camera distance is to the floor; the wall tops are higher
+        return distance + self.field.wall_height
     ### END AI GENERATED
 
     def _update_rules(self):
@@ -564,13 +581,16 @@ class KeepAwayEnv:
         return velocity
 
 
-if __name__ == "__main__":
-
-    # Play keep away as blue with an on-screen joystick. The joystick produces exactly the action
-    # the RL layer would: blue's desired velocity. Every observation is printed each frame.
-    # Press space to kick the ball the way the joystick points; pushing the knob further kicks harder.
-    import tkinter as tk
-    from joystick import Joystick
+def main() -> None:
+    """
+    Play keep away as blue with an on-screen joystick. The joystick produces exactly the action
+    the RL layer would: blue's desired velocity. Every observation is printed each frame.
+    Press space to kick the ball the way the joystick points; pushing the knob further kicks
+    harder.
+    (2026-11-15: moved from the __main__ block into main() for pylint; it runs the same.)
+    """
+    import tkinter as tk  # pylint: disable=import-outside-toplevel
+    from joystick import Joystick  # pylint: disable=import-outside-toplevel
 
     env = KeepAwayEnv(render_mode="human")
     observation, info = env.reset()
@@ -586,11 +606,11 @@ if __name__ == "__main__":
     kick_requested = False
 
     def on_close():
-        global window_open
+        nonlocal window_open
         window_open = False
 
-    def on_space(event=None):
-        global kick_requested
+    def on_space(_event=None):
+        nonlocal kick_requested
         kick_requested = True
 
     root.protocol("WM_DELETE_WINDOW", on_close)
@@ -606,7 +626,8 @@ if __name__ == "__main__":
             kick_requested = False
 
         try:
-            observation, reward, terminated, truncated, info = env.step(joystick.velocity, kicks=kicks)
+            observation, reward, terminated, truncated, info = env.step(joystick.velocity,
+                                                                        kicks=kicks)
         except p.error:
             break  # the pybullet window was closed mid-step
         print(KeepAwayEnv.format_observation(observation))
@@ -618,8 +639,10 @@ if __name__ == "__main__":
 
         game = observation["game"]
         status.config(text=f"time   {game['time']:5.1f} s\n"
-                           f"blue   {game['blue_possession_time']:5.2f} / {game['blue_possession_time_to_win']:.1f} s\n"
-                           f"red    {game['red_possession_time']:5.2f} / {game['red_possession_time_to_win']:.1f} s\n"
+                           f"blue   {game['blue_possession_time']:5.2f} / "
+                           f"{game['blue_possession_time_to_win']:.1f} s\n"
+                           f"red    {game['red_possession_time']:5.2f} / "
+                           f"{game['red_possession_time_to_win']:.1f} s\n"
                            f"space  kick")
         root.update()
 
@@ -628,4 +651,8 @@ if __name__ == "__main__":
 
     root.destroy()
     env.close()
+
+
+if __name__ == "__main__":
+    main()
 ### END AI GENERATED

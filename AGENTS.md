@@ -11,13 +11,13 @@ Usage:
     the limits, the expected test skips and the dynamics test file.
   2026-10-31: Replaced the one-simulation-per-process constraint: every env
     has its own pybullet connection.
-  2026-11-01: (Claude Code (Claude Opus 5.5), prompted by JC Stinson III)
+  2026-11-15: The AI CITATION format drops the   2026-11-01: (Claude Code (Claude Opus 5.5), prompted by JC Stinson III)
     PyBullet is now the default run.env; updated the Configuration notes, the
     run-name convention and the command examples (backlog task 3).
   2026-11-03: (Claude Code (Claude Opus 5.5), prompted by JC Stinson III)
     Added scripts/regress.py and the regression-record rule (backlog task 4).
-Prompt summary: Update AGENTS.md with the current state of the repo.
-Human review:   Pending review
+Prompt summary and Human review
+    lines. (Austin Beinder)
 -->
 
 # AGENTS.md
@@ -384,8 +384,8 @@ python -m unittest discover -s pybulletGame/tests -p "*_test.py" -t pybulletGame
 ## Code conventions
 
 - **AI attribution is required.** Files generated with an AI tool start with an
-  `AI CITATION` header (Tool, Date, Author, Usage log with dated entries,
-  Prompt summary, Human review); see any file in `marl/` for the format. AI
+  `AI CITATION` header (Tool, Date, Author, Usage log with dated entries;
+  no Prompt summary or Human review lines); see any file in `marl/` for the format. AI
   edits inside other files are wrapped in `### AI GENERATED` …
   `### END AI GENERATED`, or marked with a trailing `# AI GENERATED` on single
   lines. When you change a file, keep its markers and add a dated Usage entry.

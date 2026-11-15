@@ -5,9 +5,6 @@
 # Author:  Austin Beinder
 # Usage:
 #   - 2026-11-07: Created this file: marks curriculum/ as a package.
-# Prompt summary: Lay out a curriculum for keep-away: a possession stage, then
-#   a free-ball stage whose ball starts close and moves further away (CACTUS).
-# Human review:   Pending review
 # ==============================================================================
 """Curriculum training: a list of training stages, each warm-started from the one before.
 

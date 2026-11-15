@@ -9,8 +9,6 @@
 #   - 2026-10-11: Set red_max_speed to the calibrated 1.8 (scripts/calibrate.py).
 #   - 2026-11-07: Added ball_damping; max_kick_speed is used now. (Austin Beinder)
 #   - 2026-11-07: ball_damping 0.2 -> 0.4 (kicks max out near 5 m). (Austin Beinder)
-# Prompt summary: Implement Phase 3 of the issue #7 plan (RL layer + mock env).
-# Human review:   Pending review
 # ==============================================================================
 # Milestone 1: keep-away, 1 blue vs 1 scripted red, movement only.
 # Every key below equals the default in marl/common/config.py; it is listed so

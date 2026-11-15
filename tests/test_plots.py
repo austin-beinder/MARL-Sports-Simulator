@@ -21,9 +21,9 @@
 #   - 2026-11-13: Curriculum run figures on a synthetic curriculum run (a
 #     stale stage is left out; no catch figure without pass practice
 #     stages). (Austin Beinder)
-# Prompt summary: Implement Phase 3 step 11 of the issue #7 plan (plots for the
-#   midterm from the 5-seed keep-away runs); later, task 2's plotting refactor.
-# Human review:   Pending review
+#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters and
+#     dropped an unused capsys fixture argument; no behaviour change.
+#     (Austin Beinder)
 # ==============================================================================
 import csv
 import json
@@ -401,20 +401,26 @@ def fake_curriculum(root):
     (run / "curriculum.toml").write_text(
         'name = "x"\nconfig = "configs/keepaway_1v1.toml"\n'
         '[[stage]]\nname = "catch"\ntotal_steps = 4096\nthreshold = 0.8\n'
-        '[[stage]]\nname = "keepaway"\ntotal_steps = 8192\nthreshold = 0.5\noption = "max_ball_dist"\nlevels = [1.0, 2.0]\n'
+        '[[stage]]\nname = "keepaway"\ntotal_steps = 8192\nthreshold = 0.5\n'
+        'option = "max_ball_dist"\nlevels = [1.0, 2.0]\n'
         '[[stage]]\nname = "old"\ntotal_steps = 2048\n', encoding="utf-8")
-    shared = {"physics_dt": 1 / 240, "control_k": 12, "max_episode_steps": 300, "n_blue": 3, "red_max_speed": 1.8}
-    stages = [("catch", "pass_practice_moving", 0, 2, True), ("keepaway", "keepaway", 1, 3, False), ("old", "keepaway", 1, 1, True)]
+    shared = {"physics_dt": 1 / 240, "control_k": 12, "max_episode_steps": 300, "n_blue": 3,
+              "red_max_speed": 1.8}
+    stages = [("catch", "pass_practice_moving", 0, 2, True), ("keepaway", "keepaway", 1, 3, False),
+              ("old", "keepaway", 1, 1, True)]
     for k, (name, scenario, n_red, iterations, finished) in enumerate(stages, 1):
         d = run / f"{k:02d}_{name}"
         (d / "checkpoints").mkdir(parents=True)
-        (d / "config.json").write_text(json.dumps({"shared": {**shared, "scenario": scenario, "n_red": n_red}}))
+        (d / "config.json").write_text(
+            json.dumps({"shared": {**shared, "scenario": scenario, "n_red": n_red}}))
         write_csv(d / "train.csv", [
-            {"iteration": i, "env_steps": 2048 * i, "ep_len_mean": 100 * i, "gate_mean": 0.5, "gate_lower": 0.4,
-             "cur_level": int(i >= 3), "reward_mean_unscaled": 0.1, "ep_passes_mean": i,
-             "reward_shaping_mean_unscaled": 0.01, "kicks_per_step": 0.02} for i in range(1, iterations + 1)])
+            {"iteration": i, "env_steps": 2048 * i, "ep_len_mean": 100 * i, "gate_mean": 0.5,
+             "gate_lower": 0.4, "cur_level": int(i >= 3), "reward_mean_unscaled": 0.1,
+             "ep_passes_mean": i, "reward_shaping_mean_unscaled": 0.01, "kicks_per_step": 0.02}
+            for i in range(1, iterations + 1)])
         write_csv(d / "eval.csv", [
-            {"iteration": 0, "env_steps": 0, "mode": mode, "len_mean": 150, "passes_mean": 1.0, "pass_rate": 0.5}
+            {"iteration": 0, "env_steps": 0, "mode": mode, "len_mean": 150, "passes_mean": 1.0,
+             "pass_rate": 0.5}
             for mode in ("stochastic", "deterministic")])
         if finished:
             (d / "checkpoints" / "final.pt").write_bytes(b"")
@@ -427,13 +433,14 @@ def test_curriculum_stages_stop_at_one_left_from_an_earlier_attempt(tmp_path):
     assert [d.name for d, _, _ in curriculum_stages(run)] == ["01_catch", "02_keepaway"]
 
 
-def test_curriculum_figures_are_written(tmp_path, capsys):
+def test_curriculum_figures_are_written(tmp_path):
     run = fake_curriculum(tmp_path)
     out = tmp_path / "figures"
     assert main(["--curriculum", str(run), "--out", str(out)]) == 0
     for name in ("curriculum_x_seed0_progress", "curriculum_x_seed0_catch"):
         assert (out / f"{name}.png").exists() and (out / f"{name}.pdf").exists()
-    assert "results_tables.md" not in {p.name for p in out.iterdir()}  # the report figures aren't made
+    # the report figures aren't made
+    assert "results_tables.md" not in {p.name for p in out.iterdir()}
 
 
 def test_no_catch_figure_without_pass_practice_stages(tmp_path):

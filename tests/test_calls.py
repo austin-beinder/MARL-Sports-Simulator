@@ -10,11 +10,8 @@
 #     envs, config, the claim reward) and the call_yield shaping term.
 #   - 2026-11-14: The dead_ball shaping term, receiver_spacing leaving out the
 #     blue nearest a dead ball, and the catch stages' new terms.
-# Prompt summary: Give the "got it" call its own per-blue reward instead of the
-#   shared team reward, and add a claim_ball stage where three blues claim a
-#   loose ball: pay a blue for calling a ball it then gets, and charge blues
-#   who crowd a ball a teammate called.
-# Human review:   Pending review
+#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters and fixed
+#     the new warnings; no behaviour change. (Austin Beinder)
 # ==============================================================================
 """The "got it" call's own reward, and the claim_ball scenario that practises it (2026-11-14)."""
 
@@ -32,8 +29,9 @@ from marl.envs.pybullet_env import PyBulletEnv
 from marl.rl.buffer import RolloutBuffer
 from marl.rl.networks import CALL, MOVE, Actor, Critic
 from marl.rl.ppo import PPOUpdater
-from marl.rl.reward import (CALL_STEP_COST, CALL_WRONG, DEAD_BALL_SPEED, YIELD_DISTANCE, YIELD_STEAL, RewardModule,
-                            blue_pickup, call_values, call_yield, claim, dead_ball, receiver_spacing)
+from marl.rl.reward import (CALL_STEP_COST, CALL_WRONG, DEAD_BALL_SPEED, YIELD_DISTANCE,
+                            YIELD_STEAL, RewardModule, blue_pickup, call_values, call_yield,
+                            claim, dead_ball, receiver_spacing)
 from marl.rl.train import train
 
 CLAIM = {
@@ -52,7 +50,8 @@ def caught_by(i):
 def test_call_values_score_the_next_pickup():
     q, valid = call_values([-1, -1, -1, 1, -1], [False] * 5, n_agents=3, lead=2, cost=0.0)
     assert q[0].tolist() == [0.0, 0.0, 0.0]  # nobody got the ball within 2 steps
-    assert q[1].tolist() == q[2].tolist() == [CALL_WRONG, 1.0, CALL_WRONG]  # blue 1 got it: its call was right
+    # blue 1 got it: its call was right
+    assert q[1].tolist() == q[2].tolist() == [CALL_WRONG, 1.0, CALL_WRONG]
     assert valid[:3].all() and not valid[3:].any()  # the last two windows run past the rollout
     q_cost, _ = call_values([-1, -1, -1, 1, -1], [False] * 5, n_agents=3, lead=2)
     assert np.allclose(q_cost, q - CALL_STEP_COST)  # calling at all costs a little
@@ -66,7 +65,8 @@ def test_call_values_stop_at_the_episode_end():
 
 def test_a_call_counts_only_from_the_next_step():
     q, _ = call_values([1, -1, -1], [False] * 3, n_agents=2, lead=1, cost=0.0)
-    assert q[0].tolist() == [0.0, 0.0]  # a pickup in the same step as the call: teammates couldn't see it
+    # a pickup in the same step as the call: teammates couldn't see it
+    assert q[0].tolist() == [0.0, 0.0]
 
 
 def test_blue_pickup_reads_the_events():
@@ -81,14 +81,16 @@ def test_the_buffer_scores_each_blues_call():
     p0, p1 = 0.25, 0.25  # both blues call with probability 0.25; blue 0 calls, blue 1 doesn't
     lp = np.log([p0, 1 - p1])
     for t in range(4):
-        buf.add(obs=np.zeros((2, 3)), critic_in=np.zeros((2, 3)), samples={MOVE: np.full((2, 2), 0.5),
-                CALL: np.array([[1.0], [0.0]])}, log_prob=lp, value=np.zeros(2), next_value=np.zeros(2),
+        buf.add(obs=np.zeros((2, 3)), critic_in=np.zeros((2, 3)),
+                samples={MOVE: np.full((2, 2), 0.5), CALL: np.array([[1.0], [0.0]])},
+                log_prob=lp, value=np.zeros(2), next_value=np.zeros(2),
                 reward=0.0, terminated=False, truncated=False, effective_terminal=False,
                 pickup=0 if t == 2 else None, call_log_prob=lp)
     buf.compute_advantages(0.99, 0.95)
     buf.compute_call_advantages()
     right, wrong = 1.0 - CALL_STEP_COST, CALL_WRONG - CALL_STEP_COST
-    # A = q * (a - p): blue 0 called and was right; blue 1 rightly stayed quiet (calling was worth less)
+    # A = q * (a - p): blue 0 called and was right; blue 1 rightly stayed quiet (calling was
+    # worth less)
     assert buf.call_advantages[0] == pytest.approx([right * (1 - p0), wrong * (0 - p1)])
     assert buf.call_advantages[0, 1] > 0
     assert buf.call_valid[:2].all() and not buf.call_valid[2:].any()
@@ -96,10 +98,11 @@ def test_the_buffer_scores_each_blues_call():
 
 # --- The PPO update ----------------------------------------------------------------------
 def call_update(pickup):
-    """One PPO update on a 64-step rollout in which ``pickup`` gets the ball every step (None: nobody
-    does). Returns the mean chance of calling before and after, and the update's stats."""
+    """One PPO update on a 64-step rollout in which ``pickup`` gets the ball every step (None:
+    nobody does). Returns the mean chance of calling before and after, and the update's stats."""
     torch.manual_seed(0)
-    ppo = config_from_dict({"rl": {"ppo": {"rollout_steps": 64, "num_minibatches": 4, "update_epochs": 4,
+    ppo = config_from_dict({"rl": {"ppo": {"rollout_steps": 64, "num_minibatches": 4,
+                                           "update_epochs": 4,
                                            "lr": 1e-2}},  # big steps, so the change shows
                             "run": {"total_steps": 10_000}}).rl.ppo
     actor, critic = Actor(5, call_enabled=True), Critic(5)
@@ -107,9 +110,11 @@ def call_update(pickup):
     buf = RolloutBuffer(64, 1, 5, 5, {name: head.action_dim for name, head in actor.heads.items()})
     for t in range(64):
         samples, logp = actor.act(obs[t : t + 1])
-        buf.add(obs=obs[t : t + 1], critic_in=obs[t : t + 1], samples={h: x.numpy() for h, x in samples.items()},
-                log_prob=logp, value=critic(obs[t : t + 1]).detach(), next_value=torch.zeros(1), reward=0.0,
-                terminated=False, truncated=False, effective_terminal=False, pickup=pickup,
+        buf.add(obs=obs[t : t + 1], critic_in=obs[t : t + 1],
+                samples={h: x.numpy() for h, x in samples.items()},
+                log_prob=logp, value=critic(obs[t : t + 1]).detach(), next_value=torch.zeros(1),
+                reward=0.0, terminated=False, truncated=False, effective_terminal=False,
+                pickup=pickup,
                 call_log_prob=actor.head_log_prob(obs[t : t + 1], samples, CALL))
     buf.compute_advantages(0.99, 0.95)
     buf.compute_call_advantages()
@@ -119,7 +124,8 @@ def call_update(pickup):
 
 
 def test_the_call_head_learns_from_its_own_advantage():
-    before, after, stats = call_update(pickup=0)  # blue 0 gets the ball every step: calling is right
+    # blue 0 gets the ball every step: calling is right
+    before, after, stats = call_update(pickup=0)
     assert stats["ratio_check"] < 1e-6 and math.isfinite(stats["call_loss"])
     assert after > before + 0.01
     before, after, _ = call_update(pickup=None)  # nobody ever gets it: calling only costs
@@ -139,7 +145,8 @@ def test_evaluate_split_adds_up_to_evaluate():
 def test_call_accuracy_sets_the_call_coef_not_the_team_reward():
     rm = RewardModule(config_from_dict(CLAIM))
     assert rm.call_coef == 1.0
-    without = RewardModule(config_from_dict({**CLAIM, "rl": {"call_enabled": True, "reward": {"base": "claim"}}}))
+    without = RewardModule(config_from_dict(
+        {**CLAIM, "rl": {"call_enabled": True, "reward": {"base": "claim"}}}))
     assert without.call_coef == 0.0
 
 
@@ -160,9 +167,11 @@ def test_call_yield_charges_blues_crowding_a_called_ball():
     assert yield_term(s, s) == pytest.approx(-(1 - 0.5 / YIELD_DISTANCE))
     assert yield_term(state(calling={0}), state(calling={0})) == 0.0  # the caller may stand on it
     assert yield_term(state(), state()) == 0.0  # nobody called
-    assert yield_term(s, state(0, calling={1}), [caught_by(0)]) == -YIELD_STEAL  # took a called ball
+    # took a called ball
+    assert yield_term(s, state(0, calling={1}), [caught_by(0)]) == -YIELD_STEAL
     assert yield_term(s, state(1, calling={1}), [caught_by(1)]) == 0.0  # the caller got it
-    assert yield_term(state(2, calling={1}), state(2, calling={1})) == 0.0  # not loose: nothing to leave
+    # not loose: nothing to leave
+    assert yield_term(state(2, calling={1}), state(2, calling={1})) == 0.0
 
 
 def test_claim_costs_every_step_until_a_blue_has_the_ball():
@@ -183,7 +192,8 @@ def test_dead_ball_charges_a_stopped_loose_ball_only():
 
 
 def test_receiver_spacing_leaves_out_the_blue_fetching_a_dead_ball():
-    cfg = config_from_dict({**CLAIM, "rl": {**CLAIM["rl"], "reward": {"base": "claim", "spacing_distance": 3.0}}})
+    cfg = config_from_dict({**CLAIM, "rl": {**CLAIM["rl"], "reward": {"base": "claim",
+                                                                      "spacing_distance": 3.0}}})
 
     def spacing(s_next):
         return receiver_spacing(None, {}, s_next, False, False, {}, cfg)
@@ -199,7 +209,8 @@ def test_receiver_spacing_leaves_out_the_blue_fetching_a_dead_ball():
 
 def test_claim_ball_always_starts_loose():
     cfg = config_from_dict(CLAIM)
-    opts = {**cfg.shared.start.to_reset_options(), "start_mix": 1.0}  # would be all possession starts in keepaway
+    # would be all possession starts in keepaway
+    opts = {**cfg.shared.start.to_reset_options(), "start_mix": 1.0}
     for seed in range(20):
         sp = sample_spawn(np.random.default_rng(seed), scenario="claim_ball", n_blue=3, n_red=0,
                           field_size=cfg.shared.field_size, player_radius=cfg.shared.player_radius,
@@ -224,7 +235,8 @@ def test_claim_ball_ends_when_a_blue_gets_the_ball(make):
     try:
         s, _ = env.reset(seed=0)
         assert not any(b["has_possession"] for b in s["blue"])
-        env.set_state_for_testing(blue_pos=[[0.0, 0.0], [3.0, 0.0], [0.0, 3.0]], ball_pos=[1.0, 0.0], holder=None)
+        env.set_state_for_testing(blue_pos=[[0.0, 0.0], [3.0, 0.0], [0.0, 3.0]],
+                                  ball_pos=[1.0, 0.0], holder=None)
         go = {"blue": [{"move": [1.0, 0.0], "kick_trigger": 0, "kick_vec": [0.0, 0.0]}]
               + [{"move": [0.0, 0.0], "kick_trigger": 0, "kick_vec": [0.0, 0.0]}] * 2}
         for _ in range(20):
@@ -245,6 +257,6 @@ def test_claim_ball_trains_end_to_end(tmp_path):
     })
     result = train(cfg, tmp_path / "claim", log=lambda *_: None)
     assert result.iterations == 2
-    with open(tmp_path / "claim" / "train.csv", newline="") as f:
+    with open(tmp_path / "claim" / "train.csv", newline="", encoding="utf-8") as f:
         rows = list(csv.DictReader(f))
     assert all(math.isfinite(float(r["call_loss"])) for r in rows)

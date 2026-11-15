@@ -6,6 +6,8 @@ Except: AI edits 2026-10-31 (Claude Code, Austin Beinder): physics_client on eve
 and only the actual carrier can lose the ball to an opponent's touch. See the AI GENERATED markers.
 AI edit 2026-11-14 (Claude Code, Austin Beinder): show_calling, a brighter blue while a blue player
 calls "got it" (watch only).
+AI edit 2026-11-15 (Claude Code, Austin Beinder): pylint cleanup (wrapped lines over 100
+characters); no behaviour change.
 """
 
 import numpy as np
@@ -64,13 +66,14 @@ class Player(Entity):
     CALLING_COLOR = [0.3, 0.65, 1.0, 1.0]  # a brighter blue than the team's [0, 0, 1]
 
     def show_calling(self, calling: bool) -> None:
-        """Recolor the player while it calls "got it" (ICD §5 calling), back to its team color after.
-        Only the GUI shows it, so headless training doesn't need to call this."""
+        """Recolor the player while it calls "got it" (ICD §5 calling), back to its team color
+        after. Only the GUI shows it, so headless training doesn't need to call this."""
         calling = bool(calling)
         if calling == self.calling:
             return
         self.calling = calling
-        p.changeVisualShape(self.body_id, 2, rgbaColor=self.CALLING_COLOR if calling else self.base_color,
+        p.changeVisualShape(self.body_id, 2,
+                            rgbaColor=self.CALLING_COLOR if calling else self.base_color,
                             physicsClientId=self.client)
     ### END AI GENERATED
 

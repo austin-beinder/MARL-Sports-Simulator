@@ -18,9 +18,8 @@
 #   - 2026-11-11: The catch_start_mix option: a share of keepaway resets use
 #     the pass practice layout, plus red. (Austin Beinder)
 #   - 2026-11-14: claim_ball: always a loose ball. (Austin Beinder)
-# Prompt summary: Implement Phase 3 step 2 of the issue #7 plan (spawn sampler)
-#   as a small numpy-only module the env owner can reuse.
-# Human review:   Pending review
+#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters; no
+#     behaviour change. (Austin Beinder)
 # ==============================================================================
 """Reference spawn sampler (design #17, ICD §8-§9).
 
@@ -41,9 +40,9 @@ own layout: the blues spread evenly round a circle of about ``drill_radius`` met
 ``min_red_ball_dist`` and ``max_ball_dist`` don't (red always starts about one radius from the
 carrier).
 
-pass_practice and pass_practice_moving (2026-11-09) also always start with a blue holding the ball, with no red. Every
-other blue stands ``pass_distance`` metres (+-15%) from the holder, in a random direction. Only
-``min_clearance`` and ``pass_distance`` apply.
+pass_practice and pass_practice_moving (2026-11-09) also always start with a blue holding the
+ball, with no red. Every other blue stands ``pass_distance`` metres (+-15%) from the holder, in a
+random direction. Only ``min_clearance`` and ``pass_distance`` apply.
 
 ``catch_start_mix`` (keepaway only, 2026-11-11): the share of resets that start like pass
 practice -- a random blue holding the ball, every other blue ``pass_distance`` (+-15%) from it --
@@ -77,7 +76,9 @@ START_FREE_BALL = "free_ball"
 START_TARGET = "target"
 
 RESET_OPTION_KEYS = frozenset(
-    {"start_mix", "require_blue_closer", "min_clearance", "min_red_ball_dist", "max_ball_dist",  # AI GENERATED (max_ball_dist)
+    {"start_mix", "require_blue_closer", "min_clearance", "min_red_ball_dist",
+     # AI GENERATED (max_ball_dist)
+     "max_ball_dist",
      "drill_radius",  # AI GENERATED (2026-11-08)
      "pass_distance",  # AI GENERATED (2026-11-09)
      "catch_start_mix"}  # AI GENERATED (2026-11-11)
@@ -114,7 +115,9 @@ def sample_spawn(
     missing = RESET_OPTION_KEYS - set(options)
     if unknown or missing:
         raise ValueError(f"reset options: unknown {sorted(unknown)}, missing {sorted(missing)}")
-    if scenario not in ("keepaway", "goto_target", "passing_drill", "pass_practice", "pass_practice_moving",  # AI GENERATED (drills)
+    # AI GENERATED (drills)
+    if scenario not in ("keepaway", "goto_target", "passing_drill", "pass_practice",
+                        "pass_practice_moving",
                         "claim_ball"):  # AI GENERATED (2026-11-14)
         raise ValueError(f"unknown scenario {scenario!r}")
 
@@ -129,9 +132,11 @@ def sample_spawn(
     lo, hi = -half + player_radius, half - player_radius
     ### AI GENERATED (2026-11-08)
     if scenario == "passing_drill":
-        return _drill_spawn(rng, n_blue, n_red, lo, hi, clearance, float(options["drill_radius"]), max_tries)
+        return _drill_spawn(rng, n_blue, n_red, lo, hi, clearance,
+                            float(options["drill_radius"]), max_tries)
     if scenario in ("pass_practice", "pass_practice_moving"):  # 2026-11-09
-        return _practice_spawn(rng, n_blue, n_red, lo, hi, clearance, float(options["pass_distance"]), max_tries)
+        return _practice_spawn(rng, n_blue, n_red, lo, hi, clearance,
+                               float(options["pass_distance"]), max_tries)
     ### END AI GENERATED
     ### AI GENERATED (2026-11-11: catch_start_mix)
     catch_mix = float(options["catch_start_mix"])
@@ -139,14 +144,16 @@ def sample_spawn(
         raise ValueError(f"catch_start_mix must be in [0, 1], got {catch_mix}")
     # Drawn only when the option is on, so catch_start_mix = 0 leaves every other draw unchanged
     if scenario == "keepaway" and catch_mix > 0 and rng.random() < catch_mix:
-        return _practice_spawn(rng, n_blue, n_red, lo, hi, clearance, float(options["pass_distance"]), max_tries,
+        return _practice_spawn(rng, n_blue, n_red, lo, hi, clearance,
+                               float(options["pass_distance"]), max_tries,
                                red_ball=red_ball)
     ### END AI GENERATED
 
     # Draw the start type FIRST, so it depends only on the seed (ICD §2).
     if scenario == "goto_target":
         start_type, holder = START_TARGET, None
-    elif scenario == "claim_ball":  # AI GENERATED (2026-11-14): always a loose ball (start_mix doesn't apply)
+    # AI GENERATED (2026-11-14): always a loose ball (start_mix doesn't apply)
+    elif scenario == "claim_ball":
         start_type, holder = START_FREE_BALL, None
     elif rng.random() < float(options["start_mix"]):
         start_type, holder = START_POSSESSION, int(rng.integers(n_blue))
@@ -223,7 +230,8 @@ def _drill_spawn(rng, n_blue, n_red, lo, hi, clearance, radius, max_tries) -> Sp
 PASS_DISTANCE_JITTER = 0.15  # 2026-11-09: each teammate stands pass_distance +-15% from the holder
 
 
-def _practice_spawn(rng, n_blue, n_red, lo, hi, clearance, distance, max_tries, red_ball=None) -> Spawn:
+def _practice_spawn(rng, n_blue, n_red, lo, hi, clearance, distance, max_tries,
+                    red_ball=None) -> Spawn:
     """pass_practice (2026-11-09): a random blue holds the ball; every other blue stands about
     ``distance`` m from it (+-15%) in a random direction. No red.
 
@@ -237,7 +245,8 @@ def _practice_spawn(rng, n_blue, n_red, lo, hi, clearance, distance, max_tries, 
     for _ in range(max_tries):
         origin = rng.uniform(lo, hi)
         n_other = n_blue - 1
-        dist = distance * rng.uniform(1 - PASS_DISTANCE_JITTER, 1 + PASS_DISTANCE_JITTER, size=n_other)
+        dist = distance * rng.uniform(1 - PASS_DISTANCE_JITTER, 1 + PASS_DISTANCE_JITTER,
+                                      size=n_other)
         angles = rng.uniform(0, 2 * np.pi, size=n_other)
         others = origin + dist[:, None] * np.stack([np.cos(angles), np.sin(angles)], axis=-1)
         blue = np.insert(others, holder, origin, axis=0)
@@ -260,7 +269,8 @@ def _practice_spawn(rng, n_blue, n_red, lo, hi, clearance, distance, max_tries, 
             holder=holder,
         )
     raise RuntimeError(
-        f"no valid pass_practice spawn after {max_tries} tries; pass_distance={distance} doesn't fit "
+        f"no valid pass_practice spawn after {max_tries} tries; "
+        f"pass_distance={distance} doesn't fit "
         f"{n_blue} blue + {n_red} red at min_clearance={clearance}"
     )
 
@@ -268,7 +278,8 @@ def _practice_spawn(rng, n_blue, n_red, lo, hi, clearance, distance, max_tries, 
 def _ball_near(rng: np.random.Generator, blue: np.ndarray, radius: float) -> np.ndarray:
     """A point uniform in the disc of this radius around a random blue player."""
     center = blue[int(rng.integers(len(blue)))]
-    r = radius * np.sqrt(rng.random())  # sqrt: uniform over the disc's area, not bunched at the centre
+    # sqrt: uniform over the disc's area, not bunched at the centre
+    r = radius * np.sqrt(rng.random())
     angle = rng.uniform(0.0, 2.0 * np.pi)
     return center + r * np.array([np.cos(angle), np.sin(angle)])
 ### END AI GENERATED

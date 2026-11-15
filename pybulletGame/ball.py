@@ -11,6 +11,8 @@ AI edit 2026-11-07 (Claude Code, Austin Beinder): check_held_contacts and `conte
 opponent who was already touching when the carrier got the ball still takes it (steals used to
 fire only on the first tick of a contact), and last_change_time: the ball changes hands at most
 once per physics step.
+AI edit 2026-11-15 (Claude Code, Austin Beinder): pylint cleanup (wrapped lines over 100
+characters); no behaviour change.
 """
 
 import numpy as np
@@ -32,7 +34,8 @@ class Ball(Entity):
                  mass=1.0,
                  initial_position=np.array([0.0, 0.0, 0.0]),
                  maxJointVelocity=3.0,
-                 linear_damping=1.25,  # AI GENERATED (how quickly a loose ball slows down, see below)
+                 # AI GENERATED (how quickly a loose ball slows down, see below)
+                 linear_damping=1.25,
                  physics_client=0):  # AI GENERATED (which pybullet simulation, see Entity)
 
         rgbaColor=[1, 1, 1, 1]
@@ -61,9 +64,9 @@ class Ball(Entity):
         # they rolled for the ball, or the carrier just took it from them. check_held_contacts skips
         # them until they stop touching. Cleared whenever the ball changes hands.
         self.contested = set()
-        # sim_time of the last change of hands. The ball changes hands at most once per physics step,
-        # so when both teams touch it on the same step, the second touch waits for the next step
-        # (check_held_contacts) instead of instantly stealing it and becoming untouchable.
+        # sim_time of the last change of hands. The ball changes hands at most once per physics
+        # step, so when both teams touch it on the same step, the second touch waits for the next
+        # step (check_held_contacts) instead of instantly stealing it and becoming untouchable.
         self.last_change_time = None
 
         # Space left between the kicker's edge and the ball's edge when the ball is kicked
@@ -78,7 +81,8 @@ class Ball(Entity):
         self.rng = random
 
         # Half the inner size of the walled field, (half_length, half_width), centred on (0, 0), or
-        # None for no walls (2026-11-07). kick_ball keeps a kicked ball inside it. KeepAwayEnv sets it.
+        # None for no walls (2026-11-07). kick_ball keeps a kicked ball inside it. KeepAwayEnv sets
+        # it.
         self.play_area = None
         ### END AI GENERATED
 
@@ -96,11 +100,13 @@ class Ball(Entity):
         # This creates some friction so it doesn't slide or spin forever or accelerate super quickly
         # Found by googling how to add drag in pybullet.
         ### AI GENERATED (linear_damping, was 1.25)
-        # pybullet slows the ball by dv/dt = -linear_damping * v * (1 + |v|) (measured 2026-11-07), so a
-        # ball sent off at v m/s rolls about ln(1 + v) / linear_damping metres in total.
-        p.changeDynamics(self.body_id, 0, linearDamping=linear_damping, angularDamping=10.05, maxJointVelocity=maxJointVelocity,
+        # pybullet slows the ball by dv/dt = -linear_damping * v * (1 + |v|) (measured 2026-11-07),
+        # so a ball sent off at v m/s rolls about ln(1 + v) / linear_damping metres in total.
+        p.changeDynamics(self.body_id, 0, linearDamping=linear_damping, angularDamping=10.05,
+                         maxJointVelocity=maxJointVelocity,
                          physicsClientId=self.client)  # AI GENERATED (physicsClientId)
-        p.changeDynamics(self.body_id, 1, linearDamping=linear_damping, angularDamping=10.05, maxJointVelocity=maxJointVelocity,
+        p.changeDynamics(self.body_id, 1, linearDamping=linear_damping, angularDamping=10.05,
+                         maxJointVelocity=maxJointVelocity,
                          physicsClientId=self.client)  # AI GENERATED (physicsClientId)
         ### END AI GENERATED
         p.changeVisualShape(self.body_id, 2, textureUniqueId=texture_id, physicsClientId=self.client)  # AI GENERATED
@@ -169,10 +175,12 @@ class Ball(Entity):
             # Don't allow a steal within STEAL_COOLDOWN of the last one, so the ball
             # doesn't ping pong between players during a complex collision.
             if self.sim_time - self.last_steal_time < self.STEAL_COOLDOWN:
-                self.contested.add(collided_entity)  # 2026-11-07: this contact had its chance; no retry later
+                # 2026-11-07: this contact had its chance; no retry later
+                self.contested.add(collided_entity)
                 return changed_possession
-            # 2026-11-07: nor on the step the ball last changed hands (see last_change_time). Unlike the
-            # cooldown, this doesn't use up the contact: check_held_contacts tries it again next step.
+            # 2026-11-07: nor on the step the ball last changed hands (see last_change_time). Unlike
+            # the cooldown, this doesn't use up the contact: check_held_contacts tries it again next
+            # step.
             if self.sim_time == self.last_change_time:
                 return changed_possession
             ### END AI GENERATED
@@ -186,7 +194,8 @@ class Ball(Entity):
                 self._player_takes_possession(collided_entity)
                 changed_possession = True
                 self.last_steal_time = self.sim_time  # AI GENERATED
-                # AI GENERATED: the old carrier can't take it straight back while they're still touching
+                # AI GENERATED: the old carrier can't take it straight back while they're still
+                # touching
                 self.contested = {victim}
 
         return changed_possession
@@ -209,7 +218,8 @@ class Ball(Entity):
             return False
         touching = []
         for entity in (*holder.collided_entities, *self.collided_entities):
-            if (not entity.is_wall and not entity.is_ball and entity.team not in (Team.NONE, holder.team)
+            if (not entity.is_wall and not entity.is_ball
+                    and entity.team not in (Team.NONE, holder.team)
                     and entity not in touching):
                 touching.append(entity)
         self.contested &= set(touching)  # whoever has let go gets a fresh roll next time they touch
@@ -302,7 +312,8 @@ class Ball(Entity):
                 limit = np.asarray(self.play_area, dtype=float) - self.radius - self.KICK_GAP
                 target = np.clip(target, -limit, limit)
                 if np.linalg.norm(target - kicker_xy) < kicker.radius + self.radius:
-                    return False  # no room between the kicker and the wall: the ball bounces straight back
+                    # no room between the kicker and the wall: the ball bounces straight back
+                    return False
         ### END AI GENERATED
         self._release()
 

@@ -12,9 +12,6 @@
 #     goes out to 3 m (threshold 0.35); 8 m was close to unwinnable 1v1.
 #   - 2026-11-08: Added the slow_two_v_one stage (blue slower than red even
 #     without the ball); two_v_one now moves on when its gate passes.
-# Prompt summary: Lay out a curriculum for keep-away: a possession stage, then
-#   a free-ball stage whose ball starts close and moves further away (CACTUS).
-# Human review:   Pending review
 # ==============================================================================
 # Keep-away in stages (see the docstring in runner.py for how stages and gates work). Stage 2
 # (possession) is commented out for now, so a run goes go_to_target -> free_ball -> two_v_one ->

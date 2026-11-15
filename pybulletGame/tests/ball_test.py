@@ -1,5 +1,7 @@
 """
 Many cited parts entity_test.py were AI generated. This test file was largely copy pasted from entity_test.py.
+AI edit 2026-11-15 (Claude Code, Austin Beinder): pylint cleanup (wrapped lines over 100
+characters, a protected-access disable on the test's _release call); no behaviour change.
 """
 
 import os
@@ -195,7 +197,8 @@ class TestAdd(unittest.TestCase):
         ball = Ball(initial_position=np.array([5.0, 5.0, 0.0]))  # away from the players
         ball.possession_flip_percentage = 100  # steals always succeed unless a test says otherwise
         ball.on_new_collision(player)
-        # AI GENERATED (2026-11-07): move on a physics step, since the ball changes hands at most once per step
+        # AI GENERATED (2026-11-07): move on a physics step, since the ball changes hands at most
+        # once per step
         ball.sim_time += p.getPhysicsEngineParameters()["fixedTimeStep"]
         return ball
 
@@ -463,7 +466,7 @@ class TestAdd(unittest.TestCase):
 
         self.assertFalse(ball.check_held_contacts())
         self.assertIs(ball.possession_player, blue)
-        ball._release()
+        ball._release()  # pylint: disable=protected-access
         self.assertFalse(ball.check_held_contacts())  # nobody holds it: nothing to steal
     ### END AI GENERATED
 

@@ -12,9 +12,8 @@
 #   - 2026-11-14: call_coef > 0 gives the call head its own clipped surrogate
 #     with its own per-blue advantage (RolloutBuffer.compute_call_advantages);
 #     the team advantage then scores every other head. (Austin Beinder)
-# Prompt summary: Implement Phase 3 step 8 of the issue #7 plan (PPO update +
-#   training loop).
-# Human review:   Pending review
+#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters; no
+#     behaviour change. (Austin Beinder)
 # ==============================================================================
 """The PPO update (walk-through step 4).
 
@@ -70,7 +69,8 @@ def clipped_surrogate_loss(ratio: torch.Tensor, adv: torch.Tensor, clip_eps: flo
 
 
 class PPOUpdater:
-    def __init__(self, actor: Actor, critic: Critic, ppo: PPOConfig, call_coef: float = 0.0):  # AI GENERATED (call_coef)
+    # AI GENERATED (call_coef)
+    def __init__(self, actor: Actor, critic: Critic, ppo: PPOConfig, call_coef: float = 0.0):
         self.actor, self.critic, self.ppo = actor, critic, ppo
         self.call_coef = call_coef  # AI GENERATED (2026-11-14): > 0 = the call head's own advantage
         self.actor_opt = torch.optim.Adam(actor.parameters(), lr=ppo.lr, eps=ppo.adam_eps)
@@ -87,7 +87,8 @@ class PPOUpdater:
             for k, mb in enumerate(buf.minibatches(p.num_minibatches, rng)):
                 ### AI GENERATED (2026-11-14: the call head apart)
                 if self.call_coef > 0:
-                    logp, call_logp, entropy, head_entropy = self.actor.evaluate_split(mb.obs, mb.samples)
+                    logp, call_logp, entropy, head_entropy = self.actor.evaluate_split(
+                        mb.obs, mb.samples)
                     log_ratio = logp - (mb.log_probs - mb.call_log_probs)
                     call_ratio = (call_logp - mb.call_log_probs).exp()
                 else:
@@ -99,7 +100,8 @@ class PPOUpdater:
                 if epoch == 0 and k == 0:
                     ratio_check = (ratio.detach() - 1.0).abs().max().item()
                     if call_ratio is not None:  # AI GENERATED (2026-11-14)
-                        ratio_check = max(ratio_check, (call_ratio.detach() - 1.0).abs().max().item())
+                        ratio_check = max(ratio_check,
+                                          (call_ratio.detach() - 1.0).abs().max().item())
                     if not ratio_check < RATIO_GUARD_ATOL:  # also catches NaN
                         raise RuntimeError(
                             f"PPO ratio guard: max |ratio - 1| = {ratio_check:.3g} before any update; "
@@ -112,7 +114,8 @@ class PPOUpdater:
                 ### AI GENERATED (2026-11-14)
                 call_loss = torch.zeros(())
                 if call_ratio is not None:
-                    call_loss = _masked_surrogate(call_ratio, mb.call_advantages, mb.call_valid, p.clip_eps)
+                    call_loss = _masked_surrogate(call_ratio, mb.call_advantages, mb.call_valid,
+                                                  p.clip_eps)
                     actor_loss = actor_loss + self.call_coef * call_loss
                 ### END AI GENERATED
                 self.actor_opt.zero_grad(set_to_none=True)
@@ -150,7 +153,9 @@ class PPOUpdater:
 
 
 ### AI GENERATED (2026-11-14)
-def _masked_surrogate(ratio: torch.Tensor, adv: torch.Tensor, valid: torch.Tensor, clip_eps: float) -> torch.Tensor:
+def _masked_surrogate(
+    ratio: torch.Tensor, adv: torch.Tensor, valid: torch.Tensor, clip_eps: float
+) -> torch.Tensor:
     """``clipped_surrogate_loss`` averaged over the valid samples only (0 if there are none)."""
     unclipped = ratio * adv
     clipped = ratio.clamp(1.0 - clip_eps, 1.0 + clip_eps) * adv

@@ -17,9 +17,8 @@
 #     option. (Austin Beinder)
 #   - 2026-11-09: The pass_distance reset option. (Austin Beinder)
 #   - 2026-11-11: The catch_start_mix reset option. (Austin Beinder)
-# Prompt summary: Implement Phase 3 step 1 of the issue #7 plan (config +
-#   validation) with expected-input, unexpected-input and corner-case tests.
-# Human review:   Pending review
+#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters; no
+#     behaviour change. (Austin Beinder)
 # ==============================================================================
 import dataclasses
 from pathlib import Path
@@ -89,7 +88,8 @@ def test_round_trip_and_overrides():
 
 def test_reset_options_match_icd_keys():
     opts = config_from_dict({}).shared.start.to_reset_options()
-    assert set(opts) == {"start_mix", "require_blue_closer", "min_clearance", "min_red_ball_dist", "max_ball_dist",  # AI GENERATED (max_ball_dist)
+    assert set(opts) == {"start_mix", "require_blue_closer", "min_clearance", "min_red_ball_dist",
+                         "max_ball_dist",  # AI GENERATED (max_ball_dist)
                          "drill_radius", "pass_distance",  # AI GENERATED (2026-11-08, 2026-11-09)
                          "catch_start_mix"}  # AI GENERATED (2026-11-11)
 
@@ -115,7 +115,8 @@ def test_passing_drill_config_is_valid():
     [
         ({"shared": {"n_blue": 1}}, "n_blue >= 2"),  # nobody to pass to
         ({"rl": {"kick_enabled": False}}, "kick_enabled"),  # the blues could do nothing
-        ({"rl": {"reward": {"base": "survival"}}}, "passing_drill"),  # the drill has its own base reward
+        # the drill has its own base reward
+        ({"rl": {"reward": {"base": "survival"}}}, "passing_drill"),
         ({"shared": {"start": {"drill_radius": 0.0}}}, "drill_radius"),
     ],
 )

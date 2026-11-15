@@ -30,10 +30,9 @@
 #     called / miscalled, for the call accuracy. (Austin Beinder)
 #   - 2026-11-14: Each buffer row also gets the step's blue pickup and the call
 #     head's log-prob, for the call head's own advantage. (Austin Beinder)
-# Prompt summary: Implement Phase 3 step 7 of the issue #7 plan (buffer +
-#   GAE); the rollout collector moved here from step 8 because it owns the
-#   next_value contract that GAE depends on.
-# Human review:   Pending review
+#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters and set
+#     _reward_memory in __init__ (attribute-defined-outside-init); no
+#     behaviour change. (Austin Beinder)
 # ==============================================================================
 """Rollout collection: step the env with the current policy and fill the buffer.
 
@@ -63,11 +62,14 @@ import torch
 
 from marl.common.config import Config
 from marl.common.spawn import START_FREE_BALL, START_POSSESSION, START_TARGET
-from marl.rl.actions import actions_from_samples, commanded_speed_fraction  # AI GENERATED (actions_from_samples)
+# AI GENERATED (actions_from_samples)
+from marl.rl.actions import actions_from_samples, commanded_speed_fraction
 from marl.rl.buffer import RolloutBuffer
-from marl.rl.networks import CALL, MOVE, Actor, Critic, critic_input, critic_input_dim  # AI GENERATED (CALL)
+# AI GENERATED (CALL)
+from marl.rl.networks import CALL, MOVE, Actor, Critic, critic_input, critic_input_dim
 from marl.rl.obs import ObsBuilder
-from marl.rl.reward import RewardModule, blue_pickup, effective_terminal  # AI GENERATED (blue_pickup)
+# AI GENERATED (blue_pickup; PassMemory 2026-11-15)
+from marl.rl.reward import PassMemory, RewardModule, blue_pickup, effective_terminal
 from marl.rl.state import StateFlattener, parse_state
 
 
@@ -77,9 +79,12 @@ class Featurizer:
     def __init__(self, cfg: Config):
         sc = cfg.shared
         self.n_blue, self.n_red = sc.n_blue, sc.n_red
-        self.obs_builder = ObsBuilder(sc, cfg.rl.obs_ordering, cfg.rl.obs_mode, cfg.rl.passer_obs,  # AI GENERATED (passer_obs,
+        # AI GENERATED (passer_obs,
+        self.obs_builder = ObsBuilder(sc, cfg.rl.obs_ordering, cfg.rl.obs_mode, cfg.rl.passer_obs,
                                       cfg.rl.call_enabled)  # call flags, 2026-11-13)
-        self.flattener = StateFlattener(sc, cfg.rl.horizon_mode, cfg.rl.passer_obs, cfg.rl.call_enabled)  # AI GENERATED (flags)
+        # AI GENERATED (flags)
+        self.flattener = StateFlattener(sc, cfg.rl.horizon_mode, cfg.rl.passer_obs,
+                                        cfg.rl.call_enabled)
         self.critic_mode = cfg.rl.critic_input
         self.obs_dim = self.obs_builder.dim
         self.state_dim = self.flattener.dim
@@ -108,12 +113,16 @@ class EpisodeRecord:
     # shaping: 1 for survival, minus the mean blue-to-target distance (m) for
     # goto_target, where length is always the max.
     mean_reward: float
-    passes: int = 0  # AI GENERATED (2026-11-09): passes completed (a blue's kick caught by another blue)
-    kicks: int = 0  # AI GENERATED (2026-11-11): blue kicks (passes / kicks = the pass completion rate)
-    returns: int = 0  # AI GENERATED (2026-11-13): passes straight back to the blue who passed to the kicker
+    # AI GENERATED (2026-11-09): passes completed (a blue's kick caught by another blue)
+    passes: int = 0
+    # AI GENERATED (2026-11-11): blue kicks (passes / kicks = the pass completion rate)
+    kicks: int = 0
+    # AI GENERATED (2026-11-13): passes straight back to the blue who passed to the kicker
+    returns: int = 0
     ### AI GENERATED (2026-11-13: calls)
     pickups: int = 0  # blue pickups of the ball (catches, fetching a loose ball, re-grabs)
-    called: float = 0.0  # how well the blue who picked it up had called for it, summed (0 to 1 each)
+    # how well the blue who picked it up had called for it, summed (0 to 1 each)
+    called: float = 0.0
     miscalled: float = 0.0  # how loudly the other blues had called for those pickups, summed
     ### END AI GENERATED
 
@@ -123,7 +132,8 @@ class RolloutStats:
     episodes: list[EpisodeRecord]  # episodes that ENDED during this rollout
     mean_commanded_speed: float  # KL-1 symptom metric (#23)
     mean_shaping: float  # unscaled shaping reward per step (0.0 without shaping terms)
-    kicks_per_step: float = 0.0  # kicks the env applied, per step, summed over agents  # AI GENERATED
+    # kicks the env applied, per step, summed over agents  # AI GENERATED
+    kicks_per_step: float = 0.0
 
 
 def make_buffer(cfg: Config, featurizer: Featurizer, actor: Actor) -> RolloutBuffer:
@@ -148,6 +158,8 @@ class RolloutCollector:
         self._reset_options = cfg.shared.start.to_reset_options()
         self._s: dict | None = None  # live state; None -> reset at the next step
         self._value: torch.Tensor | None = None  # cached V(s_t)
+        # AI GENERATED (2026-11-15): set by _begin_episode before any step reads it
+        self._reward_memory: PassMemory | None = None
 
     ### AI GENERATED
     def set_reset_options(self, options: dict[str, Any]) -> None:
@@ -182,7 +194,9 @@ class RolloutCollector:
             s_next, terminated, truncated, info = self.env.step(actions)
             kicks += sum(info["kick_applied"])  # AI GENERATED
             eff = effective_terminal(terminated, truncated, self.cfg.rl.horizon_mode)
-            parts = self.reward_fn.parts(s, actions, s_next, eff, truncated, info, self._reward_memory)  # AI GENERATED (memory)
+            # AI GENERATED (memory)
+            parts = self.reward_fn.parts(s, actions, s_next, eff, truncated, info,
+                                         self._reward_memory)
             shaping += parts.shaping
             self._ep_base += parts.base
             obs_next, cin_next = self.featurize(s_next)
@@ -225,13 +239,16 @@ class RolloutCollector:
             else:
                 self._s, self._obs, self._cin = s_next, obs_next, cin_next
                 self._value = next_value  # V(s_{t+1}) is the next step's V(s_t)
-        return RolloutStats(episodes, speed / buf.n_steps, shaping / buf.n_steps, kicks / buf.n_steps)  # AI GENERATED (kicks)
+        # AI GENERATED (kicks)
+        return RolloutStats(episodes, speed / buf.n_steps, shaping / buf.n_steps,
+                            kicks / buf.n_steps)
 
     def _begin_episode(self) -> None:
         seed = int(self._seed_rng.integers(0, 2**31 - 1))
         self._s, _ = self.env.reset(seed=seed, options=self._reset_options)
         self._start_type = start_type_of(self._s, self.cfg.shared.scenario)
         self._ep_base = 0.0  # unscaled base rewards summed over the episode (it may span rollouts)
-        self._reward_memory = self.reward_fn.new_episode()  # AI GENERATED (2026-11-08): pass bookkeeping
+        # AI GENERATED (2026-11-08): pass bookkeeping
+        self._reward_memory = self.reward_fn.new_episode()
         self._obs, self._cin = self.featurize(self._s)
         self._value = None

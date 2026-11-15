@@ -20,9 +20,8 @@
 #     rl.passer_obs flags, like new players' columns. (Austin Beinder)
 #   - 2026-11-13: ... and the rl.call_enabled flags; a new call head keeps its
 #     fresh init. (Austin Beinder)
-# Prompt summary: Implement Phase 3 step 8 of the issue #7 plan (PPO update +
-#   training loop).
-# Human review:   Pending review
+#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters; no
+#     behaviour change. (Austin Beinder)
 # ==============================================================================
 """Checkpoints (#23): actor + critic weights, optimizer states, progress counters
 and the resolved config, so a checkpoint is self-describing (``load_actor`` can
@@ -105,7 +104,9 @@ def load_checkpoint(path: str | Path) -> dict[str, Any]:
 
 
 ### AI GENERATED
-def warm_start(actor: Actor, critic: Critic, ckpt: dict[str, Any], cfg: Config) -> tuple[list[str], bool]:
+def warm_start(
+    actor: Actor, critic: Critic, ckpt: dict[str, Any], cfg: Config
+) -> tuple[list[str], bool]:
     """Load a checkpoint's weights into networks built for ``cfg``. Returns the actor parameters
     the checkpoint didn't have (they keep their fresh init, e.g. new kick heads), and whether the
     critic was loaded.
@@ -115,16 +116,19 @@ def warm_start(actor: Actor, critic: Critic, ckpt: dict[str, Any], cfg: Config) 
     and it starts fresh instead. The actor always loads.
 
     If the team sizes (or, 2026-11-13, ``rl.passer_obs``) differ from the checkpoint's config, the
-    first layers' input columns are remapped: new players' (and features') columns are zero (or, with ``cfg.rl.new_player_init = "random"``, keep
-    the networks' fresh init, 2026-11-12), removed players' columns are dropped (see the module
-    docstring). Raises if the critic would load but its input mode changed.
+    first layers' input columns are remapped: new players' (and features') columns are zero (or,
+    with ``cfg.rl.new_player_init = "random"``, keep the networks' fresh init, 2026-11-12),
+    removed players' columns are dropped (see the module docstring). Raises if the critic would
+    load but its input mode changed.
     """
     old = config_from_dict(ckpt["config"])
     actor_sd, critic_sd = dict(ckpt["actor"]), dict(ckpt["critic"])
     o, n = old.shared, cfg.shared
     load_critic = old.shared.scenario == cfg.shared.scenario and old.rl.reward == cfg.rl.reward
     if load_critic and old.rl.critic_input != cfg.rl.critic_input:
-        raise ValueError(f"can't warm start a {cfg.rl.critic_input!r} critic from a {old.rl.critic_input!r} one")
+        raise ValueError(
+            f"can't warm start a {cfg.rl.critic_input!r} critic from a {old.rl.critic_input!r} one"
+        )
     ### AI GENERATED (2026-11-13: the layouts may also differ in the passer / call flags)
     old_obs = obs_blocks(o.n_blue, o.n_red, old.rl.passer_obs, old.rl.call_enabled)
     new_obs = obs_blocks(n.n_blue, n.n_red, cfg.rl.passer_obs, cfg.rl.call_enabled)
@@ -135,16 +139,20 @@ def warm_start(actor: Actor, critic: Critic, ckpt: dict[str, Any], cfg: Config) 
         state_cols = _column_map(old_state, new_state)
     ### END AI GENERATED
         random = cfg.rl.new_player_init == "random"  # AI GENERATED (2026-11-12)
-        actor_sd["trunk.0.weight"] = _grow(actor_sd["trunk.0.weight"], *obs_cols,
-                                           fresh=actor.state_dict()["trunk.0.weight"] if random else None)
+        actor_sd["trunk.0.weight"] = _grow(
+            actor_sd["trunk.0.weight"], *obs_cols,
+            fresh=actor.state_dict()["trunk.0.weight"] if random else None)
         if load_critic:
             critic_cols = state_cols if cfg.rl.critic_input == "global" else obs_cols
-            critic_sd["body.0.weight"] = _grow(critic_sd["body.0.weight"], *critic_cols,
-                                               fresh=critic.state_dict()["body.0.weight"] if random else None)
+            critic_sd["body.0.weight"] = _grow(
+                critic_sd["body.0.weight"], *critic_cols,
+                fresh=critic.state_dict()["body.0.weight"] if random else None)
 
     loaded = actor.load_state_dict(actor_sd, strict=False)  # missing heads keep their fresh init
     if loaded.unexpected_keys:
-        raise ValueError(f"the checkpoint's actor has parameters this config doesn't: {loaded.unexpected_keys}")
+        raise ValueError(
+            f"the checkpoint's actor has parameters this config doesn't: {loaded.unexpected_keys}"
+        )
     if load_critic:
         critic.load_state_dict(critic_sd)
     return list(loaded.missing_keys), load_critic
@@ -155,7 +163,8 @@ def _column_map(old_blocks, new_blocks) -> tuple[np.ndarray, np.ndarray, int]:
     stays slot k; slots past the new count are dropped, 2026-11-09; feature f of a slot stays
     feature f, and features past the new width are dropped, 2026-11-13), and the new input size."""
     kept, mapping, old_start, new_start = [], [], 0, 0
-    for (name, width, old_slots), (new_name, new_width, new_slots) in zip(old_blocks, new_blocks, strict=True):
+    for (name, width, old_slots), (new_name, new_width, new_slots) in zip(old_blocks, new_blocks,
+                                                                          strict=True):
         assert name == new_name
         ### AI GENERATED (2026-11-13: per-slot features may be added or dropped at the end)
         for slot in range(min(old_slots, new_slots)):

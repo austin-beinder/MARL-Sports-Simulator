@@ -15,9 +15,8 @@
 #     holder, and with rl.passer_obs a per-blue "passed it" flag. (Austin Beinder)
 #   - 2026-11-13: Each blue's optional "calling" (its latest call), and with
 #     rl.call_enabled a per-blue call flag. (Austin Beinder)
-# Prompt summary: Implement Phase 3 step 4 of the issue #7 plan (state
-#   flattener + obs builder).
-# Human review:   Pending review
+#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters; no
+#     behaviour change. (Austin Beinder)
 # ==============================================================================
 """Strict parsing of the global state ``s`` (ICD §5) and the flattening spec (#11).
 
@@ -58,7 +57,8 @@ from marl.common.config import SharedConfig
 _TOP_KEYS = frozenset({"step", "blue", "red", "ball"})
 _ENTITY_KEYS = frozenset({"id", "pos", "vel", "has_possession"})
 _BALL_KEYS = frozenset({"pos", "vel"})
-_BALL_OPTIONAL = frozenset({"passer"})  # AI GENERATED (2026-11-13): hand-built states may leave it out
+# AI GENERATED (2026-11-13): hand-built states may leave it out
+_BALL_OPTIONAL = frozenset({"passer"})
 _BLUE_OPTIONAL = frozenset({"calling"})  # AI GENERATED (2026-11-13): likewise
 
 
@@ -74,8 +74,10 @@ class StateArrays:
     red_poss: np.ndarray  # [M] bool
     ball_pos: np.ndarray  # [2]
     ball_vel: np.ndarray  # [2]
-    passer: int | None = None  # AI GENERATED (2026-11-13): the blue who passed the ball to its holder
-    blue_calling: np.ndarray | None = None  # AI GENERATED (2026-11-13): [N] bool, None = nobody calls
+    # AI GENERATED (2026-11-13): the blue who passed the ball to its holder
+    passer: int | None = None
+    # AI GENERATED (2026-11-13): [N] bool, None = nobody calls
+    blue_calling: np.ndarray | None = None
 
     @property
     def ball_held(self) -> bool:
@@ -87,7 +89,8 @@ def parse_state(s: Any, n_blue: int, n_red: int) -> StateArrays:
     if not isinstance(s, dict):
         raise TypeError(f"state must be a dict, got {type(s).__name__}")
     _check_keys(s, _TOP_KEYS, "s")
-    blue = _entities(s["blue"], n_blue, "s['blue']", _BLUE_OPTIONAL)  # AI GENERATED (2026-11-13: calling)
+    # AI GENERATED (2026-11-13: calling)
+    blue = _entities(s["blue"], n_blue, "s['blue']", _BLUE_OPTIONAL)
     red = _entities(s["red"], n_red, "s['red']")
     ball = s["ball"]
     if not isinstance(ball, dict):
@@ -95,8 +98,11 @@ def parse_state(s: Any, n_blue: int, n_red: int) -> StateArrays:
     ### AI GENERATED (2026-11-13)
     _check_keys(ball, _BALL_KEYS | (_BALL_OPTIONAL & set(ball)), "s['ball']")
     passer = ball.get("passer")
-    if passer is not None and (not isinstance(passer, int) or isinstance(passer, bool) or not 0 <= passer < n_blue):
-        raise ValueError(f"s['ball']['passer'] must be None or a blue id in [0, {n_blue}), got {passer!r}")
+    if passer is not None and (not isinstance(passer, int) or isinstance(passer, bool)
+                               or not 0 <= passer < n_blue):
+        raise ValueError(
+            f"s['ball']['passer'] must be None or a blue id in [0, {n_blue}), got {passer!r}"
+        )
     ### END AI GENERATED
     return StateArrays(
         blue_pos=blue[0],
@@ -113,10 +119,13 @@ def parse_state(s: Any, n_blue: int, n_red: int) -> StateArrays:
 
 
 ### AI GENERATED
-def state_blocks(n_blue: int, n_red: int, passer_obs: bool = False, call_obs: bool = False) -> list[tuple[str, int, int]]:
+def state_blocks(
+    n_blue: int, n_red: int, passer_obs: bool = False, call_obs: bool = False
+) -> list[tuple[str, int, int]]:
     """The flattening spec above as (block, numbers per slot, slots), in order. With
     ``passer_obs`` / ``call_obs`` (2026-11-13) each blue's slot ends with those flags."""
-    return [("blues", 5 + int(passer_obs) + int(call_obs), n_blue), ("reds", 5, n_red), ("ball", 4, 1)]
+    return [("blues", 5 + int(passer_obs) + int(call_obs), n_blue), ("reds", 5, n_red),
+            ("ball", 4, 1)]
 
 
 def blue_flags(st: StateArrays, n_blue: int, passer_obs: bool, call_obs: bool) -> np.ndarray:
@@ -129,7 +138,8 @@ def blue_flags(st: StateArrays, n_blue: int, passer_obs: bool, call_obs: bool) -
             passed[st.passer] = 1.0
         cols.append(passed)
     if call_obs:
-        cols.append(np.zeros(n_blue) if st.blue_calling is None else st.blue_calling.astype(np.float64))
+        cols.append(np.zeros(n_blue) if st.blue_calling is None
+                    else st.blue_calling.astype(np.float64))
     return np.stack(cols, axis=1) if cols else np.zeros((n_blue, 0))
 ### END AI GENERATED
 
@@ -145,7 +155,9 @@ class StateFlattener:
         self._half = np.asarray(cfg.field_size, dtype=np.float64) / 2.0
         self._vmax = cfg.max_speed  # the single velocity unit
         self.passer_obs, self.call_obs = passer_obs, call_obs  # AI GENERATED (2026-11-13)
-        self.dim = sum(width * slots for _, width, slots in state_blocks(self.n_blue, self.n_red, passer_obs, call_obs))  # AI GENERATED
+        # AI GENERATED
+        self.dim = sum(width * slots for _, width, slots
+                       in state_blocks(self.n_blue, self.n_red, passer_obs, call_obs))
 
     def __call__(self, st: StateArrays) -> np.ndarray:
         parts = []
@@ -155,7 +167,9 @@ class StateFlattener:
         )):
             block = np.concatenate([pos / self._half, vel / self._vmax, poss[:, None].astype(np.float64)], axis=1)
             if team == 0:  # AI GENERATED (2026-11-13): the blues' flags last
-                block = np.concatenate([block, blue_flags(st, self.n_blue, self.passer_obs, self.call_obs)], axis=1)
+                block = np.concatenate(
+                    [block, blue_flags(st, self.n_blue, self.passer_obs, self.call_obs)], axis=1
+                )
             parts.append(block.reshape(-1))  # row-major: entity by entity, in id order
         parts.append(st.ball_pos / self._half)
         parts.append(st.ball_vel / self._vmax)
@@ -172,7 +186,9 @@ def _check_keys(d: dict, expected: frozenset[str], where: str) -> None:
         raise ValueError(f"{where}: unknown keys {unknown}, missing keys {missing}{hint}")
 
 
-def _entities(lst: Any, n: int, where: str, optional: frozenset[str] = frozenset()) -> tuple[np.ndarray, ...]:
+def _entities(
+    lst: Any, n: int, where: str, optional: frozenset[str] = frozenset()
+) -> tuple[np.ndarray, ...]:
     if not isinstance(lst, list) or len(lst) != n:
         raise ValueError(f"{where} must be a list of length {n}")
     pos = np.zeros((n, 2))
@@ -182,7 +198,8 @@ def _entities(lst: Any, n: int, where: str, optional: frozenset[str] = frozenset
     for i, e in enumerate(lst):
         if not isinstance(e, dict):
             raise TypeError(f"{where}[{i}] must be a dict")
-        _check_keys(e, _ENTITY_KEYS | (optional & set(e)), f"{where}[{i}]")  # AI GENERATED (optional keys)
+        # AI GENERATED (optional keys)
+        _check_keys(e, _ENTITY_KEYS | (optional & set(e)), f"{where}[{i}]")
         ### AI GENERATED (2026-11-13)
         if "calling" in e:
             if not isinstance(e["calling"], bool):

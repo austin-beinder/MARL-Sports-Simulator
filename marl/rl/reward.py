@@ -53,9 +53,10 @@
 #   - 2026-11-14: The dead_ball shaping term (claim's urgency for the catch
 #     stages), and receiver_spacing leaves out the blue nearest a dead ball,
 #     so fetching it doesn't cost the team its spacing. (Austin Beinder)
-# Prompt summary: Implement Phase 3 step 5 of the issue #7 plan (reward
-#   module + registry).
-# Human review:   Pending review
+#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters and fixed
+#     the new warnings (a module-level disable of unused-argument and
+#     redefined-outer-name for the shared term signature); no behaviour
+#     change. (Austin Beinder)
 # ==============================================================================
 """RL-side reward module (design #14, #15). The env never computes rewards.
 
@@ -103,9 +104,10 @@ Pass practice (2026-11-09; one kick per episode, no red, frozen blues):
 
 * ``pass_practice`` (base) -- paid once, on the episode's last step: 1 for a catch (with
   ``rl.reward.pass_length_bonus``, 2026-11-10: ``0.75 + 0.25 * min(1, length / 4 m)``, so longer
-  passes pay a bit more), otherwise ``0.5 * exp(-gap / 1 m)``, where gap is how close the ball's path came to the
-  edge of a teammate (closest approach, so a kick in the right direction scores even if it is
-  too soft or too hard). 0 if the holder never kicked. A catch always beats a near miss.
+  passes pay a bit more), otherwise ``0.5 * exp(-gap / 1 m)``, where gap is how close the ball's
+  path came to the edge of a teammate (closest approach, so a kick in the right direction scores
+  even if it is too soft or too hard). 0 if the holder never kicked. A catch always beats a near
+  miss.
 
 Pass practice to the time limit (2026-11-11; pass_practice_moving, no red, blues free to move):
 
@@ -124,10 +126,11 @@ Pass practice to the time limit (2026-11-11; pass_practice_moving, no red, blues
   than its teammates. Now the call head has its own reward, per blue, scored in hindsight
   (``call_values``): a call at step t is worth +1 to blue i if the next blue pickup, within
   CALL_LEAD steps, is i's; -0.5 if it is a teammate's; 0 if nobody picks the ball up in time;
-  less 0.02 for calling at all (CALL_RIGHT, CALL_WRONG, CALL_STEP_COST). The PPO update scores the call head with that alone
-  (``Actor.evaluate_split``), weighted by this term's coef (``RewardModule.call_coef``); the
-  other heads keep the team advantage. The term function below is what the logs (``called_share``,
-  ``miscalled_per_pickup``) measure; it never adds to the team reward.
+  less 0.02 for calling at all (CALL_RIGHT, CALL_WRONG, CALL_STEP_COST). The PPO update scores
+  the call head with that alone (``Actor.evaluate_split``), weighted by this term's coef
+  (``RewardModule.call_coef``); the other heads keep the team advantage. The term function below
+  is what the logs (``called_share``, ``miscalled_per_pickup``) measure; it never adds to the
+  team reward.
 * ``receiver_spacing`` (shaping, NOT potential-based) -- every step, how close each pair of blues
   is to ``rl.reward.spacing_distance`` apart (3 m by default): the mean over pairs of the tent
   ``max(0, 1 - |d - target| / target)``, 0 for blues on top of each other or twice the target
@@ -179,6 +182,10 @@ from marl.common.config import (
     Config,
 )
 
+# Every term shares one fixed signature (above), so most ignore some of their arguments, and
+# its effective_terminal parameter shares the name of the helper below on purpose.
+# pylint: disable=unused-argument,redefined-outer-name
+
 Term = Callable[[dict, dict, dict, bool, bool, dict, Config], float]
 
 
@@ -226,16 +233,21 @@ def pbrs_ball_acquisition(s, actions, s_next, effective_terminal, truncated, inf
 class PassStep(NamedTuple):
     """One step's pass bookkeeping, as the pass terms see it in ``info["pass"]``."""
 
-    kicker: int | None  # the blue whose kick was in play during this step (None: no blue kick in play)
+    # the blue whose kick was in play during this step (None: no blue kick in play)
+    kicker: int | None
     completed: bool  # a different blue picked that kick up this step
     passes: int  # passes completed this episode, this step's included
     # 2026-11-09: the closest the ball's path has come to another blue's centre (m) since the
     # latest kick; inf before any kick
     closest: float = math.inf
-    length: float = 0.0  # 2026-11-10: how far the latest completed pass went, kick point to catch point (m)
-    returned: bool = False  # 2026-11-13: this step's pass went straight back to the blue who passed to the kicker
-    stopped: bool = False  # 2026-11-13: the kick in play has come to a stop loose (it can't reach anyone by itself)
-    call_credit: float = 0.0  # 2026-11-13: this step's pickups: the getter's call less the others' (see CALL_LEAD)
+    # 2026-11-10: how far the latest completed pass went, kick point to catch point (m)
+    length: float = 0.0
+    # 2026-11-13: this step's pass went straight back to the blue who passed to the kicker
+    returned: bool = False
+    # 2026-11-13: the kick in play has come to a stop loose (it can't reach anyone by itself)
+    stopped: bool = False
+    # 2026-11-13: this step's pickups: the getter's call less the others' (see CALL_LEAD)
+    call_credit: float = 0.0
     callers: int = 0  # 2026-11-13: blues calling in s_next
 
 
@@ -256,13 +268,16 @@ PASS_REACH = 0.5
 class PassMemory:
     """Per-episode memory for the pass terms; ``update`` it once per step, in order."""
 
-    kicker: int | None = None  # the blue whose kick is in play (the ball is loose, or rebounded to them)
+    # the blue whose kick is in play (the ball is loose, or rebounded to them)
+    kicker: int | None = None
     passes: int = 0
     closest: float = math.inf  # 2026-11-09: see PassStep.closest
-    kick_point: tuple[float, float] | None = None  # 2026-11-10: where the ball in play was kicked from
+    # 2026-11-10: where the ball in play was kicked from
+    kick_point: tuple[float, float] | None = None
     length: float = 0.0  # 2026-11-10: see PassStep.length
     min_distance: float = 0.0  # 2026-11-10: rl.reward.min_pass_distance (m); 0 = no minimum
-    kicks: int = 0  # 2026-11-11: blue kicks this episode (the pass completion rate is passes / kicks)
+    # 2026-11-11: blue kicks this episode (the pass completion rate is passes / kicks)
+    kicks: int = 0
     # 2026-11-11: the blues who stood min_distance or more from the kick point at the latest kick
     # (the only ones who can complete it); None = anyone (no minimum, or no state to tell from)
     receivers: frozenset[int] | None = None
@@ -280,7 +295,8 @@ class PassMemory:
     miscalled: float = 0.0
 
     def _far_enough(self, ball) -> bool:  # AI GENERATED (2026-11-10)
-        """The ball is min_distance from the kick point (always, with no minimum or no kick point)."""
+        """The ball is min_distance from the kick point (always, with no minimum or no kick
+        point)."""
         return (self.min_distance <= 0 or self.kick_point is None
                 or math.dist(ball, self.kick_point) >= self.min_distance)
 
@@ -291,20 +307,25 @@ class PassMemory:
 
     def update(self, info: dict, s: dict | None = None, s_next: dict | None = None) -> PassStep:
         """``s`` and ``s_next`` (2026-11-09) feed the closest approach; without them it stays inf.
-        They also give the kick point (2026-11-10); without them every catch counts, however short."""
-        in_play, completed, returned = self.kicker, False, False  # AI GENERATED (2026-11-13: returned)
+        They also give the kick point (2026-11-10); without them every catch counts, however
+        short."""
+        # AI GENERATED (2026-11-13: returned)
+        in_play, completed, returned = self.kicker, False, False
         for event in info["events"]:
             if event["type"] == "kick":
                 self.kicker = in_play = event["agent"][1]  # blue kicks are the only kicks (ICD §6)
                 self.kicks += 1  # AI GENERATED (2026-11-11)
                 self.closest = math.inf  # a new kick: measure its path from scratch
-                self.kick_point = tuple(s["ball"]["pos"][:2]) if s is not None else None  # AI GENERATED (2026-11-10)
+                # AI GENERATED (2026-11-10)
+                self.kick_point = tuple(s["ball"]["pos"][:2]) if s is not None else None
                 ### AI GENERATED (2026-11-11: who was far enough away to receive it)
                 self.receivers = None if self.min_distance <= 0 or s is None else frozenset(
                     b["id"] for b in s["blue"]
-                    if b["id"] != self.kicker and math.dist(b["pos"][:2], self.kick_point) >= self.min_distance)
+                    if b["id"] != self.kicker
+                    and math.dist(b["pos"][:2], self.kick_point) >= self.min_distance)
                 ### END AI GENERATED
-                self.return_to = s["ball"].get("passer") if s is not None else None  # AI GENERATED (2026-11-13)
+                # AI GENERATED (2026-11-13)
+                self.return_to = s["ball"].get("passer") if s is not None else None
                 self.stopped = False  # AI GENERATED (2026-11-13): a new kick is moving
             elif event["type"] == "possession_change" and event["to"] is not None:
                 to = event["to"]
@@ -312,10 +333,12 @@ class PassMemory:
                 caught_at = s_next["ball"]["pos"][:2] if s_next is not None else None
                 if (to[0] == "blue" and self.kicker is not None and to[1] != self.kicker
                         and (caught_at is None or self._far_enough(caught_at))
-                        and (self.receivers is None or to[1] in self.receivers)):  # AI GENERATED (2026-11-11)
+                        # AI GENERATED (2026-11-11)
+                        and (self.receivers is None or to[1] in self.receivers)):
                     completed = True
                     self.passes += 1
-                    self.length = math.dist(caught_at, self.kick_point) if caught_at and self.kick_point else 0.0
+                    self.length = (math.dist(caught_at, self.kick_point)
+                                   if caught_at and self.kick_point else 0.0)
                     ### AI GENERATED (2026-11-13: a pass straight back)
                     returned = to[1] == self.return_to
                     self.returns += returned
@@ -325,10 +348,12 @@ class PassMemory:
         if in_play is not None and s is not None and s_next is not None:
             a, b = s["ball"]["pos"], s_next["ball"]["pos"]
             for blue in s_next["blue"]:
-                if blue["id"] != in_play and self._a_target(blue["pos"]):  # AI GENERATED (2026-11-10)
+                # AI GENERATED (2026-11-10)
+                if blue["id"] != in_play and self._a_target(blue["pos"]):
                     self.closest = min(self.closest, _segment_distance(blue["pos"], a, b))
         ### AI GENERATED (2026-11-13: a kick that has stopped loose is over for kicker_clearance)
-        vel = s_next["ball"].get("vel") if s_next is not None else None  # hand-built test states may lack it
+        # hand-built test states may lack it
+        vel = s_next["ball"].get("vel") if s_next is not None else None
         if (self.kicker is not None and vel is not None and not _anyone_holds(s_next)
                 and math.hypot(*vel[:2]) < DEAD_BALL_SPEED):
             self.stopped = True
@@ -385,7 +410,8 @@ def _ball_dead(s: dict) -> bool:  # AI GENERATED (2026-11-14): loose and stopped
 
 
 def passing_drill(s, actions, s_next, effective_terminal, truncated, info, cfg) -> float:
-    return float(info["pass"].passes) if _blue_holds(s_next) else 0.0  # AI GENERATED (2026-11-08): grows per catch
+    # AI GENERATED (2026-11-08): grows per catch
+    return float(info["pass"].passes) if _blue_holds(s_next) else 0.0
 
 
 def _teammate_distance(s: dict, kicker: int) -> float:
@@ -475,7 +501,8 @@ def pass_catch(s, actions, s_next, effective_terminal, truncated, info, cfg) -> 
     p = info["pass"]
     if not p.completed:
         return 0.0
-    return _catch_value(p, cfg) * (cfg.rl.reward.return_pass_factor if p.returned else 1.0)  # AI GENERATED (2026-11-13)
+    # AI GENERATED (2026-11-13)
+    return _catch_value(p, cfg) * (cfg.rl.reward.return_pass_factor if p.returned else 1.0)
 
 
 # receiver_spacing: how close each pair of blues is to rl.reward.spacing_distance apart, averaged
@@ -605,8 +632,10 @@ def dead_ball(s, actions, s_next, effective_terminal, truncated, info, cfg) -> f
 ### END AI GENERATED
 
 
-PASS_TERMS = frozenset({"passing_drill", "pass_progress", "pass_completed", "pass_practice",  # the terms that read info["pass"]
-                        "kicker_clearance", "pass_catch", "call_accuracy"})  # AI GENERATED (2026-11-11; call_accuracy 2026-11-13)
+# the terms that read info["pass"]
+# AI GENERATED (2026-11-11; call_accuracy 2026-11-13)
+PASS_TERMS = frozenset({"passing_drill", "pass_progress", "pass_completed", "pass_practice",
+                        "kicker_clearance", "pass_catch", "call_accuracy"})
 ### END AI GENERATED
 
 
@@ -690,11 +719,14 @@ class RewardModule:
         info: dict,
         memory: PassMemory | None = None,  # AI GENERATED (2026-11-08)
     ) -> RewardParts:
-        ### AI GENERATED (2026-11-08: the pass terms read info["pass"], built from the episode's memory)
+        ### AI GENERATED (2026-11-08: the pass terms read info["pass"], built from the episode's
+        ### memory)
         if memory is not None:
-            info = {**info, "pass": memory.update(info, s, s_next)}  # s, s_next: closest approach (2026-11-09)
+            # s, s_next: closest approach (2026-11-09)
+            info = {**info, "pass": memory.update(info, s, s_next)}
         elif self.needs_memory:
-            raise ValueError("this reward has pass terms: pass the episode's memory (RewardModule.new_episode())")
+            raise ValueError("this reward has pass terms: pass the episode's memory "
+                             "(RewardModule.new_episode())")
         ### END AI GENERATED
         args = (s, actions, s_next, effective_terminal, truncated, info, self._cfg)
         base = self._base(*args)

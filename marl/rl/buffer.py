@@ -11,9 +11,8 @@
 #   - 2026-11-14: The call head's own per-blue advantage: each step's blue
 #     pickup and call log-prob, compute_call_advantages, and the call fields
 #     of a Minibatch. (Austin Beinder)
-# Prompt summary: Implement Phase 3 step 7 of the issue #7 plan (buffer +
-#   GAE) with hand-built boundary tests.
-# Human review:   Pending review
+#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters; no
+#     behaviour change. (Austin Beinder)
 # ==============================================================================
 """Rollout buffer (design #20).
 
@@ -85,7 +84,8 @@ class RolloutBuffer:
         self.truncated = np.zeros(T, dtype=bool)
         self.effective_terminal = np.zeros(T, dtype=bool)
         ### AI GENERATED (2026-11-14: the call head's own advantage)
-        self.pickups = np.full(T, -1, dtype=np.int64)  # the blue who got the ball in step t (-1: nobody)
+        # the blue who got the ball in step t (-1: nobody)
+        self.pickups = np.full(T, -1, dtype=np.int64)
         self.call_log_probs = np.zeros((T, N), dtype=np.float32)
         self.call_advantages = np.zeros((T, N), dtype=np.float32)
         self.call_valid = np.zeros((T, N), dtype=np.float32)
@@ -114,7 +114,8 @@ class RolloutBuffer:
         truncated: bool,
         effective_terminal: bool,
         pickup: int | None = None,  # AI GENERATED (2026-11-14): the blue who got the ball this step
-        call_log_prob: Any = None,  # AI GENERATED (2026-11-14): [N], the call head's part of log_prob
+        # AI GENERATED (2026-11-14): [N], the call head's part of log_prob
+        call_log_prob: Any = None,
     ) -> None:
         """Store one control step (all N agents)."""
         if self.full:
@@ -139,7 +140,8 @@ class RolloutBuffer:
         self.effective_terminal[t] = effective_terminal
         ### AI GENERATED (2026-11-14)
         self.pickups[t] = -1 if pickup is None else pickup
-        self.call_log_probs[t] = 0.0 if call_log_prob is None else _row(call_log_prob, (self.n_agents,), "call_log_prob")
+        self.call_log_probs[t] = (0.0 if call_log_prob is None
+                                  else _row(call_log_prob, (self.n_agents,), "call_log_prob"))
         ### END AI GENERATED
         self.t += 1
 
@@ -171,7 +173,8 @@ class RolloutBuffer:
             raise RuntimeError("the buffer has no call head")
         q, valid = call_values(self.pickups, self.terminated | self.truncated, self.n_agents)
         called = self.samples["call"][..., 0]
-        p_taken = np.exp(self.call_log_probs.astype(np.float64))  # the chance of the call actually made
+        # the chance of the call actually made
+        p_taken = np.exp(self.call_log_probs.astype(np.float64))
         p_call = np.where(called > 0.5, p_taken, 1.0 - p_taken)
         self.call_advantages[:] = q * (called - p_call)
         self.call_valid[:] = valid
@@ -193,7 +196,9 @@ class RolloutBuffer:
         samples = {h: flat(x) for h, x in self.samples.items()}
         log_probs, values = flat(self.log_probs), flat(self.values)
         advantages, returns = flat(self.advantages), flat(self.returns)
-        call_lp, call_adv, call_valid = flat(self.call_log_probs), flat(self.call_advantages), flat(self.call_valid)  # AI GENERATED
+        # AI GENERATED
+        call_lp, call_adv, call_valid = (flat(self.call_log_probs), flat(self.call_advantages),
+                                         flat(self.call_valid))
         perm = torch.from_numpy(rng.permutation(n))
         for k in range(num_minibatches):
             j = perm[k * size : (k + 1) * size]

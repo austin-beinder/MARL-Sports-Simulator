@@ -19,14 +19,14 @@
 #     in s (parse_calls). (Austin Beinder)
 #   - 2026-11-14: The claim_ball scenario: a loose ball, no red, terminated
 #     when a blue picks it up. (Austin Beinder)
+#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters and set
+#     _calls in __init__ (attribute-defined-outside-init); no behaviour
+#     change. (Austin Beinder)
 #   - 2026-10-10: Generated this entire file: a kinematic 2D mock env that
 #     implements docs/ICD.md v0.2 (action repeat, per-tick termination, walls,
 #     possession radius, carry slowdown, pursuit red, goto_target scenario,
 #     strict action validation), following design #8, #16, #19, #22 and
 #     Phase 3 decision H.
-# Prompt summary: Implement Phase 3 step 3 of the issue #7 plan (mock env) so
-#   the RL layer can be developed without the PyBullet env.
-# Human review:   Pending review
 # ==============================================================================
 """Kinematic 2D mock of the keep-away env, implementing ``docs/ICD.md`` (v0.2).
 
@@ -63,14 +63,20 @@ class MockEnv:
     """ICD-conformant mock env. ``reset`` and ``step`` speak plain Python types."""
 
     def __init__(self, cfg: SharedConfig):
-        if cfg.scenario in ("passing_drill", "pass_practice", "pass_practice_moving"):  # AI GENERATED (2026-11-08)
-            raise NotImplementedError(f"the mock env can't run {cfg.scenario}: it has no kicks (use the PyBullet env)")
+        # AI GENERATED (2026-11-08)
+        if cfg.scenario in ("passing_drill", "pass_practice", "pass_practice_moving"):
+            raise NotImplementedError(
+                f"the mock env can't run {cfg.scenario}: it has no kicks (use the PyBullet env)"
+            )
         self.cfg = cfg
         self.n_blue, self.n_red = cfg.n_blue, cfg.n_red
         half = np.asarray(cfg.field_size, dtype=float) / 2.0
         self._lo, self._hi = -half + cfg.player_radius, half - cfg.player_radius
-        self._possession = cfg.scenario in ("keepaway", "claim_ball")  # goto_target: ball is an immobile target  # AI GENERATED (claim_ball)
+        # goto_target: ball is an immobile target  # AI GENERATED (claim_ball)
+        self._possession = cfg.scenario in ("keepaway", "claim_ball")
         self._ready = False
+        # AI GENERATED (2026-11-15): nobody calls before the first step (reset sets it again)
+        self._calls: list[bool] = [False] * self.n_blue
 
     # --- API (ICD §4) ----------------------------------------------------------
     def reset(self, seed: int, options: dict[str, Any] | None = None) -> tuple[dict, dict]:
@@ -108,7 +114,8 @@ class MockEnv:
         if not self._ready:
             raise RuntimeError("call reset() before step(); there is no auto-reset (ICD §4)")
         move, triggers, _ = self._parse_actions(actions)
-        self._calls = parse_calls(actions, self.n_blue)  # AI GENERATED (2026-11-13): echoed in s (ICD §5)
+        # AI GENERATED (2026-11-13): echoed in s (ICD §5)
+        self._calls = parse_calls(actions, self.n_blue)
 
         # Start-of-step rule (ICD §3): kicks use possession at the start of the block.
         for i, trig in enumerate(triggers):
@@ -173,9 +180,11 @@ class MockEnv:
     # --- Physics -----------------------------------------------------------------
     def _tick(self, move: np.ndarray) -> None:
         cfg, dt = self.cfg, self.cfg.physics_dt
-        speed = np.full(self.n_blue, cfg.max_speed * cfg.free_speed_factor)  # AI GENERATED (free_speed_factor)
+        # AI GENERATED (free_speed_factor)
+        speed = np.full(self.n_blue, cfg.max_speed * cfg.free_speed_factor)
         if self._holder is not None and self._holder[0] == "blue":
-            speed[self._holder[1]] = cfg.max_speed * cfg.carry_speed_factor  # AI GENERATED (was *=, now not stacked)
+            # AI GENERATED (was *=, now not stacked)
+            speed[self._holder[1]] = cfg.max_speed * cfg.carry_speed_factor
         blue_vel = move * speed[:, None]
 
         red_vel = np.zeros((self.n_red, 2))
@@ -229,7 +238,8 @@ class MockEnv:
         return {"type": "possession_change", "from": prev, "to": new}
 
     # --- ICD plumbing -------------------------------------------------------------
-    def _parse_actions(self, actions: Any) -> tuple[np.ndarray, list[int], np.ndarray]:  # AI GENERATED (kick vectors)
+    # AI GENERATED (kick vectors)
+    def _parse_actions(self, actions: Any) -> tuple[np.ndarray, list[int], np.ndarray]:
         ### AI GENERATED
         return parse_actions(actions, self.n_blue)
         ### END AI GENERATED
@@ -284,8 +294,13 @@ def parse_actions(actions: Any, n_blue: int) -> tuple[np.ndarray, list[int], np.
         where = f"actions['blue'][{i}]"
         if not isinstance(a, dict):
             raise TypeError(f"{where} must be a dict")
-        if not {"move", "kick_trigger", "kick_vec"} <= set(a) <= {"move", "kick_trigger", "kick_vec", "call"}:  # AI GENERATED (call)
-            raise ValueError(f"{where} must have keys move, kick_trigger, kick_vec (and optionally call); got {sorted(a)}")
+        # AI GENERATED (call)
+        if not ({"move", "kick_trigger", "kick_vec"}
+                <= set(a) <= {"move", "kick_trigger", "kick_vec", "call"}):
+            raise ValueError(
+                f"{where} must have keys move, kick_trigger, kick_vec (and optionally call); "
+                f"got {sorted(a)}"
+            )
         ### AI GENERATED (2026-11-13: the optional call, ICD §6)
         if "call" in a and (type(a["call"]) is not int or a["call"] not in (0, 1)):
             raise ValueError(f"{where}['call'] must be an int 0 or 1, got {a['call']!r}")

@@ -6,9 +6,6 @@ Author:  Austin Beinder
 Usage:
   2026-11-13: Generated this entire file: how to plot a curriculum run's
     progress with scripts/plot.py --curriculum.
-Prompt summary: Put the curriculum progress plots in scripts/plot.py as options,
-  with a short readme of the commands.
-Human review:   Pending review
 -->
 
 # Plotting

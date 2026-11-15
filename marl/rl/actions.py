@@ -11,9 +11,8 @@
 #     samples, and actions_from_samples maps a whole sample dict. (Austin Beinder)
 #   - 2026-11-13: The call head's sample becomes the optional "call" key.
 #     (Austin Beinder)
-# Prompt summary: Implement Phase 3 step 6 of the issue #7 plan (actor/critic
-#   + Beta movement head + action adapter).
-# Human review:   Pending review
+#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters; no
+#     behaviour change. (Austin Beinder)
 # ==============================================================================
 """Action adapter: clamped Beta samples -> the ICD §6 action dict (plain Python).
 
@@ -59,7 +58,8 @@ def to_env_actions(move01: Any, trigger: Any = None, kick01: Any = None, call: A
             raise ValueError(f"expected {n} kick samples, got {len(kick)}")
     out = {
         "blue": [
-            {"move": [float(mx), float(my)], "kick_trigger": trig, "kick_vec": [float(kx), float(ky)]}
+            {"move": [float(mx), float(my)], "kick_trigger": trig,
+             "kick_vec": [float(kx), float(ky)]}
             for (mx, my), trig, (kx, ky) in zip(frac, triggers, kick)
         ]
     }
@@ -81,7 +81,8 @@ def actions_from_samples(samples: dict[str, Any]) -> dict:
 
     call = arr(samples["call"]) if "call" in samples else None  # AI GENERATED (2026-11-13)
     if "kick_trigger" in samples:
-        return to_env_actions(arr(samples["move"]), arr(samples["kick_trigger"]), arr(samples["kick_vec"]), call=call)
+        return to_env_actions(arr(samples["move"]), arr(samples["kick_trigger"]),
+                              arr(samples["kick_vec"]), call=call)
     return to_env_actions(arr(samples["move"]), call=call)  # AI GENERATED (call)
 
 

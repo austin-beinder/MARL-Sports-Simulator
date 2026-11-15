@@ -14,9 +14,8 @@
 #   - 2026-11-13: rl.passer_obs: a "passed the ball to its holder" flag at the
 #     end of the self block and of each teammate slot. (Austin Beinder)
 #   - 2026-11-13: rl.call_enabled: a "calling" flag after it. (Austin Beinder)
-# Prompt summary: Implement Phase 3 step 4 of the issue #7 plan (state
-#   flattener + obs builder).
-# Human review:   Pending review
+#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters; no
+#     behaviour change. (Austin Beinder)
 # ==============================================================================
 """Actor observations o_i = f(s, i), built RL-side (design #13).
 
@@ -56,22 +55,27 @@ from marl.rl.state import StateArrays, blue_flags  # AI GENERATED (2026-11-13: b
 
 SELF_DIM = 5
 SLOT_DIM = 6
-OWN_POSSESSION = 4  # index of "I hold the ball" in o_i; the actor's kick masks read it  # AI GENERATED
+# index of "I hold the ball" in o_i; the actor's kick masks read it  # AI GENERATED
+OWN_POSSESSION = 4
 
 
 ### AI GENERATED
-def obs_blocks(n_blue: int, n_red: int, passer_obs: bool = False, call_obs: bool = False) -> list[tuple[str, int, int]]:
+def obs_blocks(
+    n_blue: int, n_red: int, passer_obs: bool = False, call_obs: bool = False
+) -> list[tuple[str, int, int]]:
     """The layout above as (block, numbers per slot, slots), in order. ``passer_obs`` and
-    ``call_obs`` (2026-11-13) add their flags at the end of the self block and of each teammate slot."""
+    ``call_obs`` (2026-11-13) add their flags at the end of the self block and of each teammate
+    slot."""
     extra = int(passer_obs) + int(call_obs)
-    return [("self", SELF_DIM + extra, 1), ("teammates", SLOT_DIM + extra, n_blue - 1), ("reds", SLOT_DIM, n_red),
-            ("ball", SLOT_DIM, 1)]
+    return [("self", SELF_DIM + extra, 1), ("teammates", SLOT_DIM + extra, n_blue - 1),
+            ("reds", SLOT_DIM, n_red), ("ball", SLOT_DIM, 1)]
 ### END AI GENERATED
 
 
 class ObsBuilder:
     def __init__(self, cfg: SharedConfig, obs_ordering: str = "distance", obs_mode: str = "full",
-                 passer_obs: bool = False, call_obs: bool = False):  # AI GENERATED (2026-11-13: passer_obs, call_obs)
+                 # AI GENERATED (2026-11-13: passer_obs, call_obs)
+                 passer_obs: bool = False, call_obs: bool = False):
         if obs_ordering != "distance":
             raise NotImplementedError(f"obs_ordering={obs_ordering!r} is interface-only (#13)")
         if obs_mode != "full":
@@ -80,7 +84,9 @@ class ObsBuilder:
         self._half = np.asarray(cfg.field_size, dtype=np.float64) / 2.0
         self._vmax = cfg.max_speed
         self.passer_obs, self.call_obs = passer_obs, call_obs  # AI GENERATED (2026-11-13)
-        self.dim = sum(width * slots for _, width, slots in obs_blocks(self.n_blue, self.n_red, passer_obs, call_obs))  # AI GENERATED
+        # AI GENERATED
+        self.dim = sum(width * slots for _, width, slots
+                       in obs_blocks(self.n_blue, self.n_red, passer_obs, call_obs))
 
     def __call__(self, st: StateArrays) -> np.ndarray:
         """Observations for all blue agents at once: float32 array [N, dim]."""
@@ -92,7 +98,8 @@ class ObsBuilder:
             p, v = st.blue_pos[i], st.blue_vel[i]
             parts = [p / self._half, v / self._vmax, [float(st.blue_poss[i])], flags[i]]
             mates = np.array([j for j in range(self.n_blue) if j != i], dtype=int)
-            parts.append(self._block(p, v, st.blue_pos[mates], st.blue_vel[mates], st.blue_poss[mates], flags[mates]))
+            parts.append(self._block(p, v, st.blue_pos[mates], st.blue_vel[mates],
+                                     st.blue_poss[mates], flags[mates]))
             ### END AI GENERATED
             parts.append(self._block(p, v, st.red_pos, st.red_vel, st.red_poss))
             parts.append(self._slot(p, v, st.ball_pos, st.ball_vel, held))
@@ -103,10 +110,12 @@ class ObsBuilder:
         if len(pos) == 0:  # empty blocks are allowed (n_red = 0, or N = 1)
             return np.zeros(0)
         order = np.argsort(np.linalg.norm(pos - p, axis=1), kind="stable")  # nearest first; ties by id
+        # AI GENERATED (extra)
         return np.concatenate([self._slot(p, v, pos[k], vel[k], float(poss[k]),
-                                          () if extra is None else extra[k]) for k in order])  # AI GENERATED (extra)
+                                          () if extra is None else extra[k]) for k in order])
 
     def _slot(self, p, v, other_pos, other_vel, flag: float, extra=()) -> np.ndarray:
         visible = 1.0  # full observability
         # AI GENERATED (2026-11-13): extra = the slot's passer / call flags, if any, last
-        return np.concatenate([(other_pos - p) / self._half, (other_vel - v) / self._vmax, [flag, visible], extra])
+        return np.concatenate([(other_pos - p) / self._half, (other_vel - v) / self._vmax,
+                               [flag, visible], extra])

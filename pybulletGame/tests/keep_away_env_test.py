@@ -1,5 +1,7 @@
 """
 This test file was AI generated, see the ### AI GENERATED markers.
+AI edit 2026-11-15 (Claude Code, Austin Beinder): pylint cleanup (wrapped lines over 100
+characters, unused unpacked values on the kick tests' lines replaced with _); no behaviour change.
 """
 
 ### AI GENERATED
@@ -191,7 +193,8 @@ class TestCommands(KeepAwayEnvTestCase):
 
 
 class TestKicks(KeepAwayEnvTestCase):
-    # 2026-11-07: kicking. Red stands still far away, and blue starts with the ball on the west side.
+    # 2026-11-07: kicking. Red stands still far away, and blue starts with the ball on the west
+    # side.
     config = KeepAwayConfig(red_gain=0.0)
 
     def setUp(self):
@@ -203,18 +206,20 @@ class TestKicks(KeepAwayEnvTestCase):
         self.assertEqual(self.info["kicks"], [False])
 
     def test_kick_releases_the_ball_in_the_kick_direction(self):
-        observation, reward, terminated, truncated, info = self.env.step([0, 0], kicks=[(4.0, 0.0)])
+        observation, _, _, _, info = self.env.step([0, 0], kicks=[(4.0, 0.0)])
 
         self.assertEqual(info["kicks"], [True])
         self.assertIsNone(self.env.ball.possession_player)
         self.assertGreater(observation["ball"]["velocity"]["x"], 3.5)
         self.assertAlmostEqual(observation["ball"]["velocity"]["y"], 0.0, delta=0.05)
-        self.assertGreater(observation["ball"]["position"]["x"], observation["blue"]["position"]["x"] + 0.45)
+        self.assertGreater(observation["ball"]["position"]["x"],
+                           observation["blue"]["position"]["x"] + 0.45)
 
     def test_no_kick_without_the_ball(self):
-        self.env.reset(options={"blue_position": (-8, 0), "red_position": (8, 5), "ball_position": (0, -3)})
+        self.env.reset(options={"blue_position": (-8, 0), "red_position": (8, 5),
+                                "ball_position": (0, -3)})
         ball = np.array([0.0, -3.0])
-        observation, reward, terminated, truncated, info = self.env.step([0, 3.0], kicks=[(4.0, 0.0)])
+        observation, _, _, _, info = self.env.step([0, 3.0], kicks=[(4.0, 0.0)])
 
         self.assertEqual(info["kicks"], [False])
         self.assertTrue(np.allclose(xy(observation["ball"], "position"), ball, atol=0.01))
@@ -236,7 +241,8 @@ class TestKicks(KeepAwayEnvTestCase):
 
         d, v0, t = self.config.ball_damping, 3.0, 2.0
         a = 1 + 1 / v0
-        expected = math.log((a - math.exp(-d * t)) / (a - 1)) / d  # about 2.6 m with ball_damping 0.4
+        # about 2.6 m with ball_damping 0.4
+        expected = math.log((a - math.exp(-d * t)) / (a - 1)) / d
         self.assertAlmostEqual(observation["ball"]["position"]["x"] - start, expected, delta=0.15)
 
     def test_kicker_can_pick_the_ball_straight_back_up(self):
@@ -247,11 +253,12 @@ class TestKicks(KeepAwayEnvTestCase):
 
         self.assertIs(self.env.ball.possession_player, self.env.blue)
 
-    # 2026-11-07: kicks next to a wall used to put the ball inside the wall, and pybullet pushed it out
-    # of the arena. The default field's inner wall faces are at x = +-10.5 and y = +-6.8.
+    # 2026-11-07: kicks next to a wall used to put the ball inside the wall, and pybullet pushed it
+    # out of the arena. The default field's inner wall faces are at x = +-10.5 and y = +-6.8.
     def kick_from(self, blue_position, kick, steps=30):
-        self.env.reset(options={"blue_position": blue_position, "red_position": (-8, -5), "blue_has_ball": True})
-        observation, reward, terminated, truncated, info = self.env.step([0, 0], kicks=[kick])
+        self.env.reset(options={"blue_position": blue_position, "red_position": (-8, -5),
+                                "blue_has_ball": True})
+        observation, _, _, _, info = self.env.step([0, 0], kicks=[kick])
         kicked = info["kicks"]
         for _ in range(steps):
             observation, *_ = self.env.step([0, 0])
@@ -266,17 +273,18 @@ class TestKicks(KeepAwayEnvTestCase):
         observation, kicked = self.kick_from((10.19, 0), (6.0, 0.0))
 
         self.assertEqual(kicked, [True])  # the kick happened (ICD: trigger + possession)...
-        self.assertIs(self.env.ball.possession_player, self.env.blue)  # ...but the ball came straight back
+        # ...but the ball came straight back
+        self.assertIs(self.env.ball.possession_player, self.env.blue)
         self.assert_ball_inside(observation)
 
     def test_kick_into_a_corner_rebounds_too(self):
-        observation, kicked = self.kick_from((10.19, 6.49), (4.0, 4.0))
+        observation, _ = self.kick_from((10.19, 6.49), (4.0, 4.0))
 
         self.assertIs(self.env.ball.possession_player, self.env.blue)
         self.assert_ball_inside(observation)
 
     def test_kick_along_the_wall_still_works(self):
-        observation, kicked = self.kick_from((10.19, 0), (0.0, 4.0))
+        observation, _ = self.kick_from((10.19, 0), (0.0, 4.0))
 
         self.assertIsNone(self.env.ball.possession_player)
         self.assertGreater(observation["ball"]["position"]["y"], 1.0)
@@ -284,7 +292,7 @@ class TestKicks(KeepAwayEnvTestCase):
 
     def test_kick_toward_a_nearby_wall_stays_inside(self):
         # Enough room for the ball, but it hits the wall almost at once
-        observation, kicked = self.kick_from((9.5, 0), (6.0, 0.0))
+        observation, _ = self.kick_from((9.5, 0), (6.0, 0.0))
 
         self.assertIsNone(self.env.ball.possession_player)
         self.assert_ball_inside(observation)
@@ -370,7 +378,8 @@ class TestStealsDuringContact(KeepAwayEnvTestCase):
     config = KeepAwayConfig(red_gain=0.0)
 
     def press_into_red(self, blue_xy, red_xy, steps=10):
-        self.env.reset(options={"blue_position": blue_xy, "red_position": red_xy, "ball_position": (5.0, 5.0)})
+        self.env.reset(options={"blue_position": blue_xy, "red_position": red_xy,
+                                "ball_position": (5.0, 5.0)})
         push = np.subtract(red_xy, blue_xy)
         for _ in range(steps):
             self.env.step(push)
@@ -391,16 +400,19 @@ class TestStealsDuringContact(KeepAwayEnvTestCase):
         self.give_ball_to(self.env.blue)
         start = self.env.game_steps * self.env.time_step
 
-        observation, reward, terminated, truncated, info = self.step_until_done(push)
+        _, _, _, _, info = self.step_until_done(push)
 
-        self.assertEqual(info["winner"], Team.RED)  # red took it at once and held it for red_win_time
-        self.assertAlmostEqual(info["game_time"] - start, self.config.red_win_time)  # from the first tick
+        # red took it at once and held it for red_win_time
+        self.assertEqual(info["winner"], Team.RED)
+        # from the first tick
+        self.assertAlmostEqual(info["game_time"] - start, self.config.red_win_time)
 
     def test_old_carrier_cant_take_it_back_without_letting_go(self):
         push = self.press_into_red((0.0, 0.0), (0.7, 0.0))
         self.give_ball_to(self.env.red)
         self.env.step(push)
-        self.assertIs(self.env.ball.possession_player, self.env.blue)  # blue was touching red: it takes the ball
+        # blue was touching red: it takes the ball
+        self.assertIs(self.env.ball.possession_player, self.env.blue)
 
         for _ in range(20):  # still pressed together well past the steal cooldown
             self.env.step(push)
@@ -503,7 +515,7 @@ class TestTargetGame(KeepAwayEnvTestCase):
         game = KeepAwayEnv(KeepAwayConfig(n_red=0, n_blue=2))
         try:
             game.reset(options={"ball_holder": 0})
-            observation, reward, terminated, truncated, info = game.step([[0.0, 0.0], [0.0, 0.0]])
+            observation, _, terminated, _, _ = game.step([[0.0, 0.0], [0.0, 0.0]])
             self.assertFalse(terminated)
             self.assertIsNone(observation["red"])
         finally:

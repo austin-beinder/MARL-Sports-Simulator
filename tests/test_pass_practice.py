@@ -30,10 +30,8 @@
 #   - 2026-11-14: call_accuracy no longer adds to the team reward (the call
 #     head has its own, tests/test_calls.py): these tests read the term itself.
 #     (Austin Beinder)
-# Prompt summary: A curriculum stage with three frozen blues and no red, where
-#   the holder is rewarded for kicking the ball near a teammate and most for a
-#   catch; three stages with the teammates further and further away.
-# Human review:   Pending review
+#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters and fixed
+#     the new warnings; no behaviour change. (Austin Beinder)
 # ==============================================================================
 import math
 import types  # AI GENERATED (2026-11-13)
@@ -46,12 +44,17 @@ from marl.common.spawn import START_POSSESSION, sample_spawn
 from marl.envs.mock_env import MockEnv
 from marl.envs.pybullet_env import PyBulletEnv
 from marl.rl.networks import build_networks
-from marl.rl.reward import (KICKER_CLEARANCE, KICKER_REGRAB, PASS_CATCH_MIN, PASS_FULL_LENGTH,  # AI GENERATED
+from marl.rl.reward import (KICKER_CLEARANCE, KICKER_REGRAB, PASS_CATCH_MIN,  # AI GENERATED
+                             PASS_FULL_LENGTH,  # AI GENERATED
                              PASS_MISS_MAX, PASS_MISS_SCALE, PassMemory, PassStep,  # AI GENERATED
-                             RewardModule, kicker_clearance, receiver_spacing)  # AI GENERATED (2026-11-11)
+                             RewardModule, kicker_clearance,  # AI GENERATED (2026-11-11)
+                             receiver_spacing)  # AI GENERATED (2026-11-11)
 from marl.rl.rollout import EpisodeRecord
 from marl.rl.train import train
 from curriculum.runner import Stage, StageCurriculum
+
+# pytest passes the fixtures (cfg, env) in as arguments of the same name.
+# pylint: disable=redefined-outer-name
 
 PRACTICE = {
     "shared": {"scenario": "pass_practice", "n_blue": 3, "n_red": 0, "max_episode_steps": 80},
@@ -74,15 +77,17 @@ def env(cfg):
 
 
 def actions(kicker=None, kick_vec=(0.0, 0.0), move=(0.0, 0.0)):
-    return {"blue": [{"move": list(move), "kick_trigger": int(i == kicker), "kick_vec": list(kick_vec)}
+    return {"blue": [{"move": list(move), "kick_trigger": int(i == kicker),
+                      "kick_vec": list(kick_vec)}
                      for i in range(3)]}
 
 
 def play(env, cfg, first, memory=None):
-    """Step ``first`` then nothing until the episode ends; returns (s, terminated, truncated, base reward sum)."""
+    """Step ``first`` then nothing until the episode ends; returns (s, terminated, truncated,
+    base reward sum)."""
     rm = RewardModule(cfg)
     memory = memory or rm.new_episode()
-    s, total = env._state(), 0.0
+    s, total = env._state(), 0.0  # pylint: disable=protected-access
     act = first
     while True:
         s_next, term, trunc, info = env.step(act)
@@ -95,9 +100,10 @@ def play(env, cfg, first, memory=None):
 # --- Spawn and config -------------------------------------------------------------------
 def spawn(cfg, seed, **options):
     sc = cfg.shared
-    return sample_spawn(np.random.default_rng(seed), scenario="pass_practice", n_blue=sc.n_blue, n_red=sc.n_red,
-                        field_size=sc.field_size, player_radius=sc.player_radius,
-                        possession_radius=sc.possession_radius, options={**sc.start.to_reset_options(), **options})
+    return sample_spawn(np.random.default_rng(seed), scenario="pass_practice", n_blue=sc.n_blue,
+                        n_red=sc.n_red, field_size=sc.field_size, player_radius=sc.player_radius,
+                        possession_radius=sc.possession_radius,
+                        options={**sc.start.to_reset_options(), **options})
 
 
 @pytest.mark.parametrize("distance", [1.5, 2.75, 3.9])
@@ -107,7 +113,8 @@ def test_teammates_stand_pass_distance_from_the_holder(cfg, distance):
     for seed in range(100):
         sp = spawn(cfg, seed, pass_distance=distance)
         blue = np.array(sp.blue_pos)
-        assert sp.start_type == START_POSSESSION and sp.red_pos == () and sp.ball_pos == sp.blue_pos[sp.holder]
+        assert (sp.start_type == START_POSSESSION and sp.red_pos == ()
+                and sp.ball_pos == sp.blue_pos[sp.holder])
         assert np.all(np.abs(blue) <= half + 1e-9)
         d = np.linalg.norm(np.delete(blue, sp.holder, axis=0) - blue[sp.holder], axis=-1)
         assert np.all((d >= 0.85 * distance - 1e-9) & (d <= 1.15 * distance + 1e-9))
@@ -140,27 +147,32 @@ def test_practice_networks_are_frozen(cfg):
 
 # --- Env + reward ------------------------------------------------------------------------
 def test_a_kick_at_a_teammate_is_caught_ends_the_episode_and_pays_1(env, cfg):
-    s0 = env.set_state_for_testing(blue_pos=[[0, 0], [3, 0], [0, 3]], red_pos=[], holder=("blue", 0))
-    s, term, trunc, total, memory = play(env, cfg, actions(kicker=0, kick_vec=(1.0, 0.0), move=(1.0, 1.0)))
+    s0 = env.set_state_for_testing(blue_pos=[[0, 0], [3, 0], [0, 3]], red_pos=[],
+                                   holder=("blue", 0))
+    s, term, trunc, total, memory = play(env, cfg, actions(kicker=0, kick_vec=(1.0, 0.0),
+                                                           move=(1.0, 1.0)))
     assert term and not trunc and s["step"] < 40
     assert s["blue"][1]["has_possession"] and memory.passes == 1
     assert 2.4 < memory.length < 3.1  # caught by blue 1, 3 m out
     assert total == 1.0  # no length bonus by default
-    for b0, b in zip(s0["blue"], s["blue"]):  # nobody moved, though blue 0 asked to (the catch nudges blue 1 ~2 mm)
+    # nobody moved, though blue 0 asked to (the catch nudges blue 1 ~2 mm)
+    for b0, b in zip(s0["blue"], s["blue"]):
         assert b["pos"] == pytest.approx(b0["pos"], abs=0.02)
 
 
 def test_a_miss_ends_once_the_ball_cant_reach_a_teammate(env, cfg):
     def miss(kick_vec):
-        env.set_state_for_testing(blue_pos=[[0, 0], [3, 0], [0, 3]], red_pos=[], holder=("blue", 0), step=0)
+        env.set_state_for_testing(blue_pos=[[0, 0], [3, 0], [0, 3]], red_pos=[],
+                                  holder=("blue", 0), step=0)
         s, term, trunc, total, _ = play(env, cfg, actions(kicker=0, kick_vec=kick_vec))
         assert term and not trunc and not any(b["has_possession"] for b in s["blue"])
         roll_left = math.log1p(math.hypot(*s["ball"]["vel"])) / cfg.shared.ball_damping
-        gaps = [math.dist(b["pos"], s["ball"]["pos"]) - cfg.shared.player_radius for b in s["blue"][1:]]
+        gaps = [math.dist(b["pos"], s["ball"]["pos"]) - cfg.shared.player_radius
+                for b in s["blue"][1:]]
         assert roll_left < min(gaps)  # it can't get to blue 1 or blue 2 any more
         return s, total
 
-    s_near, near = miss((0.4, -0.15))  # slightly wide of blue 1, and soft
+    _, near = miss((0.4, -0.15))  # slightly wide of blue 1, and soft
     s_far, far = miss((-0.5, -0.5))  # away from both
     assert 0 < far < near < PASS_MISS_MAX
     assert s_far["step"] < 30  # it ends long before the time limit, while the ball still rolls
@@ -174,7 +186,8 @@ def test_no_kick_runs_to_the_time_limit_and_pays_nothing(env, cfg):
 
 def test_closest_approach_follows_the_balls_path():
     memory = PassMemory()
-    blues = [{"id": 0, "pos": [0.0, 0.0]}, {"id": 1, "pos": [2.0, 1.0]}, {"id": 2, "pos": [-3.0, 0.0]}]
+    blues = [{"id": 0, "pos": [0.0, 0.0]}, {"id": 1, "pos": [2.0, 1.0]},
+             {"id": 2, "pos": [-3.0, 0.0]}]
 
     def st(ball):
         return {"blue": blues, "ball": {"pos": list(ball)}}
@@ -185,7 +198,8 @@ def test_closest_approach_follows_the_balls_path():
     memory.update({"events": []}, st((1, 0)), st((4, 0)))  # passes under blue 1 at (2, 0)
     assert memory.closest == pytest.approx(1.0)
     memory.update(kick, st((0, 0)), st((0, -1)))  # a new kick starts a new measurement
-    assert memory.closest == pytest.approx(math.hypot(2, 1))  # blue 1, from the start of this short path
+    # blue 1, from the start of this short path
+    assert memory.closest == pytest.approx(math.hypot(2, 1))
 
 
 ### AI GENERATED (2026-11-10: the minimum pass distance and catches paid by length, both options)
@@ -193,7 +207,8 @@ LONG = {"rl": {"reward": {"min_pass_distance": 1.0, "pass_length_bonus": True}}}
 def practice_state(holder=None, ball=(0.0, 0.0), blues=((0.0, 0.0), (0.6, 0.0), (0.0, 3.0))):
     return {
         "step": 0,
-        "blue": [{"id": i, "pos": list(p), "vel": [0.0, 0.0], "has_possession": i == holder} for i, p in enumerate(blues)],
+        "blue": [{"id": i, "pos": list(p), "vel": [0.0, 0.0], "has_possession": i == holder}
+                 for i, p in enumerate(blues)],
         "red": [],
         "ball": {"pos": list(blues[holder] if holder is not None else ball), "vel": [0.0, 0.0]},
     }
@@ -212,16 +227,18 @@ def caught_by(i):
 
 
 def tap(rm, memory):
-    """Blue 0 taps the ball 0.6 m into blue 1; returns the kick step's and the catch step's rewards."""
+    """Blue 0 taps the ball 0.6 m into blue 1; returns the kick step's and the catch step's
+    rewards."""
     kick = rm.parts(practice_state(0), {}, practice_state(ball=(0.3, 0.0)), False, False,
                     practice_info(KICK_0, RELEASE_0), memory)
-    end = rm.parts(practice_state(ball=(0.3, 0.0)), {}, practice_state(1), True, False, practice_info(caught_by(1)), memory)
+    end = rm.parts(practice_state(ball=(0.3, 0.0)), {}, practice_state(1), True, False,
+                   practice_info(caught_by(1)), memory)
     return kick, end
 
 
 def test_by_default_a_tap_to_a_teammate_is_a_pass(cfg):
     rm = RewardModule(cfg)
-    kick, end = tap(rm, rm.new_episode())
+    _, end = tap(rm, rm.new_episode())
     assert end.base == 1.0  # the old reward: any catch
 
 
@@ -232,14 +249,18 @@ def test_with_a_minimum_a_tap_to_a_teammate_next_to_the_kicker_is_no_pass_and_pa
     assert memory.min_distance == 1.0
     kick, end = tap(rm, memory)
     assert kick.base == 0 and memory.passes == 0  # no pass
-    # and no near miss on blue 1 either: the only credit is for blue 2, 3 m away, like a kick that went nowhere
+    # and no near miss on blue 1 either: the only credit is for blue 2, 3 m away, like a kick that
+    # went nowhere
     assert memory.closest == pytest.approx(3.0)
-    assert end.base == pytest.approx(PASS_MISS_MAX * math.exp(-(3.0 - cfg.shared.player_radius) / PASS_MISS_SCALE))
+    assert end.base == pytest.approx(
+        PASS_MISS_MAX * math.exp(-(3.0 - cfg.shared.player_radius) / PASS_MISS_SCALE))
 
 
 def test_the_closest_approach_ignores_teammates_next_to_the_kicker():
-    memory = PassMemory(min_distance=1.0)  # blue 1 is 1.4 m from the kick point (it could only catch a pass under 1 m)
-    blues = [{"id": 0, "pos": [0.0, 0.0]}, {"id": 1, "pos": [1.4, 0.0]}, {"id": 2, "pos": [0.0, 3.0]}]
+    # blue 1 is 1.4 m from the kick point (it could only catch a pass under 1 m)
+    memory = PassMemory(min_distance=1.0)
+    blues = [{"id": 0, "pos": [0.0, 0.0]}, {"id": 1, "pos": [1.4, 0.0]},
+             {"id": 2, "pos": [0.0, 3.0]}]
 
     def st(ball):
         return {"blue": blues, "ball": {"pos": list(ball)}}
@@ -256,29 +277,34 @@ def test_with_the_bonus_a_catch_pays_more_the_further_it_went(cfg, length):
     rm = RewardModule(with_overrides(cfg, LONG))
     memory = rm.new_episode()
     blues = ((0.0, 0.0), (length, 0.0), (0.0, 3.0))
-    rm.parts(practice_state(0, blues=blues), {}, practice_state(ball=(0.5, 0.0), blues=blues), False, False,
-             practice_info(KICK_0, RELEASE_0), memory)
-    end = rm.parts(practice_state(ball=(length - 0.2, 0.0), blues=blues), {}, practice_state(1, blues=blues),
-                   True, False, practice_info(caught_by(1)), memory)
+    rm.parts(practice_state(0, blues=blues), {}, practice_state(ball=(0.5, 0.0), blues=blues),
+             False, False, practice_info(KICK_0, RELEASE_0), memory)
+    end = rm.parts(practice_state(ball=(length - 0.2, 0.0), blues=blues), {},
+                   practice_state(1, blues=blues), True, False, practice_info(caught_by(1)),
+                   memory)
     assert memory.passes == 1 and memory.length == pytest.approx(length)
-    assert end.base == pytest.approx(min(1.0, PASS_CATCH_MIN + (1 - PASS_CATCH_MIN) * length / PASS_FULL_LENGTH))
+    assert end.base == pytest.approx(
+        min(1.0, PASS_CATCH_MIN + (1 - PASS_CATCH_MIN) * length / PASS_FULL_LENGTH))
     assert PASS_MISS_MAX < end.base <= 1.0  # every catch beats every miss
 
 
 def test_min_pass_distance_cant_be_negative():
     with pytest.raises(ValueError, match="min_pass_distance"):
-        config_from_dict({**PRACTICE, "rl": {**PRACTICE["rl"], "reward": {"base": "pass_practice", "min_pass_distance": -1.0}}})
+        config_from_dict({**PRACTICE, "rl": {**PRACTICE["rl"], "reward": {
+            "base": "pass_practice", "min_pass_distance": -1.0}}})
 ### END AI GENERATED
 
 
 # --- Gate and training ------------------------------------------------------------------
-def test_practice_stages_gate_on_the_catch_rate():  # 2026-11-11: one kick per episode here, so passes / kicks
+# 2026-11-11: one kick per episode here, so passes / kicks
+def test_practice_stages_gate_on_the_catch_rate():
     stage = Stage(name="catch", total_steps=1000, threshold=0.8, window=10)
     ctl = StageCurriculum(stage, {}, max_episode_steps=80, log=lambda _m: None, catch_gate=True)
 
     def episodes(caught, n):  # long episodes would pass a survival gate; caught ones are short
         return [EpisodeRecord(length=20 if caught else 80, terminated=caught, truncated=not caught,
-                              start_type=START_POSSESSION, mean_reward=0.0, passes=int(caught), kicks=1)] * n
+                              start_type=START_POSSESSION, mean_reward=0.0, passes=int(caught),
+                              kicks=1)] * n
 
     row = ctl.update(episodes(False, 10))
     assert row["gate_mean"] == 0.0 and not ctl.finished
@@ -289,8 +315,9 @@ def test_practice_stages_gate_on_the_catch_rate():  # 2026-11-11: one kick per e
 def test_the_gate_scores_passes_per_kick():  # AI GENERATED (2026-11-11)
     stage = Stage(name="catch", total_steps=1000, threshold=0.8, window=3)
     ctl = StageCurriculum(stage, {}, max_episode_steps=300, log=lambda _m: None, catch_gate=True)
-    ctl.update([EpisodeRecord(length=300, terminated=False, truncated=True, start_type=START_POSSESSION,
-                              mean_reward=0.0, passes=p, kicks=k) for p, k in [(6, 8), (0, 0), (3, 3)]])
+    ctl.update([EpisodeRecord(length=300, terminated=False, truncated=True,
+                              start_type=START_POSSESSION, mean_reward=0.0, passes=p, kicks=k)
+                for p, k in [(6, 8), (0, 0), (3, 3)]])
     assert list(ctl.gate.scores) == [0.75, 0.0, 1.0]  # no kick scores 0
 
 
@@ -305,20 +332,24 @@ def test_training_pass_practice_runs_end_to_end(tmp_path, cfg):
 
 
 # --- Pass practice with the blues free to move (2026-11-09) -------------------------------
-MOVING = {**PRACTICE, "shared": {**PRACTICE["shared"], "scenario": "pass_practice_moving", "max_episode_steps": 100},
+MOVING = {**PRACTICE, "shared": {**PRACTICE["shared"], "scenario": "pass_practice_moving",
+                                 "max_episode_steps": 100},
           "rl": {**PRACTICE["rl"], "reward": {"base": "pass_catch"}}}  # 2026-11-11: paid per catch
 
 
 def soft_pass_to_blue_1(env, cfg, blue_1_runs, until_catch=False):
-    """Blue 0 kicks softly at blue 1, 3 m away (0.9 m/s: it rolls ~1.6 m, ~0.5 m short); blue 1 runs at it or stands.
+    """Blue 0 kicks softly at blue 1, 3 m away (0.9 m/s: it rolls ~1.6 m, ~0.5 m short); blue 1
+    runs at it or stands.
     until_catch (2026-11-11): stop once a teammate has the ball, not at the episode's end."""
-    env.set_state_for_testing(blue_pos=[[0, 0], [3, 0], [0, 3]], red_pos=[], holder=("blue", 0), step=0)
+    env.set_state_for_testing(blue_pos=[[0, 0], [3, 0], [0, 3]], red_pos=[], holder=("blue", 0),
+                              step=0)
     rm = RewardModule(cfg)
-    memory, s, total = rm.new_episode(), env._state(), 0.0
+    memory, s, total = rm.new_episode(), env._state(), 0.0  # pylint: disable=protected-access
     move = [(0.0, 0.0), (-1.0, 0.0) if blue_1_runs else (0.0, 0.0), (0.0, 0.0)]
     first = True
     while True:
-        act = {"blue": [{"move": list(m), "kick_trigger": int(first and i == 0), "kick_vec": [0.15, 0.0]}
+        act = {"blue": [{"move": list(m), "kick_trigger": int(first and i == 0),
+                         "kick_vec": [0.15, 0.0]}
                         for i, m in enumerate(move)]}
         s_next, term, trunc, info = env.step(act)
         total += rm.parts(s, act, s_next, term, trunc, info, memory).base
@@ -351,7 +382,8 @@ def test_a_teammate_can_run_onto_a_short_pass():
 
 
 def test_the_same_short_pass_is_a_miss_for_a_frozen_teammate(env, cfg):
-    s, term, trunc, total = soft_pass_to_blue_1(env, cfg, blue_1_runs=True)  # frozen: its run is ignored
+    # frozen: its run is ignored
+    s, term, trunc, total = soft_pass_to_blue_1(env, cfg, blue_1_runs=True)
     assert term and not trunc and not any(b["has_possession"] for b in s["blue"])
     assert 0 < total < PASS_MISS_MAX
 
@@ -362,8 +394,11 @@ def test_a_moving_episode_runs_to_the_time_limit_after_a_miss():
     env = PyBulletEnv(cfg.shared)
     try:
         env.reset(seed=0)
-        env.set_state_for_testing(blue_pos=[[0, 0], [3, 0], [0, 3]], red_pos=[], holder=("blue", 0), step=0)
-        s, term, trunc, total, memory = play(env, cfg, actions(kicker=0, kick_vec=(-0.7071, -0.7071)))  # full kick away
+        env.set_state_for_testing(blue_pos=[[0, 0], [3, 0], [0, 3]], red_pos=[],
+                                  holder=("blue", 0), step=0)
+        # full kick away
+        s, term, trunc, total, memory = play(env, cfg,
+                                             actions(kicker=0, kick_vec=(-0.7071, -0.7071)))
         assert trunc and not term and s["step"] == cfg.shared.max_episode_steps
         assert total == 0.0 and memory.kicks == 1 and memory.passes == 0
     finally:
@@ -376,13 +411,15 @@ def test_two_passes_in_one_episode_pay_twice():
     env = PyBulletEnv(cfg.shared)
     try:
         env.reset(seed=0)
-        s = env.set_state_for_testing(blue_pos=[[0, 0], [3, 0], [3, 3]], red_pos=[], holder=("blue", 0), step=0)
+        s = env.set_state_for_testing(blue_pos=[[0, 0], [3, 0], [3, 3]], red_pos=[],
+                                      holder=("blue", 0), step=0)
         rm = RewardModule(cfg)
         memory, paid = rm.new_episode(), []
         for _ in range(cfg.shared.max_episode_steps):
             holder = next((b["id"] for b in s["blue"] if b["has_possession"]), None)
             act = actions()
-            if holder in (0, 1) and memory.kicks == holder:  # each holder kicks once, at the next blue
+            # each holder kicks once, at the next blue
+            if holder in (0, 1) and memory.kicks == holder:
                 aim = np.subtract(s["blue"][holder + 1]["pos"], s["ball"]["pos"])
                 act = actions(kicker=holder, kick_vec=tuple(0.6 * aim / np.linalg.norm(aim)))
             s_next, term, trunc, info = env.step(act)
@@ -404,10 +441,12 @@ def chase(min_distance, catcher_starts_at):
     up 3 m from the kick point. Returns the memory."""
     memory = PassMemory(min_distance=min_distance)
     start = ((0.0, 0.0), catcher_starts_at, (-3.0, 3.0))
-    memory.update({"events": [KICK_0, RELEASE_0]}, practice_state(0, blues=start), practice_state(ball=(0.5, 0.0), blues=start))
+    memory.update({"events": [KICK_0, RELEASE_0]}, practice_state(0, blues=start),
+                  practice_state(ball=(0.5, 0.0), blues=start))
     there = ((0.0, 0.0), (3.3, 0.0), (-3.0, 3.0))
     memory.update({"events": [caught_by(1)]}, practice_state(ball=(2.9, 0.0), blues=there),
-                  {**practice_state(1, blues=there), "ball": {"pos": [3.0, 0.0], "vel": [0.0, 0.0]}})
+                  {**practice_state(1, blues=there),
+                   "ball": {"pos": [3.0, 0.0], "vel": [0.0, 0.0]}})
     return memory
 
 
@@ -423,14 +462,17 @@ def test_pass_catch_pays_on_the_catch_with_the_length_bonus():
     rm = RewardModule(with_overrides(config_from_dict(MOVING), LONG))
     memory = rm.new_episode()
     blues = ((0.0, 0.0), (3.0, 0.0), (0.0, 3.0))
-    kick = rm.parts(practice_state(0, blues=blues), {}, practice_state(ball=(0.5, 0.0), blues=blues), False, False,
+    kick = rm.parts(practice_state(0, blues=blues), {},
+                    practice_state(ball=(0.5, 0.0), blues=blues), False, False,
                     practice_info(KICK_0, RELEASE_0), memory)
-    catch = rm.parts(practice_state(ball=(2.8, 0.0), blues=blues), {}, practice_state(1, blues=blues), False, False,
+    catch = rm.parts(practice_state(ball=(2.8, 0.0), blues=blues), {},
+                     practice_state(1, blues=blues), False, False,
                      practice_info(caught_by(1)), memory)
-    later = rm.parts(practice_state(1, blues=blues), {}, practice_state(1, blues=blues), False, True,
-                     practice_info(), memory)
+    later = rm.parts(practice_state(1, blues=blues), {}, practice_state(1, blues=blues), False,
+                     True, practice_info(), memory)
     assert kick.base == 0.0 and later.base == 0.0  # nothing for the kick, nothing at the time limit
-    assert catch.base == pytest.approx(PASS_CATCH_MIN + (1 - PASS_CATCH_MIN) * 3.0 / PASS_FULL_LENGTH)
+    assert catch.base == pytest.approx(
+        PASS_CATCH_MIN + (1 - PASS_CATCH_MIN) * 3.0 / PASS_FULL_LENGTH)
 
 
 def spacing(spots, target=3.0):
@@ -442,19 +484,22 @@ def spacing(spots, target=3.0):
 def test_receiver_spacing_pays_most_for_blues_the_target_distance_apart():
     triangle = [(0.0, 0.0), (3.0, 0.0), (1.5, 1.5 * math.sqrt(3))]  # every pair 3 m apart
     assert spacing(triangle) == pytest.approx(1.0)
-    assert spacing([(0.0, 0.0), (4.0, 0.0)]) == pytest.approx(2 / 3)  # a tent: 1 m off costs a third
+    # a tent: 1 m off costs a third
+    assert spacing([(0.0, 0.0), (4.0, 0.0)]) == pytest.approx(2 / 3)
     assert spacing([(0.0, 0.0), (2.0, 0.0)]) == pytest.approx(2 / 3)
     assert spacing([(0.0, 0.0), (0.0, 0.0)]) == 0.0 and spacing([(0.0, 0.0), (6.0, 0.0)]) == 0.0
     assert spacing([(0.0, 0.0), (9.0, 0.0)]) == 0.0  # never negative
     # 2026-11-11: blues bunched 0.6 m apart still feel the pull: each metre apart pays the same
-    assert spacing([(0.0, 0.0), (1.6, 0.0)]) - spacing([(0.0, 0.0), (0.6, 0.0)]) == pytest.approx(1 / 3)
+    assert (spacing([(0.0, 0.0), (1.6, 0.0)]) - spacing([(0.0, 0.0), (0.6, 0.0)])
+            == pytest.approx(1 / 3))
     assert spacing([(0.0, 0.0), (4.0, 0.0)], target=4.0) == pytest.approx(1.0)
     assert spacing([(0.0, 0.0)]) == 0.0  # nobody to space from
 
 
 def test_spacing_distance_must_be_positive():
     with pytest.raises(ValueError, match="spacing_distance"):
-        config_from_dict({**MOVING, "rl": {**MOVING["rl"], "reward": {"base": "pass_catch", "spacing_distance": 0.0}}})
+        config_from_dict({**MOVING, "rl": {**MOVING["rl"], "reward": {
+            "base": "pass_catch", "spacing_distance": 0.0}}})
 
 
 def test_moving_practice_needs_the_pass_catch_reward():
@@ -473,13 +518,15 @@ def test_moving_practice_trains_end_to_end(tmp_path):
 
 
 ### AI GENERATED (2026-11-11: kicker_clearance, the kicker keeps clear of its own kick)
-CLEAR = {"rl": {"reward": {"shaping": [{"name": "kicker_clearance", "enabled": True, "coef": 0.025}]}}}
+CLEAR = {"rl": {"reward": {"shaping": [
+    {"name": "kicker_clearance", "enabled": True, "coef": 0.025}]}}}
 
 
 def clearance(kicker_pos, ball_pos, kicker=0, held=False):
     """kicker_clearance for blue ``kicker`` at ``kicker_pos`` with the ball at ``ball_pos``."""
     spots = [kicker_pos, (5.0, 5.0), (-5.0, 5.0)]
-    s_next = {"blue": [{"id": i, "pos": [*p, 0.0], "has_possession": held and i == kicker} for i, p in enumerate(spots)],
+    s_next = {"blue": [{"id": i, "pos": [*p, 0.0], "has_possession": held and i == kicker}
+                       for i, p in enumerate(spots)],
               "ball": {"pos": [*ball_pos, 0.0]}}
     info = {"pass": PassStep(kicker, False, 0)}
     return kicker_clearance(None, None, s_next, False, False, info, None)
@@ -505,7 +552,8 @@ def kick_and_follow(cfg, chase: bool) -> float:
     env = PyBulletEnv(cfg.shared)
     try:
         env.reset(seed=0)
-        s = env.set_state_for_testing(blue_pos=[[0, 0], [3, 0], [0, 3]], red_pos=[], holder=("blue", 0), step=0)
+        s = env.set_state_for_testing(blue_pos=[[0, 0], [3, 0], [0, 3]], red_pos=[],
+                                      holder=("blue", 0), step=0)
         rm, total = RewardModule(cfg), 0.0
         memory = rm.new_episode()
         act = actions(kicker=0, kick_vec=(0.0, 1.0))
@@ -516,7 +564,8 @@ def kick_and_follow(cfg, chase: bool) -> float:
                 return total / 0.025
             s, act = s_next, actions()
             if chase:
-                act["blue"][0]["move"] = [0.0, 1.0]  # the kicker runs after the ball; its teammates stand still
+                # the kicker runs after the ball; its teammates stand still
+                act["blue"][0]["move"] = [0.0, 1.0]
     finally:
         env.close()
 
@@ -540,7 +589,8 @@ def relay(receivers):
     env = PyBulletEnv(cfg.shared)
     try:
         env.reset(seed=0)
-        s = env.set_state_for_testing(blue_pos=[[0, 0], [3, 0], [3, 3]], red_pos=[], holder=("blue", 0), step=0)
+        s = env.set_state_for_testing(blue_pos=[[0, 0], [3, 0], [3, 3]], red_pos=[],
+                                      holder=("blue", 0), step=0)
         assert s["ball"]["passer"] is None
         rm = RewardModule(cfg)
         memory, passers, paid = rm.new_episode(), [], []
@@ -577,13 +627,15 @@ def test_the_passer_survives_a_regrab_and_clears_on_any_other_pickup():
     env = types.SimpleNamespace(_kicked_by=None, _passer=None)
 
     def track(*events):
-        PyBulletEnv._track_passer(env, list(events))
-        return env._passer
+        PyBulletEnv._track_passer(env, list(events))  # pylint: disable=protected-access
+        return env._passer  # pylint: disable=protected-access
 
     assert track(caught_by(0)) is None  # a loose ball nobody kicked
     assert track(KICK_0, RELEASE_0) is None and track(caught_by(1)) == 0  # 0 passed to 1
-    assert track({"type": "kick", "agent": ("blue", 1)}) == 0 and track(caught_by(1)) == 0  # 1's own kick back
-    assert track({"type": "possession_change", "from": ("blue", 1), "to": ("red", 0)}) is None  # a steal
+    # 1's own kick back
+    assert track({"type": "kick", "agent": ("blue", 1)}) == 0 and track(caught_by(1)) == 0
+    # a steal
+    assert track({"type": "possession_change", "from": ("blue", 1), "to": ("red", 0)}) is None
 
 
 def test_return_pass_factor_must_be_in_0_1():
@@ -593,9 +645,10 @@ def test_return_pass_factor_must_be_in_0_1():
 
 
 ### AI GENERATED (2026-11-13: a stopped kick is over for kicker_clearance; "got it" calls)
-def field(holder=None, ball=(1.0, 0.0), vel=(0.0, 0.0), calling=(), blues=((0.0, 0.0), (3.0, 0.0), (0.0, 3.0))):
-    """A 3v0 state with velocities: the ball held by ``holder`` or loose at ``ball`` moving at ``vel``;
-    the blues in ``calling`` are calling."""
+def field(holder=None, ball=(1.0, 0.0), vel=(0.0, 0.0), calling=(),
+          blues=((0.0, 0.0), (3.0, 0.0), (0.0, 3.0))):
+    """A 3v0 state with velocities: the ball held by ``holder`` or loose at ``ball`` moving at
+    ``vel``; the blues in ``calling`` are calling."""
     return {"step": 0, "red": [],
             "blue": [{"id": i, "pos": list(p), "vel": [0.0, 0.0], "has_possession": i == holder,
                       "calling": i in calling} for i, p in enumerate(blues)],
@@ -603,7 +656,8 @@ def field(holder=None, ball=(1.0, 0.0), vel=(0.0, 0.0), calling=(), blues=((0.0,
 
 
 def kick_then(rm, memory, ball_vel):
-    """Blue 0 kicks; the ball ends the step 0.6 m away moving at ``ball_vel``. Returns that step's shaping."""
+    """Blue 0 kicks; the ball ends the step 0.6 m away moving at ``ball_vel``. Returns that step's
+    shaping."""
     return rm.parts(field(0), {}, field(ball=(0.6, 0.0), vel=ball_vel), False, False,
                     practice_info(KICK_0, RELEASE_0), memory).shaping
 
@@ -611,14 +665,18 @@ def kick_then(rm, memory, ball_vel):
 def test_a_kick_that_has_stopped_no_longer_charges_the_kicker():
     rm = RewardModule(with_overrides(config_from_dict(MOVING), CLEAR))
     moving = rm.new_episode()
-    assert kick_then(rm, moving, (2.0, 0.0)) < 0  # rolling away, the kicker 0.6 m behind it: charged
+    # rolling away, the kicker 0.6 m behind it: charged
+    assert kick_then(rm, moving, (2.0, 0.0)) < 0
     regrab = rm.parts(field(ball=(0.6, 0.0), vel=(2.0, 0.0)), {}, field(0), False, False,
                       practice_info(caught_by(0)), moving).shaping
-    assert regrab == pytest.approx(-0.025 * KICKER_REGRAB)  # taking a moving kick back: the full charge
+    # taking a moving kick back: the full charge
+    assert regrab == pytest.approx(-0.025 * KICKER_REGRAB)
     stopped = rm.new_episode()
     assert kick_then(rm, stopped, (0.1, 0.0)) == 0.0  # stopped at once (a dead ball): no charge
-    near = rm.parts(field(ball=(0.6, 0.0)), {}, field(ball=(0.6, 0.0)), False, False, practice_info(), stopped)
-    fetch = rm.parts(field(ball=(0.6, 0.0)), {}, field(0), False, False, practice_info(caught_by(0)), stopped)
+    near = rm.parts(field(ball=(0.6, 0.0)), {}, field(ball=(0.6, 0.0)), False, False,
+                    practice_info(), stopped)
+    fetch = rm.parts(field(ball=(0.6, 0.0)), {}, field(0), False, False,
+                     practice_info(caught_by(0)), stopped)
     assert near.shaping == 0.0 and fetch.shaping == 0.0  # standing by it and fetching it are free
 
 
@@ -629,7 +687,8 @@ CALLS = {"rl": {"call_enabled": True,
 def calls_then_pickup(callers, steps, getter=1):
     """``callers`` call for ``steps`` steps while the ball rolls loose; then ``getter`` picks it up.
     Returns the pickup step's call_accuracy and the memory."""
-    from marl.rl.reward import call_accuracy  # AI GENERATED (2026-11-14: the term itself, not the team reward)
+    # AI GENERATED (2026-11-14: the term itself, not the team reward)
+    from marl.rl.reward import call_accuracy
     cfg = with_overrides(config_from_dict(MOVING), CALLS)
     rm = RewardModule(cfg)
     memory = rm.new_episode()
@@ -646,12 +705,15 @@ def calls_then_pickup(callers, steps, getter=1):
 def test_a_call_pays_when_the_caller_gets_the_ball():
     from marl.rl.reward import CALL_COST, CALL_LEAD
     full, memory = calls_then_pickup({1}, CALL_LEAD)
-    assert full == pytest.approx(1.0 - CALL_COST)  # called for 0.5 s+: full credit, less this step's cost
+    # called for 0.5 s+: full credit, less this step's cost
+    assert full == pytest.approx(1.0 - CALL_COST)
     assert (memory.pickups, memory.called, memory.miscalled) == (1, 1.0, 0.0)
     late, _ = calls_then_pickup({1}, 2)
-    assert late == pytest.approx(3 / CALL_LEAD - CALL_COST)  # only just called (3 steps by the pickup): less
+    # only just called (3 steps by the pickup): less
+    assert late == pytest.approx(3 / CALL_LEAD - CALL_COST)
     wrong, memory = calls_then_pickup({2}, CALL_LEAD)
-    assert wrong == pytest.approx(-1.0 - CALL_COST) and memory.miscalled == 1.0  # blue 2 called, blue 1 got it
+    # blue 2 called, blue 1 got it
+    assert wrong == pytest.approx(-1.0 - CALL_COST) and memory.miscalled == 1.0
     silent, _ = calls_then_pickup(set(), CALL_LEAD)
     assert silent == 0.0
 
@@ -668,6 +730,7 @@ def test_call_accuracy_is_not_in_the_team_reward():
 
 def test_call_accuracy_needs_calls_enabled():
     with pytest.raises(ValueError, match="call_enabled"):
-        config_from_dict({**MOVING, "rl": {**MOVING["rl"], "reward": {"base": "pass_catch", "shaping": [
-            {"name": "call_accuracy", "enabled": True, "coef": 1.0}]}}})
+        config_from_dict({**MOVING, "rl": {**MOVING["rl"], "reward": {
+            "base": "pass_catch",
+            "shaping": [{"name": "call_accuracy", "enabled": True, "coef": 1.0}]}}})
 ### END AI GENERATED

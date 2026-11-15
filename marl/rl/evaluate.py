@@ -26,9 +26,8 @@
 #     return_share (returns per pass). (Austin Beinder)
 #   - 2026-11-13: Records pickups and calls; summarize adds called_share and
 #     miscalled_per_pickup. (Austin Beinder)
-# Prompt summary: Implement Phase 3 step 8 of the issue #7 plan (PPO update +
-#   training loop); evaluation is called by the loop.
-# Human review:   Pending review
+#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters; no
+#     behaviour change. (Austin Beinder)
 # ==============================================================================
 """Policy evaluation on fixed seeds (design #17, #23; walk-through steps 0 and 5).
 
@@ -98,12 +97,14 @@ def run_episodes(
         s, _ = env.reset(seed=int(seed), options=options)
         start_type = start_type_of(s, cfg.shared.scenario)
         base_sum = 0.0  # the task reward only: shaping is a training aid, never part of evaluation
-        memory = reward_fn.new_episode()  # AI GENERATED (2026-11-08): this episode's pass bookkeeping
+        # AI GENERATED (2026-11-08): this episode's pass bookkeeping
+        memory = reward_fn.new_episode()
         while True:
             actions = policy(s)
             s_next, terminated, truncated, info = env.step(actions)
             eff = effective_terminal(terminated, truncated, cfg.rl.horizon_mode)
-            base_sum += reward_fn.parts(s, actions, s_next, eff, truncated, info, memory).base  # AI GENERATED (memory)
+            # AI GENERATED (memory)
+            base_sum += reward_fn.parts(s, actions, s_next, eff, truncated, info, memory).base
             if on_step is not None:
                 on_step(s, actions, s_next, terminated, truncated)
             s = s_next
@@ -177,14 +178,16 @@ def _pass_rate(records: Sequence[EpisodeRecord]) -> float:
 
 def _return_share(records: Sequence[EpisodeRecord]) -> float:
     """2026-11-13: the share of passes that went straight back to the blue who passed to the kicker
-    (A -> B -> A; nan without passes). With three blues, 0 is a perfect rotation A -> B -> C -> A."""
+    (A -> B -> A; nan without passes). With three blues, 0 is a perfect rotation
+    A -> B -> C -> A."""
     passes = sum(r.passes for r in records)
     return sum(r.returns for r in records) / passes if passes else float("nan")
 
 
 def _call_stats(records: Sequence[EpisodeRecord]) -> dict[str, float]:
     """2026-11-13, per blue pickup of the ball: how well the blue who got it had called for it
-    (called_share, 0 to 1) and how loudly the others had (miscalled_per_pickup). nan without pickups."""
+    (called_share, 0 to 1) and how loudly the others had (miscalled_per_pickup). nan without
+    pickups."""
     pickups = sum(r.pickups for r in records)
     if not pickups:
         return {"called_share": float("nan"), "miscalled_per_pickup": float("nan")}

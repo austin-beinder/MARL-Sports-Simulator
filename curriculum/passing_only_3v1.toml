@@ -17,10 +17,6 @@
 #     has to go 1 m and longer catches pay a bit more.
 #   - 2026-11-11: The moving stages run the full 15 s with as many passes as
 #     the blues make; each catch pays when it happens (pass_catch).
-# Prompt summary: A 3v1 passing drill against a slow red with the blues frozen
-#   in range of each other: a small reward for kicking toward a teammate, a big
-#   one for lasting, nothing before the first pass; in a new curriculum TOML.
-# Human review:   Pending review
 # ==============================================================================
 # Monkey in the middle, 3v1. The goal is blues that keep the ball away from red by passing round
 # it, not by running. (See the docstring in runner.py for how stages and gates work.)
