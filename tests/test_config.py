@@ -9,6 +9,8 @@
 #   - 2026-10-14: Added tests for the built pbrs_ball_acquisition term and the
 #     non-negative shaping coef check, and a test that the PBRS ablation config
 #     differs from the survival-only control config only in the reward.
+#   - 2026-11-01: Added a test that saved configs without run.env load as the
+#     mock while new configs default to PyBullet (backlog task 3).
 # Prompt summary: Implement Phase 3 step 1 of the issue #7 plan (config +
 #   validation) with expected-input, unexpected-input and corner-case tests.
 # Human review:   Pending review
@@ -23,6 +25,7 @@ from marl.common.config import (
     config_from_dict,
     config_to_dict,
     load_config,
+    saved_config_from_dict,
     with_overrides,
 )
 
@@ -198,3 +201,18 @@ def test_overrides_are_validated_too():
     cfg = config_from_dict({})
     with pytest.raises(ValueError):
         with_overrides(cfg, {"shared": {"n_red": 0}})
+
+
+# AI CITATION: Claude Code (Claude Opus 5.5) | 2026-11-01 | JC Stinson III (LifeHackerIII)
+# Usage: Wrote this test (backlog task 3: legacy saved runs keep loading as the mock).
+def test_saved_config_without_run_env_is_a_mock_run():
+    # A run saved before run.env existed (2026-10-18), e.g. runs/Old_mock_env/*/config.json.
+    legacy = config_to_dict(config_from_dict({"run": {"seed": 3}}))
+    del legacy["run"]["env"]
+    assert config_from_dict(legacy).run.env == "pybullet"  # a new config takes today's default
+    cfg = saved_config_from_dict(legacy)
+    assert cfg.run.env == "mock" and cfg.run.seed == 3
+    assert "env" not in legacy["run"]  # the caller's dict is left alone
+    assert saved_config_from_dict({}).run.env == "mock"  # no run table at all
+    explicit = config_to_dict(config_from_dict({"run": {"env": "pybullet"}}))
+    assert saved_config_from_dict(explicit).run.env == "pybullet"  # a saved env is always kept
