@@ -8,9 +8,12 @@
 #     must share (speed cap, carry slowdown, walls, possession, termination,
 #     teammates, goto_target), run on the mock and on PyBullet through their
 #     set_state_for_testing hooks.
-# Prompt summary: Close the PyBullet integration gaps: test coverage for the
-#   behaviour the mock's own tests (test_mock_env.py) only check on the mock.
-# Human review:   Pending review
+#   - 2026-11-07: The PyBullet env kicks now, so the kick test accepts a
+#     real kick there and still checks the mock's clean refusal. (Austin Beinder)
+#   - 2026-11-08: free_speed_factor (blue's speed without the ball). (Austin Beinder)
+#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters, an unused
+#     unpacked term/trunc replaced with _, and redefined-outer-name disabled
+#     for the pytest fixture; no behaviour change. (Austin Beinder)
 # ==============================================================================
 """Game behaviour both envs must share, run on the mock and on PyBullet.
 
@@ -19,6 +22,8 @@ tolerances that also fit the physics sim: PyBullet's damping takes about 1.6% of
 its possession is contact-based (``player_radius`` + the ball's 0.15 m radius to pick up a loose
 ball, two player radii for red to reach the carrier) instead of ``possession_radius``.
 """
+# pytest passes the make fixture in by name, which pylint reads as shadowing
+# pylint: disable=redefined-outer-name
 
 import math
 
@@ -100,6 +105,18 @@ def test_carry_slowdown_and_the_ball_follows_the_carrier(make):
     assert b["has_possession"]
     assert speed(b) == pytest.approx(cfg.carry_speed_factor * cfg.max_speed, rel=REL)
     assert s["ball"]["pos"] == pytest.approx(b["pos"], abs=0.02)
+
+
+def test_free_speed_factor_slows_blue_only_without_the_ball(make):
+    # 2026-11-08: free_speed_factor scales blue's speed without the ball; with the ball it's still
+    # carry_speed_factor x max_speed (the two don't stack)
+    env, cfg = make(shared={"n_blue": 2, "free_speed_factor": 0.875})
+    env.set_state_for_testing(blue_pos=[[0, 0], [0, 3]], red_pos=[[7, -4]], holder=("blue", 0))
+    s, *_ = steps(env, act((-1.0, 0.0), (-1.0, 0.0)), 2)  # both away from red
+    carrier, free = s["blue"]
+    assert carrier["has_possession"] and not free["has_possession"]
+    assert speed(carrier) == pytest.approx(cfg.carry_speed_factor * cfg.max_speed, rel=REL)
+    assert speed(free) == pytest.approx(cfg.free_speed_factor * cfg.max_speed, rel=REL)
 
 
 def test_walls_stop_players(make):
@@ -186,12 +203,22 @@ def test_no_auto_reset_and_step_before_reset(make):
         env.step(act((0.0, 0.0)))
 
 
-def test_kick_with_possession_not_implemented_and_state_untouched(make):
+### AI GENERATED (2026-11-07: PyBullet kicks, the mock refuses)
+def test_kick_with_possession_is_applied_or_refused_cleanly(make):
     env, cfg = make()
     before = env.set_state_for_testing(blue_pos=[[0, 0]], red_pos=[[7, 4]], holder=("blue", 0))
-    with pytest.raises(NotImplementedError):
-        env.step({"blue": [{"move": [1.0, 0.0], "kick_trigger": 1, "kick_vec": [1.0, 0.0]}]})
-    assert env._state() == before
+    try:
+        s, _, _, info = env.step(
+            {"blue": [{"move": [1.0, 0.0], "kick_trigger": 1, "kick_vec": [1.0, 0.0]}]})
+    except NotImplementedError:
+        # the mock has no ball physics; a refused kick must not change the state
+        assert env._state() == before
+        return
+    # A full kick (6 m/s) outruns the kicker (2 m/s), so the ball is loose after the step
+    assert info["kick_applied"] == [True]
+    assert not s["blue"][0]["has_possession"]
+    assert s["ball"]["pos"][0] > s["blue"][0]["pos"][0] + cfg.player_radius
+### END AI GENERATED
 
 
 def test_unknown_reset_option_and_bad_seed(make):

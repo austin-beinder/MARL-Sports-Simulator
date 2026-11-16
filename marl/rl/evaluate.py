@@ -15,9 +15,19 @@
 #     starts (RaceTracker, summarize_races: pickup rate, closing speed,
 #     alignment), moved from Claude's pilot-analysis scripts at the student's
 #     request.
-# Prompt summary: Implement Phase 3 step 8 of the issue #7 plan (PPO update +
-#   training loop); evaluation is called by the loop.
-# Human review:   Pending review
+#   - 2026-11-07: actor_policy sends the kick heads' actions too. (Austin Beinder)
+#   - 2026-11-08: Each episode gets its own reward memory (the passing
+#     drill's pass bookkeeping). (Austin Beinder)
+#   - 2026-11-09: Records passes per episode; summarize adds passes_mean and
+#     frac_passed (episodes with at least one pass). (Austin Beinder)
+#   - 2026-11-11: Records kicks per episode; summarize adds pass_rate (passes
+#     per kick, over all the episodes). (Austin Beinder)
+#   - 2026-11-13: Records return passes per episode; summarize adds
+#     return_share (returns per pass). (Austin Beinder)
+#   - 2026-11-13: Records pickups and calls; summarize adds called_share and
+#     miscalled_per_pickup. (Austin Beinder)
+#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters; no
+#     behaviour change. (Austin Beinder)
 # ==============================================================================
 """Policy evaluation on fixed seeds (design #17, #23; walk-through steps 0 and 5).
 
@@ -47,8 +57,8 @@ import torch
 
 from marl.common.config import Config
 from marl.common.spawn import START_FREE_BALL, START_POSSESSION, START_TARGET
-from marl.rl.actions import to_env_actions
-from marl.rl.networks import MOVE, Actor
+from marl.rl.actions import actions_from_samples  # AI GENERATED (kick heads too)
+from marl.rl.networks import Actor
 from marl.rl.reward import RewardModule, effective_terminal
 from marl.rl.rollout import EpisodeRecord, Featurizer, start_type_of
 
@@ -66,7 +76,7 @@ def actor_policy(actor: Actor, featurizer: Featurizer, deterministic: bool = Fal
     def policy(s: dict) -> dict:
         obs, _ = featurizer(s)
         samples, _ = actor.act(torch.from_numpy(obs), deterministic=deterministic)
-        return to_env_actions(samples[MOVE].numpy())
+        return actions_from_samples(samples)  # AI GENERATED
 
     return policy
 
@@ -87,11 +97,14 @@ def run_episodes(
         s, _ = env.reset(seed=int(seed), options=options)
         start_type = start_type_of(s, cfg.shared.scenario)
         base_sum = 0.0  # the task reward only: shaping is a training aid, never part of evaluation
+        # AI GENERATED (2026-11-08): this episode's pass bookkeeping
+        memory = reward_fn.new_episode()
         while True:
             actions = policy(s)
             s_next, terminated, truncated, info = env.step(actions)
             eff = effective_terminal(terminated, truncated, cfg.rl.horizon_mode)
-            base_sum += reward_fn.parts(s, actions, s_next, eff, truncated, info).base
+            # AI GENERATED (memory)
+            base_sum += reward_fn.parts(s, actions, s_next, eff, truncated, info, memory).base
             if on_step is not None:
                 on_step(s, actions, s_next, terminated, truncated)
             s = s_next
@@ -104,6 +117,12 @@ def run_episodes(
                 truncated=truncated,
                 start_type=start_type,
                 mean_reward=base_sum / s["step"],
+                passes=memory.passes,  # AI GENERATED (2026-11-09)
+                kicks=memory.kicks,  # AI GENERATED (2026-11-11)
+                returns=memory.returns,  # AI GENERATED (2026-11-13)
+                pickups=memory.pickups,  # AI GENERATED (2026-11-13)
+                called=memory.called,  # AI GENERATED (2026-11-13)
+                miscalled=memory.miscalled,  # AI GENERATED (2026-11-13)
             )
         )
     return records
@@ -135,12 +154,46 @@ def summarize(records: Sequence[EpisodeRecord]) -> dict[str, float]:
         "len_std": float(lengths.std()) if len(records) else nan,
         "frac_truncated": float(np.mean([r.truncated for r in records])) if len(records) else nan,
         "mean_reward": float(np.mean([r.mean_reward for r in records])) if len(records) else nan,
+        ### AI GENERATED (2026-11-09)
+        "passes_mean": float(np.mean([r.passes for r in records])) if len(records) else nan,
+        "frac_passed": float(np.mean([r.passes > 0 for r in records])) if len(records) else nan,
+        ### END AI GENERATED
+        "pass_rate": _pass_rate(records),  # AI GENERATED (2026-11-11)
+        "return_share": _return_share(records),  # AI GENERATED (2026-11-13)
+        **_call_stats(records),  # AI GENERATED (2026-11-13)
     }
     for st in START_TYPES:
         sel = lengths[[r.start_type == st for r in records]] if len(records) else lengths
         out[f"n_{st}"] = len(sel)
         out[f"len_mean_{st}"] = float(sel.mean()) if len(sel) else nan
     return out
+
+
+### AI GENERATED (2026-11-11)
+def _pass_rate(records: Sequence[EpisodeRecord]) -> float:
+    """Passes completed per kick over all the episodes (nan without kicks)."""
+    kicks = sum(r.kicks for r in records)
+    return sum(r.passes for r in records) / kicks if kicks else float("nan")
+
+
+def _return_share(records: Sequence[EpisodeRecord]) -> float:
+    """2026-11-13: the share of passes that went straight back to the blue who passed to the kicker
+    (A -> B -> A; nan without passes). With three blues, 0 is a perfect rotation
+    A -> B -> C -> A."""
+    passes = sum(r.passes for r in records)
+    return sum(r.returns for r in records) / passes if passes else float("nan")
+
+
+def _call_stats(records: Sequence[EpisodeRecord]) -> dict[str, float]:
+    """2026-11-13, per blue pickup of the ball: how well the blue who got it had called for it
+    (called_share, 0 to 1) and how loudly the others had (miscalled_per_pickup). nan without
+    pickups."""
+    pickups = sum(r.pickups for r in records)
+    if not pickups:
+        return {"called_share": float("nan"), "miscalled_per_pickup": float("nan")}
+    return {"called_share": sum(r.called for r in records) / pickups,
+            "miscalled_per_pickup": sum(r.miscalled for r in records) / pickups}
+### END AI GENERATED
 
 
 # --- The race for a loose ball (PBRS acquisition ablation) ------------------------------

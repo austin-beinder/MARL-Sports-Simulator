@@ -8,9 +8,11 @@
 #     (per-agent [T, N] + shared [T] layout, design #20), advantage
 #     computation via compute_gae, and shuffled minibatches over the
 #     flattened T*N samples.
-# Prompt summary: Implement Phase 3 step 7 of the issue #7 plan (buffer +
-#   GAE) with hand-built boundary tests.
-# Human review:   Pending review
+#   - 2026-11-14: The call head's own per-blue advantage: each step's blue
+#     pickup and call log-prob, compute_call_advantages, and the call fields
+#     of a Minibatch. (Austin Beinder)
+#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters; no
+#     behaviour change. (Austin Beinder)
 # ==============================================================================
 """Rollout buffer (design #20).
 
@@ -24,6 +26,13 @@ Layout for one rollout of T control steps and N blue agents:
 The critic input is stored exactly as the critic saw it during the rollout (in
 ``global`` mode, the flattened s repeated per agent; #20 notes the duplicated
 per-(t, i) V is equivalent and cheap).
+
+The call head (2026-11-14, when call_accuracy is on) has its own advantage instead of the team's:
+``compute_call_advantages`` scores each blue's call in hindsight from the pickups
+(``reward.call_values``: q = what calling was worth) as A = q * (a - p), a = 1 if the blue called
+and p = the rollout policy's chance of calling. That is Q(a) - V exactly, if the call doesn't change
+who gets the ball: calling is worth q and not calling 0, and the policy expects p * q. So every step
+pushes the call probability the right way, called or not.
 
 For the update, the T x N samples are flattened row-major (index t * N + i) and
 shuffled: every (t, i) is one independent sample with its OWN PPO ratio (#20).
@@ -39,6 +48,7 @@ import numpy as np
 import torch
 
 from marl.rl.gae import compute_gae
+from marl.rl.reward import call_values  # AI GENERATED (2026-11-14)
 
 
 @dataclass(frozen=True)
@@ -50,6 +60,11 @@ class Minibatch:
     values: torch.Tensor  # [B], from the rollout critic
     advantages: torch.Tensor  # [B], RAW (normalized per minibatch in the loss, #20)
     returns: torch.Tensor  # [B], critic targets
+    ### AI GENERATED (2026-11-14: the call head's own advantage; zeros without one)
+    call_log_probs: torch.Tensor  # [B], the call head's part of log_probs
+    call_advantages: torch.Tensor  # [B], RAW, not normalized (see compute_call_advantages)
+    call_valid: torch.Tensor  # [B], 1.0 where the call advantage is known
+    ### END AI GENERATED
 
 
 class RolloutBuffer:
@@ -68,6 +83,13 @@ class RolloutBuffer:
         self.terminated = np.zeros(T, dtype=bool)
         self.truncated = np.zeros(T, dtype=bool)
         self.effective_terminal = np.zeros(T, dtype=bool)
+        ### AI GENERATED (2026-11-14: the call head's own advantage)
+        # the blue who got the ball in step t (-1: nobody)
+        self.pickups = np.full(T, -1, dtype=np.int64)
+        self.call_log_probs = np.zeros((T, N), dtype=np.float32)
+        self.call_advantages = np.zeros((T, N), dtype=np.float32)
+        self.call_valid = np.zeros((T, N), dtype=np.float32)
+        ### END AI GENERATED
         self.reset()
 
     def reset(self) -> None:
@@ -91,6 +113,9 @@ class RolloutBuffer:
         terminated: bool,
         truncated: bool,
         effective_terminal: bool,
+        pickup: int | None = None,  # AI GENERATED (2026-11-14): the blue who got the ball this step
+        # AI GENERATED (2026-11-14): [N], the call head's part of log_prob
+        call_log_prob: Any = None,
     ) -> None:
         """Store one control step (all N agents)."""
         if self.full:
@@ -113,6 +138,11 @@ class RolloutBuffer:
         self.terminated[t] = terminated
         self.truncated[t] = truncated
         self.effective_terminal[t] = effective_terminal
+        ### AI GENERATED (2026-11-14)
+        self.pickups[t] = -1 if pickup is None else pickup
+        self.call_log_probs[t] = (0.0 if call_log_prob is None
+                                  else _row(call_log_prob, (self.n_agents,), "call_log_prob"))
+        ### END AI GENERATED
         self.t += 1
 
     def compute_advantages(self, gamma: float, lam: float) -> None:
@@ -129,7 +159,26 @@ class RolloutBuffer:
         )
         self.advantages[:] = adv
         self.returns[:] = ret
+        self.call_advantages[:] = 0.0  # AI GENERATED (2026-11-14): until compute_call_advantages
+        self.call_valid[:] = 0.0  # AI GENERATED
         self._advantages_ready = True
+
+    ### AI GENERATED (2026-11-14)
+    def compute_call_advantages(self) -> None:
+        """The call head's own per-blue advantage, A = q * (a - p) (see the module docstring).
+        Call after ``compute_advantages``."""
+        if not self._advantages_ready:
+            raise RuntimeError("call compute_advantages() first")
+        if "call" not in self.samples:
+            raise RuntimeError("the buffer has no call head")
+        q, valid = call_values(self.pickups, self.terminated | self.truncated, self.n_agents)
+        called = self.samples["call"][..., 0]
+        # the chance of the call actually made
+        p_taken = np.exp(self.call_log_probs.astype(np.float64))
+        p_call = np.where(called > 0.5, p_taken, 1.0 - p_taken)
+        self.call_advantages[:] = q * (called - p_call)
+        self.call_valid[:] = valid
+    ### END AI GENERATED
 
     def minibatches(self, num_minibatches: int, rng: np.random.Generator) -> Iterator[Minibatch]:
         """One epoch: a fresh shuffle of all T*N samples, split into equal minibatches."""
@@ -147,6 +196,9 @@ class RolloutBuffer:
         samples = {h: flat(x) for h, x in self.samples.items()}
         log_probs, values = flat(self.log_probs), flat(self.values)
         advantages, returns = flat(self.advantages), flat(self.returns)
+        # AI GENERATED
+        call_lp, call_adv, call_valid = (flat(self.call_log_probs), flat(self.call_advantages),
+                                         flat(self.call_valid))
         perm = torch.from_numpy(rng.permutation(n))
         for k in range(num_minibatches):
             j = perm[k * size : (k + 1) * size]
@@ -158,6 +210,9 @@ class RolloutBuffer:
                 values=values[j],
                 advantages=advantages[j],
                 returns=returns[j],
+                call_log_probs=call_lp[j],  # AI GENERATED (2026-11-14)
+                call_advantages=call_adv[j],  # AI GENERATED
+                call_valid=call_valid[j],  # AI GENERATED
             )
 
 

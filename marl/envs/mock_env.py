@@ -6,14 +6,27 @@
 # Usage:
 #   - 2026-10-18: Moved action validation into module-level parse_actions()
 #     so the PyBullet adapter (pybullet_env.py) shares it. (Austin Beinder)
+#   - 2026-11-07: parse_actions also returns the kick vectors (the PyBullet
+#     adapter now kicks). The mock stays movement-only. (Austin Beinder)
+#   - 2026-11-08: Blue's speed without the ball is free_speed_factor x
+#     max_speed. (Austin Beinder)
+#   - 2026-11-08: Refuses the passing_drill scenario (it needs kicks).
+#     (Austin Beinder)
+#   - 2026-11-09: Refuses pass_practice and pass_practice_moving too. (Austin Beinder)
+#   - 2026-11-13: s["ball"]["passer"] (ICD §5), always None: the mock can't
+#     kick, so nobody ever passes. (Austin Beinder)
+#   - 2026-11-13: The optional "call" action, echoed as each blue's "calling"
+#     in s (parse_calls). (Austin Beinder)
+#   - 2026-11-14: The claim_ball scenario: a loose ball, no red, terminated
+#     when a blue picks it up. (Austin Beinder)
+#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters and set
+#     _calls in __init__ (attribute-defined-outside-init); no behaviour
+#     change. (Austin Beinder)
 #   - 2026-10-10: Generated this entire file: a kinematic 2D mock env that
 #     implements docs/ICD.md v0.2 (action repeat, per-tick termination, walls,
 #     possession radius, carry slowdown, pursuit red, goto_target scenario,
 #     strict action validation), following design #8, #16, #19, #22 and
 #     Phase 3 decision H.
-# Prompt summary: Implement Phase 3 step 3 of the issue #7 plan (mock env) so
-#   the RL layer can be developed without the PyBullet env.
-# Human review:   Pending review
 # ==============================================================================
 """Kinematic 2D mock of the keep-away env, implementing ``docs/ICD.md`` (v0.2).
 
@@ -29,7 +42,7 @@ Dynamics (Phase 3 decision H), per physics tick:
   with ``terminated = True`` (ICD §3, §8).
 
 Expected mock-vs-sim differences (report them): no player-player collisions;
-no ball physics (kicking is not implemented, see ``step``).
+no ball physics (kicking is PyBullet-only, see ``step``).
 """
 
 from __future__ import annotations
@@ -50,12 +63,20 @@ class MockEnv:
     """ICD-conformant mock env. ``reset`` and ``step`` speak plain Python types."""
 
     def __init__(self, cfg: SharedConfig):
+        # AI GENERATED (2026-11-08)
+        if cfg.scenario in ("passing_drill", "pass_practice", "pass_practice_moving"):
+            raise NotImplementedError(
+                f"the mock env can't run {cfg.scenario}: it has no kicks (use the PyBullet env)"
+            )
         self.cfg = cfg
         self.n_blue, self.n_red = cfg.n_blue, cfg.n_red
         half = np.asarray(cfg.field_size, dtype=float) / 2.0
         self._lo, self._hi = -half + cfg.player_radius, half - cfg.player_radius
-        self._possession = cfg.scenario == "keepaway"  # goto_target: ball is an immobile target
+        # goto_target: ball is an immobile target  # AI GENERATED (claim_ball)
+        self._possession = cfg.scenario in ("keepaway", "claim_ball")
         self._ready = False
+        # AI GENERATED (2026-11-15): nobody calls before the first step (reset sets it again)
+        self._calls: list[bool] = [False] * self.n_blue
 
     # --- API (ICD §4) ----------------------------------------------------------
     def reset(self, seed: int, options: dict[str, Any] | None = None) -> tuple[dict, dict]:
@@ -85,21 +106,26 @@ class MockEnv:
         self._ball_vel = np.zeros(2)
         self._holder: Holder = ("blue", sp.holder) if sp.holder is not None else None
         self._step = 0
+        self._calls = [False] * self.n_blue  # AI GENERATED (2026-11-13): nobody calls at reset
         self._ready = True
         return self._state(), self._info([])
 
     def step(self, actions: dict[str, Any]) -> tuple[dict, bool, bool, dict]:
         if not self._ready:
             raise RuntimeError("call reset() before step(); there is no auto-reset (ICD §4)")
-        move, triggers = self._parse_actions(actions)
+        move, triggers, _ = self._parse_actions(actions)
+        # AI GENERATED (2026-11-13): echoed in s (ICD §5)
+        self._calls = parse_calls(actions, self.n_blue)
 
         # Start-of-step rule (ICD §3): kicks use possession at the start of the block.
         for i, trig in enumerate(triggers):
             if trig == 1 and self._holder == ("blue", i):
+                ### AI GENERATED (2026-11-07: kicking is PyBullet-only)
                 raise NotImplementedError(
-                    "the mock doesn't implement kicking yet (deferred with kick_enabled, #21); "
-                    "the RL side sends kick_trigger = 0 at milestone 1"
+                    "the mock env doesn't implement kicking (it has no ball physics); "
+                    "train with kicks on run.env = 'pybullet'"
                 )
+                ### END AI GENERATED
 
         events: list[dict] = []
         terminated = False
@@ -111,6 +137,11 @@ class MockEnv:
             if self._holder is not None and self._holder[0] == "red":
                 terminated = True  # mid-block termination (ICD §3): stop the block now
                 break
+            ### AI GENERATED (2026-11-14: claim_ball ends when a blue gets the ball)
+            if self._holder is not None and self.cfg.scenario == "claim_ball":
+                terminated = True
+                break
+            ### END AI GENERATED
         self._step += 1
         truncated = (not terminated) and self._step >= self.cfg.max_episode_steps
         if terminated or truncated:
@@ -149,9 +180,11 @@ class MockEnv:
     # --- Physics -----------------------------------------------------------------
     def _tick(self, move: np.ndarray) -> None:
         cfg, dt = self.cfg, self.cfg.physics_dt
-        speed = np.full(self.n_blue, cfg.max_speed)
+        # AI GENERATED (free_speed_factor)
+        speed = np.full(self.n_blue, cfg.max_speed * cfg.free_speed_factor)
         if self._holder is not None and self._holder[0] == "blue":
-            speed[self._holder[1]] *= cfg.carry_speed_factor
+            # AI GENERATED (was *=, now not stacked)
+            speed[self._holder[1]] = cfg.max_speed * cfg.carry_speed_factor
         blue_vel = move * speed[:, None]
 
         red_vel = np.zeros((self.n_red, 2))
@@ -205,19 +238,23 @@ class MockEnv:
         return {"type": "possession_change", "from": prev, "to": new}
 
     # --- ICD plumbing -------------------------------------------------------------
-    def _parse_actions(self, actions: Any) -> tuple[np.ndarray, list[int]]:
+    # AI GENERATED (kick vectors)
+    def _parse_actions(self, actions: Any) -> tuple[np.ndarray, list[int], np.ndarray]:
         ### AI GENERATED
         return parse_actions(actions, self.n_blue)
         ### END AI GENERATED
 
     def _state(self) -> dict:
         def entity(team: str, i: int, pos: np.ndarray, vel: np.ndarray) -> dict:
-            return {
+            e = {
                 "id": i,
                 "pos": [float(pos[0]), float(pos[1])],
                 "vel": [float(vel[0]), float(vel[1])],
                 "has_possession": self._holder == (team, i),
             }
+            if team == "blue":  # AI GENERATED (2026-11-13): the blue's latest call (ICD §5)
+                e["calling"] = bool(getattr(self, "_calls", [False] * self.n_blue)[i])
+            return e
 
         return {
             "step": self._step,
@@ -226,6 +263,7 @@ class MockEnv:
             "ball": {
                 "pos": [float(self._ball_pos[0]), float(self._ball_pos[1])],
                 "vel": [float(self._ball_vel[0]), float(self._ball_vel[1])],
+                "passer": None,  # AI GENERATED (2026-11-13): no kicks, so no passes (ICD §5)
             },
         }
 
@@ -234,8 +272,9 @@ class MockEnv:
 
 
 ### AI GENERATED (moved out of MockEnv so the PyBullet adapter can share it)
-def parse_actions(actions: Any, n_blue: int) -> tuple[np.ndarray, list[int]]:
-    """Validate actions strictly (ICD §6); return capped move vectors + triggers.
+def parse_actions(actions: Any, n_blue: int) -> tuple[np.ndarray, list[int], np.ndarray]:
+    """Validate actions strictly (ICD §6); return capped move vectors, triggers and raw kick
+    vectors [n_blue, 2] (the env applies the kick speed cap, ICD §6).
 
     Shared by every ICD env (the mock and the PyBullet adapter) so they reject the same inputs.
     """
@@ -249,15 +288,25 @@ def parse_actions(actions: Any, n_blue: int) -> tuple[np.ndarray, list[int]]:
     if len(blue) != n_blue:
         raise ValueError(f"actions['blue'] must have {n_blue} entries, got {len(blue)}")
     move = np.zeros((n_blue, 2))
+    kick_vecs = np.zeros((n_blue, 2))  # 2026-11-07
     triggers = []
     for i, a in enumerate(blue):
         where = f"actions['blue'][{i}]"
         if not isinstance(a, dict):
             raise TypeError(f"{where} must be a dict")
-        if set(a) != {"move", "kick_trigger", "kick_vec"}:
-            raise ValueError(f"{where} must have keys move, kick_trigger, kick_vec; got {sorted(a)}")
+        # AI GENERATED (call)
+        if not ({"move", "kick_trigger", "kick_vec"}
+                <= set(a) <= {"move", "kick_trigger", "kick_vec", "call"}):
+            raise ValueError(
+                f"{where} must have keys move, kick_trigger, kick_vec (and optionally call); "
+                f"got {sorted(a)}"
+            )
+        ### AI GENERATED (2026-11-13: the optional call, ICD §6)
+        if "call" in a and (type(a["call"]) is not int or a["call"] not in (0, 1)):
+            raise ValueError(f"{where}['call'] must be an int 0 or 1, got {a['call']!r}")
+        ### END AI GENERATED
         move[i] = _vec2(a["move"], f"{where}['move']")
-        _vec2(a["kick_vec"], f"{where}['kick_vec']")
+        kick_vecs[i] = _vec2(a["kick_vec"], f"{where}['kick_vec']")
         trig = a["kick_trigger"]
         if type(trig) is not int:
             raise TypeError(f"{where}['kick_trigger'] must be an int 0 or 1, got {trig!r}")
@@ -266,7 +315,12 @@ def parse_actions(actions: Any, n_blue: int) -> tuple[np.ndarray, list[int]]:
         triggers.append(trig)
     norm = np.linalg.norm(move, axis=1, keepdims=True)
     move = np.where(norm > 1.0, move / np.maximum(norm, 1e-12), move)  # 2-norm speed cap (ICD §6)
-    return move, triggers
+    return move, triggers, kick_vecs
+
+
+def parse_calls(actions: dict, n_blue: int) -> list[bool]:  # AI GENERATED (2026-11-13)
+    """Each blue's call (ICD §6, optional, default 0) from actions ``parse_actions`` accepted."""
+    return [bool(a.get("call", 0)) for a in actions["blue"][:n_blue]]
 ### END AI GENERATED
 
 

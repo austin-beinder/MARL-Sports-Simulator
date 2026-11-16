@@ -12,15 +12,22 @@
 #     reads Phi(s) after step(), so an env must not mutate a returned state).
 #   - 2026-10-31: Ran the step-counter, snapshot and determinism tests at 1v1
 #     as well as 2v2, and added a keep-away truncation test. (Austin Beinder)
-# Prompt summary: Implement Phase 3 step 3 of the issue #7 plan (mock env +
-#   ICD conformance tests).
-# Human review:   Pending review
+#   - 2026-11-07: The PyBullet env kicks now: the kick test also checks the
+#     kick event and the release (the mock still skips it). (Austin Beinder)
+#   - 2026-11-13: s["ball"] has "passer" (None at reset). (Austin Beinder)
+#   - 2026-11-13: Each blue has "calling" (False at reset), echoing its
+#     optional "call" action. (Austin Beinder)
+#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters and
+#     disabled redefined-outer-name for the pytest fixture; no behaviour
+#     change. (Austin Beinder)
 # ==============================================================================
 """ICD (docs/ICD.md v0.2) conformance tests.
 
 These use ONLY the public API (reset/step + the shared config), so they double as
 the acceptance test for the real env: add its constructor to ``ENV_FACTORIES``.
 """
+# pytest passes the make_env fixture in by name, which pylint reads as shadowing
+# pylint: disable=redefined-outer-name
 
 import copy
 
@@ -102,9 +109,14 @@ def test_reset_state_format(make_env, shared):
     assert [b["id"] for b in s["blue"]] == list(range(sc.n_blue))
     assert [r["id"] for r in s["red"]] == list(range(sc.n_red))
     for ent in s["blue"] + s["red"]:
-        assert set(ent) == {"id", "pos", "vel", "has_possession"}
+        # AI GENERATED (2026-11-13: blues only)
+        calling = {"calling"} if ent in s["blue"] else set()
+        # AI GENERATED (calling)
+        assert set(ent) == {"id", "pos", "vel", "has_possession"} | calling
         assert len(ent["pos"]) == 2 and len(ent["vel"]) == 2
-    assert set(s["ball"]) == {"pos", "vel"}
+    # AI GENERATED (2026-11-13: passer)
+    assert set(s["ball"]) == {"pos", "vel", "passer"} and s["ball"]["passer"] is None
+    assert not any(b["calling"] for b in s["blue"])  # AI GENERATED (2026-11-13)
     assert sum(e["has_possession"] for e in s["blue"] + s["red"]) <= 1
     assert info == {"events": [], "kick_applied": [False] * sc.n_blue}
     assert_plain(s, "s")
@@ -260,10 +272,17 @@ def test_kick_with_possession_is_applied(make_env):
     env, sc = make_env({"shared": {"start": {"start_mix": 1.0}}})  # blue holds the ball
     env.reset(seed=0, options=sc.start.to_reset_options())
     try:
-        s, term, trunc, info = env.step({"blue": [{"move": [0.0, 0.0], "kick_trigger": 1, "kick_vec": [1.0, 0.0]}]})
+        s, term, trunc, info = env.step(
+            {"blue": [{"move": [0.0, 0.0], "kick_trigger": 1, "kick_vec": [1.0, 0.0]}]})
     except NotImplementedError:
-        pytest.skip("this env doesn't implement kicking yet (milestone 1 is movement-only)")
+        # AI GENERATED
+        pytest.skip("this env doesn't implement kicking (the mock has no ball physics)")
     assert info["kick_applied"] == [True]
+    ### AI GENERATED (2026-11-07)
+    # the kick comes first (ICD §6)
+    assert info["events"][0] == {"type": "kick", "agent": ("blue", 0)}
+    assert {"type": "possession_change", "from": ("blue", 0), "to": None} in info["events"]
+    ### END AI GENERATED
 
 
 # --- Spawning (ICD §8, §9) ------------------------------------------------------------
@@ -317,3 +336,19 @@ def test_goto_target_n_red_zero(make_env):
         if trunc:
             break
     assert s["step"] == sc.max_episode_steps
+
+
+### AI GENERATED (2026-11-13: the optional call action, echoed in s)
+def test_calls_are_echoed_and_checked(make_env):
+    env, sc = make_env({"shared": {"n_blue": 2}})
+    env.reset(seed=0, options=sc.start.to_reset_options())
+    acts = zero_actions(2)
+    acts["blue"][1]["call"] = 1
+    s, *_ = env.step(acts)
+    assert [b["calling"] for b in s["blue"]] == [False, True]
+    s, *_ = env.step(zero_actions(2))  # no call key: not calling
+    assert [b["calling"] for b in s["blue"]] == [False, False]
+    acts["blue"][1]["call"] = 2
+    with pytest.raises(ValueError, match="call"):
+        env.step(acts)
+### END AI GENERATED
