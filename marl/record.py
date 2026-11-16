@@ -11,6 +11,8 @@
 #     plus its command line (backlog task 2, step 6).
 #   - 2026-11-01: Demo fix: git_revision ignores untracked files (the record
 #     being frozen is untracked until committed) (task 2, step 7).
+#   - 2026-11-02: git_revision takes ignore (tracked paths that don't count as
+#     uncommitted changes) and cwd (backlog task 4: the tracked regression report).
 # Prompt summary: Implement step 6 of the task 2 plotting-refactor plan: a
 #   freeze that keeps the manifest's comments and never half-updates a record.
 # Human review:   Pending review
@@ -159,13 +161,16 @@ def freeze(manifest_path: str | Path, runs_root: str | Path = RUNS, overwrite: b
     return result
 
 
-def git_revision() -> str:
+def git_revision(ignore: Sequence[str] = (), cwd: str | Path | None = None) -> str:
     """The short commit hash, plus a marker if tracked files have uncommitted changes.
-    Untracked files don't count: the record being frozen is usually one of them."""
+    Untracked files don't count: the record being frozen is usually one of them. Nor do the
+    ``ignore`` paths (relative to the repo root), e.g. a tracked report that each run rewrites."""
+    spec = ["--", ":/"] + [f":(top,exclude){p}" for p in ignore] if ignore else []
     try:
-        head = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True, check=True)
-        dirty = subprocess.run(["git", "status", "--porcelain", "--untracked-files=no"], capture_output=True, text=True,
-                               check=True)
+        head = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True, check=True,
+                              cwd=cwd)
+        dirty = subprocess.run(["git", "status", "--porcelain", "--untracked-files=no", *spec], capture_output=True,
+                               text=True, check=True, cwd=cwd)
     except (OSError, subprocess.CalledProcessError):
         return "unknown (not a git checkout)"
     return head.stdout.strip() + (" + uncommitted changes" if dirty.stdout.strip() else "")
