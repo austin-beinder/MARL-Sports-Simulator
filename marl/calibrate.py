@@ -6,6 +6,8 @@
 # Usage:
 #   - 2026-10-18: Envs come from run.env via make_env, with an --env flag.
 #     (Austin Beinder)
+#   - 2026-11-01: PyBullet is the default env, and the table name always
+#     carries the env (calibration_<config>_<env>.csv) (backlog task 3).
 #   - 2026-10-11: Generated this entire file: the red-speed calibration sweep
 #     (scripted baselines on dedicated calibration seeds), the band-center
 #     selection rule, and its command-line entry point (design #22, ICD §10).
@@ -99,8 +101,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--config", type=Path, default=Path("configs/keepaway_1v1.toml"))
     ap.add_argument("--speeds", default="1.5:2.0:0.05", help='"start:stop:step" or "a,b,c" (m/s)')
     ap.add_argument("--episodes", type=int, default=100, help="episodes per (speed, policy)")
-    ap.add_argument("--out", type=Path, help="CSV path (default: runs/calibration_<config name>.csv)")
-    ap.add_argument("--env", choices=("mock", "pybullet"), help="override run.env")  # AI GENERATED
+    ap.add_argument("--out", type=Path, help="CSV path (default: runs/calibration_<config name>_<env>.csv)")  # AI GENERATED (_<env>)
+    ap.add_argument("--env", choices=("mock", "pybullet"),
+                    help="override run.env (default: pybullet; mock is the fast stand-in)")  # AI GENERATED
     args = ap.parse_args(argv)
 
     cfg = load_config(args.config)
@@ -123,9 +126,8 @@ def main(argv: Sequence[str] | None = None) -> int:
               f"{f['len_mean_free_ball'] / max_steps:6.3f} {f['frac_truncated']:6.0%} | "
               f"{by['random']['survival']:6.3f} | {by['still']['survival']:6.3f}", flush=True)
 
-    ### AI GENERATED (non-mock envs get a suffix so they don't overwrite the mock's table)
-    suffix = "" if cfg.run.env == "mock" else f"_{cfg.run.env}"
-    out = args.out or Path(cfg.run.out_dir) / f"calibration_{args.config.stem}{suffix}.csv"
+    ### AI GENERATED (every table names its env, so the two envs never overwrite each other, 2026-11-01)
+    out = args.out or Path(cfg.run.out_dir) / f"calibration_{args.config.stem}_{cfg.run.env}.csv"
     ### END AI GENERATED
     out.parent.mkdir(parents=True, exist_ok=True)
     with open(out, "w", newline="", encoding="utf-8") as fh:

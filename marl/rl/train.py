@@ -27,6 +27,9 @@
 #   - 2026-10-31: Evaluation runs in-process for PyBullet too (each env has
 #     its own simulation now), and the training env is closed at the end.
 #     (Austin Beinder)
+#   - 2026-11-01: PyBullet is the default env; run dirs always carry the env
+#     (<config>_<env>_seed<N>), and the --env/--render help and errors say so
+#     (backlog task 3).
 # Prompt summary: Implement Phase 3 step 8 of the issue #7 plan (PPO update +
 #   training loop).
 # Human review:   Pending review
@@ -287,7 +290,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--config", type=Path, required=True, help="TOML config, e.g. configs/goto_target.toml")
     ap.add_argument("--seed", type=int, help="override run.seed")
     ap.add_argument("--total-steps", type=int, help="override run.total_steps")
-    ap.add_argument("--env", choices=("mock", "pybullet"), help="override run.env")  # AI GENERATED
+    ap.add_argument("--env", choices=("mock", "pybullet"),
+                    help="override run.env (default: pybullet; mock is the fast stand-in)")  # AI GENERATED
     ### AI GENERATED
     ap.add_argument("--render", action="store_true",
                     help="show the training env in the PyBullet GUI (slow; runs as fast as it can, not real time)")
@@ -296,7 +300,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     ### END AI GENERATED
     ap.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
                     help="override any config key (repeatable), e.g. --set shared.red_max_speed=1.6")
-    ap.add_argument("--out-dir", type=Path, help="default: <run.out_dir>/<config name>[_<env>]_seed<seed>")  # AI GENERATED
+    ap.add_argument("--out-dir", type=Path, help="default: <run.out_dir>/<config name>_<env>_seed<seed>")  # AI GENERATED
     ap.add_argument("--overwrite", action="store_true", help="replace an existing run in --out-dir")
     args = ap.parse_args(argv)
 
@@ -311,13 +315,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         run["env"] = args.env
     ### END AI GENERATED
     cfg = with_overrides(load_config(args.config), overrides)
-    ### AI GENERATED (non-mock envs get a suffix so their runs don't collide with mock runs)
-    suffix = "" if cfg.run.env == "mock" else f"_{cfg.run.env}"
-    out_dir = args.out_dir or Path(cfg.run.out_dir) / f"{args.config.stem}{suffix}_seed{cfg.run.seed}"
+    ### AI GENERATED (every run dir names its env, so mock and PyBullet runs never collide, 2026-11-01)
+    out_dir = args.out_dir or Path(cfg.run.out_dir) / f"{args.config.stem}_{cfg.run.env}_seed{cfg.run.seed}"
     ### END AI GENERATED
     ### AI GENERATED
     if args.render and cfg.run.env != "pybullet":
-        ap.error("--render needs the PyBullet env (--env pybullet)")
+        ap.error("--render needs the PyBullet env (the default; drop --env mock)")
     train(cfg, out_dir, overwrite=args.overwrite, render=args.render, print_collisions=args.debug)
     ### END AI GENERATED
     return 0

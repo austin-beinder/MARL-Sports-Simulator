@@ -15,7 +15,7 @@
 
     python scripts/plot.py                               # the golden record -> runs/plots/golden/
     python scripts/plot.py --manifest results/X/manifest.toml   # any record -> runs/plots/X/
-    python scripts/plot.py --arm "new reward=runs/new_reward_seed*" [--arm "golden=results/golden/data/..."]
+    python scripts/plot.py --arm "new reward=runs/new_reward_pybullet_seed*" [--arm "golden=results/golden/data/..."]
                            [--kind curves final diagnostics] [--baselines LABEL] [--name N] [--overwrite]
                                                          # ad hoc -> runs/plots/<name>/ (default: adhoc)
 

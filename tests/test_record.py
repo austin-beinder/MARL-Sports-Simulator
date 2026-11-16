@@ -8,6 +8,8 @@
 #     place (manifest-driven copy mirrored under data/, only the unfrozen path
 #     strings rewritten, provenance, validation before any write, the
 #     --overwrite guard) for backlog task 2, step 6.
+#   - 2026-11-02: Added a test for git_revision's ignore/cwd options (the
+#     tracked regression report, backlog task 4).
 #   - 2026-11-01: Added a test for the demo-found provenance bug (untracked
 #     files must not count as uncommitted changes) (task 2, step 7).
 # Prompt summary: Implement step 6 of the task 2 plotting-refactor plan
@@ -180,6 +182,33 @@ def test_git_revision_ignores_untracked_files_like_the_record_being_frozen(tmp_p
     assert "uncommitted" not in git_revision()
     (tmp_path / "code.py").write_text("x = 2\n", encoding="utf-8")  # a tracked change
     assert git_revision().endswith("+ uncommitted changes")
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="needs git")
+def test_git_revision_can_ignore_named_tracked_files(tmp_path):
+    # Task 4: the regression report is tracked and rewritten by every run, so it must not mark the
+    # run that writes it (or the next one) as "uncommitted changes".
+    def git(*args):
+        subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True)
+
+    git("init", "-q")
+    git("config", "user.email", "t@example.com")
+    git("config", "user.name", "t")
+    (tmp_path / "results" / "silver").mkdir(parents=True)
+    report = tmp_path / "results" / "silver" / "report.md"
+    report.write_text("old\n", encoding="utf-8")
+    (tmp_path / "code.py").write_text("x = 1\n", encoding="utf-8")
+    git("add", ".")
+    git("commit", "-q", "-m", "c")
+    report.write_text("new\n", encoding="utf-8")
+    ignore = ["results/silver/report.md"]
+    assert "uncommitted" not in git_revision(ignore=ignore, cwd=tmp_path)
+    assert git_revision(cwd=tmp_path).endswith("+ uncommitted changes")  # without ignore, it counts
+    (tmp_path / "results" / "silver").joinpath("x").mkdir()
+    assert "uncommitted" not in git_revision(ignore=ignore, cwd=tmp_path / "results" / "silver" / "x")  # any cwd
+    (tmp_path / "code.py").write_text("x = 2\n", encoding="utf-8")
+    assert git_revision(ignore=ignore, cwd=tmp_path).endswith("+ uncommitted changes")
+    assert git_revision(cwd=tmp_path / "nope").startswith("unknown")
 
 
 def test_cli_takes_a_record_name(ws, monkeypatch, capsys):
