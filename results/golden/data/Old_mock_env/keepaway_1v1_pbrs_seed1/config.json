@@ -1,0 +1,68 @@
+{
+  "shared": {
+    "scenario": "keepaway",
+    "n_blue": 1,
+    "n_red": 1,
+    "physics_dt": 0.004166666666666667,
+    "control_k": 12,
+    "max_episode_steps": 300,
+    "field_size": [
+      16.0,
+      10.0
+    ],
+    "max_speed": 2.0,
+    "red_max_speed": 1.8,
+    "carry_speed_factor": 0.75,
+    "max_kick_speed": 6.0,
+    "possession_radius": 0.5,
+    "player_radius": 0.25,
+    "start": {
+      "start_mix": 0.5,
+      "require_blue_closer": true,
+      "min_clearance": 1.0,
+      "min_red_ball_dist": 3.0
+    }
+  },
+  "rl": {
+    "horizon_seconds": 5.0,
+    "critic_input": "global",
+    "horizon_mode": "infinite",
+    "obs_ordering": "distance",
+    "obs_mode": "full",
+    "kick_enabled": false,
+    "beta_eps": 1e-06,
+    "reward": {
+      "base": "survival",
+      "shaping": [
+        {
+          "name": "pbrs_ball_acquisition",
+          "enabled": true,
+          "coef": 4.0
+        }
+      ]
+    },
+    "ppo": {
+      "rollout_steps": 2048,
+      "num_minibatches": 32,
+      "update_epochs": 10,
+      "clip_eps": 0.2,
+      "gae_lambda": 0.95,
+      "lr": 0.0003,
+      "adam_eps": 1e-05,
+      "ent_coef": 0.001,
+      "max_grad_norm": 0.5,
+      "hidden_sizes": [
+        64,
+        64
+      ]
+    }
+  },
+  "run": {
+    "seed": 1,
+    "total_steps": 1000000,
+    "eval_every": 10,
+    "eval_episodes": 50,
+    "eval_seed": 20261019,
+    "out_dir": "runs"
+  }
+}

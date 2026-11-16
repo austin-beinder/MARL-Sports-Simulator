@@ -16,6 +16,8 @@
 #   - 2026-10-14: Added the race metrics (pickup rate, closing speed,
 #     alignment) to every row, the per-run pbrs_coef and env_steps columns, and
 #     a --checkpoint option (e.g. a matched-budget control for the PBRS pilot).
+#   - 2026-11-01: The CLI expands glob arguments itself (PowerShell passes
+#     them literally) (task 2, step 5).
 # Prompt summary: Implement Phase 3 step 10 of the issue #7 plan (baselines,
 #   evaluation, calibration).
 # Human review:   Pending review
@@ -43,6 +45,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import glob
 import math
 from collections.abc import Sequence
 from pathlib import Path
@@ -153,11 +156,24 @@ def format_table(table: Sequence[dict[str, Any]]) -> str:
 
 def main(argv: Sequence[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Evaluate trained runs + baselines on the fixed eval episodes (#23).")
-    ap.add_argument("runs", nargs="+", type=Path, help="run directories of the SAME task, one per training seed")
+    ap.add_argument("runs", nargs="+", help="run directories of the SAME task, one per training seed "
+                                            '(globs like "runs/x_seed*" are expanded, sorted)')
     ap.add_argument("--checkpoint", default=FINAL, help="checkpoint file in each run's checkpoints/ (default: final.pt)")
     ap.add_argument("--out", type=Path, help="table CSV (default: <first run's parent>/eval_<first run name>.csv, "
                                              "plus _<checkpoint name> for a non-final checkpoint)")
     args = ap.parse_args(argv)
+    # AI CITATION: Claude Code (Claude Opus 5.5) | 2026-11-01 | JC Stinson III (LifeHackerIII)
+    # Usage: Expand globs here: PowerShell, unlike bash, passes `runs/x_seed*` through literally.
+    runs: list[Path] = []
+    for arg in args.runs:
+        if glob.has_magic(arg):
+            found = sorted(Path(p) for p in glob.glob(arg) if Path(p).is_dir())
+            if not found:
+                ap.error(f"{arg!r} matches no run directories")
+            runs += found
+        else:
+            runs.append(Path(arg))
+    args.runs = runs
     torch.set_num_threads(1)
     per_run, table = evaluate_runs(args.runs, args.checkpoint)
     print(format_table(table))

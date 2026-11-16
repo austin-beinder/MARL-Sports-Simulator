@@ -11,6 +11,10 @@
 #   - 2026-10-14: Added tests for the train.csv shaping column and for enabling
 #     a shaping term with --set (the PBRS pilot's command line). The
 #     run_episodes spy now passes the new optional on_step argument through.
+#   - 2026-10-31: Added a test that training prints a progress line for every
+#     iteration (backlog task 1: the old ~50-line throttle was removed).
+#   - 2026-11-01: Pinned run.env = "mock" in every test config: PyBullet is the
+#     default now, and these test the training loop, not the physics (task 3).
 # Prompt summary: Implement Phase 3 step 8 of the issue #7 plan (PPO update +
 #   training loop).
 # Human review:   Pending review
@@ -34,7 +38,8 @@ ROOT = Path(__file__).resolve().parents[1]
 TINY = {
     "shared": {"scenario": "goto_target", "n_red": 0, "max_episode_steps": 20},
     "rl": {"reward": {"base": "goto_target"}, "ppo": {"rollout_steps": 64, "num_minibatches": 4, "update_epochs": 2}},
-    "run": {"total_steps": 256, "eval_every": 2, "eval_episodes": 3},
+    # The mock, not the default PyBullet: these test the training loop, and the mock is fast (task 3).
+    "run": {"total_steps": 256, "eval_every": 2, "eval_episodes": 3, "env": "mock"},
 }
 TIMING = {"sps", "wall_time_s"}
 
@@ -83,6 +88,17 @@ def test_outputs_and_checkpoint_reload(tmp_path):
     assert res.final_eval["mode"] == "stochastic" and res.final_eval_deterministic["mode"] == "deterministic"
 
 
+def test_progress_line_every_iteration(tmp_path):
+    # 100 iterations: enough that the old throttle (every n_iters // 50) would have skipped half.
+    data = json.loads(json.dumps(TINY))
+    data["rl"]["ppo"] |= {"rollout_steps": 8, "num_minibatches": 2}
+    data["run"] |= {"total_steps": 800, "eval_every": 1000}
+    lines = []
+    train(config_from_dict(data), tmp_path / "run", log=lines.append)
+    printed = [int(line.split()[1].split("/")[0]) for line in lines if line.startswith("it ")]
+    assert printed == list(range(1, 101))
+
+
 def test_same_seed_same_run(tmp_path):
     a = train(tiny(), tmp_path / "a", log=quiet)
     b = train(tiny(), tmp_path / "b", log=quiet)
@@ -120,7 +136,7 @@ def test_every_training_seed_is_evaluated_on_the_same_episodes(tmp_path, monkeyp
 def test_keepaway_run_works(tmp_path):
     cfg = config_from_dict({
         "rl": {"ppo": {"rollout_steps": 64, "num_minibatches": 4, "update_epochs": 1}},
-        "run": {"total_steps": 128, "eval_every": 2, "eval_episodes": 2},
+        "run": {"total_steps": 128, "eval_every": 2, "eval_episodes": 2, "env": "mock"},
     })
     res = train(cfg, tmp_path / "ka", log=quiet)
     assert res.final_eval["episodes"] == 2 and res.final_eval["len_mean"] > 0
@@ -131,7 +147,7 @@ def test_shaping_column_in_train_csv(tmp_path):
         cfg = config_from_dict({
             "shared": {"start": {"start_mix": 0.0}},  # free-ball starts: the ball is loose at first
             "rl": {"reward": {"shaping": shaping}, "ppo": {"rollout_steps": 64, "num_minibatches": 4, "update_epochs": 1}},
-            "run": {"total_steps": 128, "eval_every": 2, "eval_episodes": 2},
+            "run": {"total_steps": 128, "eval_every": 2, "eval_episodes": 2, "env": "mock"},
         })
         return train(cfg, tmp_path / name, log=quiet).out_dir
 
@@ -183,7 +199,7 @@ def test_cli_script(tmp_path):
     out = tmp_path / "cli"
     cmd = [
         sys.executable, str(ROOT / "scripts" / "train.py"), "--config", str(ROOT / "configs" / "goto_target.toml"),
-        "--out-dir", str(out), "--total-steps", "128",
+        "--env", "mock", "--out-dir", str(out), "--total-steps", "128",
         "--set", "rl.ppo.rollout_steps=64", "--set", "rl.ppo.num_minibatches=4", "--set", "rl.ppo.update_epochs=1",
         "--set", "run.eval_episodes=2", "--set", "shared.max_episode_steps=20",
     ]

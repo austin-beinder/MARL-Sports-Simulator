@@ -11,6 +11,11 @@
 #     too coarse to tell two untrained inits apart (a mutation check showed it).
 #   - 2026-10-14: Added tests for the race metrics and arm columns, pbrs_coef,
 #     and the --checkpoint option (it never overwrites the final table).
+#   - 2026-11-01: Added tests for glob expansion in the CLI (task 2, step 5).
+#   - 2026-11-01: Pinned run.env = "mock" in tiny_run: PyBullet is the default
+#     now, and these test the evaluation table, not the physics (task 3).
+#   - 2026-11-01: Added a test that a run saved before run.env existed is
+#     still evaluated on the mock (task 3).
 # Prompt summary: Implement Phase 3 step 10 of the issue #7 plan (baselines,
 #   evaluation, calibration).
 # Human review:   Pending review
@@ -19,6 +24,7 @@ import csv
 import math
 
 import pytest
+import torch
 
 from marl.common.config import config_from_dict
 from marl.rl.report import evaluate_runs, format_table, main, pbrs_coef
@@ -35,7 +41,8 @@ def tiny_run(tmp_path, seed=0, goto=False, **shared):
     cfg = config_from_dict({
         "shared": shared,
         "rl": rl,
-        "run": {"seed": seed, "total_steps": 128, "eval_every": 2, "eval_episodes": 4},
+        # The mock, not the default PyBullet: fast, and the expected numbers are the mock's (task 3).
+        "run": {"seed": seed, "total_steps": 128, "eval_every": 2, "eval_episodes": 4, "env": "mock"},
     })
     return train(cfg, tmp_path / f"run_s{seed}{'_goto' if goto else ''}", log=lambda _: None).out_dir
 
@@ -64,6 +71,23 @@ def test_table_reproduces_the_training_runs_own_evaluations(tmp_path):
     same(by["ppo"], final_stoch)
     same(by["ppo_deterministic"], final_det)
     assert [r["policy"] for r in table][:3] == ["ppo", "ppo_deterministic", "untrained"]
+
+
+# AI CITATION: Claude Code (Claude Opus 5.5) | 2026-11-01 | JC Stinson III (LifeHackerIII)
+# Usage: Wrote this test (backlog task 3: legacy runs keep evaluating on the mock).
+def test_run_saved_before_run_env_existed_is_evaluated_on_the_mock(tmp_path):
+    # Like runs/Old_mock_env: checkpoints whose config has no run.env. With PyBullet as the
+    # default they must still rebuild on the mock, or the table wouldn't match the logged evals.
+    run = tiny_run(tmp_path)
+    for path in (run / "checkpoints").glob("*.pt"):
+        ckpt = torch.load(path, weights_only=True)
+        del ckpt["config"]["run"]["env"]
+        torch.save(ckpt, path)
+    per_run, _ = evaluate_runs([run])
+    by = {r["policy"]: r for r in per_run}
+    logged = csv_rows(run / "eval.csv")
+    same(by["untrained"], logged[0])
+    same(by["ppo"], [r for r in logged if r["mode"] == "stochastic"][-1])
 
 
 def test_untrained_policy_is_rebuilt_exactly(tmp_path):
@@ -100,6 +124,21 @@ def test_cli_writes_both_tables(tmp_path):
     out = tmp_path / "table.csv"
     assert main([str(run), "--out", str(out)]) == 0
     assert len(csv_rows(out)) == 6 and len(csv_rows(tmp_path / "table_per_run.csv")) == 6
+
+
+def test_cli_expands_globs_itself(tmp_path):
+    # PowerShell passes `runs/x_seed*` to Python literally, so evaluate.py expands it (sorted).
+    for seed in (1, 0):
+        tiny_run(tmp_path, seed=seed)
+    assert main([str(tmp_path / "run_s*")]) == 0
+    table = {r["policy"]: r for r in csv_rows(tmp_path / "eval_run_s0.csv")}  # named by the FIRST sorted run
+    assert table["ppo"]["n_seeds"] == "2"
+
+
+def test_cli_glob_matching_nothing_is_a_usage_error(tmp_path, capsys):
+    with pytest.raises(SystemExit):
+        main([str(tmp_path / "nothing_seed*")])
+    assert "matches no run directories" in capsys.readouterr().err
 
 
 def test_rows_carry_race_metrics_and_the_arm(tmp_path):
