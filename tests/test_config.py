@@ -19,6 +19,8 @@
 #   - 2026-11-11: The catch_start_mix reset option. (Austin Beinder)
 #   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters; no
 #     behaviour change. (Austin Beinder)
+#   - 2026-11-23: The deferred kick_enabled case runs on the mock: kicking
+#     is built on PyBullet, now the default env. (Austin Beinder)
 # ==============================================================================
 import dataclasses
 from pathlib import Path
@@ -241,7 +243,8 @@ def test_invalid_values_raise(data, match):
         {"rl": {"horizon_mode": "finite"}},
         {"rl": {"obs_ordering": "index"}},
         {"rl": {"obs_mode": "radius"}},
-        {"rl": {"kick_enabled": True}},
+        # AI GENERATED (2026-11-23): kicking is built on PyBullet (the default env) only
+        {"rl": {"kick_enabled": True}, "run": {"env": "mock"}},  # AI GENERATED
         {"rl": {"reward": {"shaping": [{"name": "pbrs_red_distance", "enabled": True, "coef": 0.1}]}}},
     ],
 )
