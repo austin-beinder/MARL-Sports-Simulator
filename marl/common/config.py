@@ -47,6 +47,9 @@
 #   - 2026-11-14: The dead_ball shaping term name. (Austin Beinder)
 #   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters; no
 #     behaviour change. (Austin Beinder)
+#   - 2026-11-23: The soccer scenario (PyBullet only), its goal base reward,
+#     the pbrs_ball_to_goal shaping term and the [shared.soccer] table (goal
+#     size), from docs/soccer_env_plan.md. (Austin Beinder)
 # ==============================================================================
 """Configuration schema, TOML loading and validation.
 
@@ -80,7 +83,8 @@ from typing import Any
 OPTIONS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
     # AI GENERATED (drills; claim_ball 2026-11-14)
     "scenario": (frozenset({"keepaway", "goto_target", "passing_drill", "pass_practice",
-                            "pass_practice_moving", "claim_ball"}), frozenset()),
+                            "pass_practice_moving", "claim_ball",
+                            "soccer"}), frozenset()),  # AI GENERATED (2026-11-23: soccer)
     "critic_input": (frozenset({"local", "global"}), frozenset()),
     "horizon_mode": (frozenset({"infinite"}), frozenset({"finite"})),
     "obs_ordering": (frozenset({"distance"}), frozenset({"index"})),
@@ -93,7 +97,8 @@ OPTIONS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
 # (a test checks it); they live here so the config can be validated at load.
 # AI GENERATED (drills; pass_catch 2026-11-11; claim 2026-11-14)
 BASE_REWARD_TERMS: frozenset[str] = frozenset({"survival", "goto_target", "passing_drill",
-                                              "pass_practice", "pass_catch", "claim"})
+                                              "pass_practice", "pass_catch", "claim",
+                                              "goal"})  # AI GENERATED (2026-11-23)
 ### AI GENERATED (pass_progress, pass_completed: 2026-11-08, for the passing drill;
 ### kicker_clearance, receiver_spacing: 2026-11-11)
 SHAPING_TERMS_BUILT: frozenset[str] = frozenset({"pbrs_ball_acquisition", "pass_progress",
@@ -101,7 +106,8 @@ SHAPING_TERMS_BUILT: frozenset[str] = frozenset({"pbrs_ball_acquisition", "pass_
                                                  "kicker_clearance", "receiver_spacing",
                                                  "call_accuracy",  # 2026-11-13
                                                  "call_yield",  # 2026-11-14
-                                                 "dead_ball"})  # 2026-11-14
+                                                 "dead_ball",  # 2026-11-14
+                                                 "pbrs_ball_to_goal"})  # 2026-11-23 (soccer)
 ### END AI GENERATED
 SHAPING_TERMS_DEFERRED: frozenset[str] = frozenset({"pbrs_red_distance"})  # #15
 
@@ -115,6 +121,7 @@ SCENARIO_BASE_REWARD: dict[str, str] = {
     # AI GENERATED (2026-11-11): paid per catch, to the time limit
     "pass_practice_moving": "pass_catch",
     "claim_ball": "claim",  # AI GENERATED (2026-11-14): -1 a step until a blue has the ball
+    "soccer": "goal",  # AI GENERATED (2026-11-23): +-1 a goal (scaled, see marl/rl/reward.py)
 }
 # The scenarios whose blues can't move: the env ignores their move actions and the actor masks
 # the movement head out of PPO (2026-11-09).
@@ -154,6 +161,19 @@ class StartConfig:
         return dataclasses.asdict(self)
 
 
+### AI GENERATED (2026-11-23)
+@dataclass(frozen=True)
+class SoccerShared:
+    """The soccer scenario's goals (docs/soccer_env_plan.md §4): one in the middle of each end
+    wall (pybulletGame.standard_goals), blue defending the west one (x = -Lx / 2) and attacking
+    east. Shared because the env builds them and the RL side reads where they are (observations,
+    shaping). Other scenarios ignore it."""
+
+    goal_width: float = 2.0  # m, post to post
+    goal_depth: float = 0.5  # m, how far the pocket goes back behind the goal line
+### END AI GENERATED
+
+
 @dataclass(frozen=True)
 class SharedConfig:
     """Values both sides must agree on (ICD §10). Mock defaults = decision G."""
@@ -181,6 +201,7 @@ class SharedConfig:
     possession_radius: float = 0.5
     player_radius: float = 0.25
     start: StartConfig = field(default_factory=StartConfig)
+    soccer: SoccerShared = field(default_factory=SoccerShared)  # AI GENERATED (2026-11-23)
 
     @property
     def dt_control(self) -> float:
@@ -438,6 +459,8 @@ def _validate_shared(s: SharedConfig) -> None:
         _require(s.n_blue >= 2 and s.n_red == 0,
                  f"{s.scenario} needs n_blue >= 2 (someone to pass to) and n_red = 0")
     ### END AI GENERATED
+    elif s.scenario == "soccer":  # AI GENERATED (2026-11-23): any team sizes; n_red = 0 is an empty net
+        pass
     elif s.scenario == "claim_ball":  # AI GENERATED (2026-11-14)
         # AI GENERATED
         _require(s.n_red == 0,
@@ -478,6 +501,12 @@ def _validate_shared(s: SharedConfig) -> None:
     # AI GENERATED (2026-11-11)
     _require(0.0 <= st.catch_start_mix <= 1.0, "shared.start.catch_start_mix must be in [0, 1]")
     ### END AI GENERATED
+    ### AI GENERATED (2026-11-23)
+    _require(s.soccer.goal_width > 2 * s.player_radius,
+             "shared.soccer.goal_width must exceed the player diameter")
+    _require(s.soccer.goal_width < s.field_size[1], "shared.soccer.goal_width must be < the field width")
+    _require(s.soccer.goal_depth > 0, "shared.soccer.goal_depth must be > 0")
+    ### END AI GENERATED
 
 
 def _validate_rl(cfg: Config) -> None:
@@ -489,6 +518,9 @@ def _validate_rl(cfg: Config) -> None:
     if rl.kick_enabled and cfg.run.env != "pybullet":
         raise NotImplementedError("rl.kick_enabled=true needs run.env = 'pybullet': "
                                   "the mock env has no ball physics")
+    # 2026-11-23: soccer has goals only in the PyBullet env (the mock is no longer extended)
+    if s.scenario == "soccer" and cfg.run.env != "pybullet":
+        raise NotImplementedError("the soccer scenario needs run.env = 'pybullet'")
     # 2026-11-08: passing needs kicks
     if s.scenario in FROZEN_SCENARIOS | PASS_PRACTICE_SCENARIOS:
         _require(rl.kick_enabled,
@@ -530,6 +562,10 @@ def _validate_rl(cfg: Config) -> None:
     _require(rl.call_enabled
              or not any(t.name == "call_yield" and t.enabled for t in rw.shaping),
              "the call_yield shaping term needs rl.call_enabled = true")
+    # AI GENERATED (2026-11-23): only soccer has goals
+    _require(s.scenario == "soccer"
+             or not any(t.name == "pbrs_ball_to_goal" and t.enabled for t in rw.shaping),
+             "the pbrs_ball_to_goal shaping term needs the soccer scenario")
 
     p = rl.ppo
     for name in ("rollout_steps", "num_minibatches", "update_epochs"):

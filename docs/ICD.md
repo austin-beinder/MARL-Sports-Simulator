@@ -44,6 +44,9 @@ Usage:
     "calling" in s (both envs). Decision by Austin Beinder.
   2026-11-14: §9, §10: the claim_ball scenario (a loose ball, no red,
     terminated when a blue gets it; both envs). Decision by Austin Beinder.
+  2026-11-23: §5, §7, §8, §9, §10, §11: the soccer scenario (PyBullet only):
+    goals, red possession not terminal, the goal event, [shared.soccer].
+    Decisions by Austin Beinder (docs/soccer_env_plan.md).
 -->
 
 # Gym ↔ RL Layer Interface Control Document (ICD)
@@ -137,6 +140,9 @@ s = {
 ```
 
 - At most one entity has `has_possession = True`. All False means the ball is loose.
+- **Soccer (2026-11-23):** a red may hold the ball mid-episode (red possession isn't terminal there),
+  and on the final state after a goal the ball's position is past the end line, in the goal's pocket
+  (`|x|` up to `Lx / 2 + goal_depth`).
 - **`ball.passer` (added 2026-11-13):** the id of the blue who passed the ball to its current (or, while
   it is loose, its latest) blue holder, else None.
   - A blue who picks up a teammate's kick was passed to by that teammate.
@@ -212,6 +218,7 @@ actions = {
 | `terminated = True` | **red gains possession** (§8; checked every tick, §3)        | real game over; future value = 0      |
 | `truncated = True`  | `step` reaches `max_episode_steps`                           | time limit only; the game wasn't lost |
 | `terminated = True` | `pass_practice` only (2026-11-09): the episode's kick has played out (§9) | the one kick is over; future value = 0 |
+| `terminated = True` | `soccer` only (2026-11-23): **a goal**, by either team (§9). Red possession is *not* terminal in soccer | the game is over; future value = 0 |
 
 - If both happen on the same step, report `terminated = True`.
 - **The env always reports a time-out as `truncated`.** (If the RL side runs a "finite horizon" mode, it
@@ -242,6 +249,9 @@ RL side.
 - **Possession by contact (PyBullet, 2026-11-07):** a red player touching the blue carrier or its ball
   takes the ball, including when they were already touching before blue got it (a loose ball picked
   up mid-scrum). The ball changes hands at most once per physics tick.
+- **Soccer (2026-11-23):** the same contact rule works both ways, so a blue touching a red carrier
+  takes the ball back. Only blues kick; a red holding the ball keeps still (its fixed policy chases
+  the ball, which it is standing on).
 - **Spawning:** a "blue possession" start places the ball on a blue player (possessed at step 0). A
   reset **never** starts with red possession: red spawns at least `min_red_ball_dist`
   (> `possession_radius`) from the ball.
@@ -255,6 +265,8 @@ info = {
     "events": [                  # what happened during this step, in order
         {"type": "possession_change", "from": ("blue", 0) or None, "to": ("red", 0) or None},
         {"type": "kick", "agent": ("blue", 0)},
+        {"type": "goal", "team": "blue", "scorer": ("blue", 0) or ("red", 0) or None,
+         "own_goal": False, "carried": True},  # soccer only, last (2026-11-23)
         ...
     ],
     "kick_applied": [bool, ...], # per blue agent: did a kick actually happen this step
@@ -319,6 +331,15 @@ options = {
   on the step a blue picks the ball up (`truncated` at the time limit if nobody does). Practice for
   the `call` (§6): the RL side pays -1 a step until the pickup, scores each blue's calls by who got
   the ball, and charges blues that crowd a ball a teammate called.
+- `soccer` (2026-11-23, PyBullet only): any `n_blue >= 1`, `n_red >= 0` (0 = an empty net). The field
+  has a goal in the middle of each end wall (`[shared.soccer]`, §10): blue defends the west goal
+  (`x = -Lx / 2`) and attacks east. Spawns are drawn exactly as for `keepaway`. Red possession is
+  **not** terminal: play goes on, and either team takes the ball from the other by touching the
+  carrier. Every red chases the ball. The episode is `terminated` on the first goal: the whole ball
+  over a goal line between the posts, kicked, carried in, or an own goal; it scores for the team that
+  doesn't defend that goal. That step's `events` end with one `goal` event (`team` gets the point,
+  `scorer` is whoever last held the ball, `own_goal`, `carried`). No goal by the time limit:
+  `truncated`, a draw. The RL side pays +1 for a blue goal and -1 for a red one.
 
 ## 10. Shared configuration
 
@@ -327,7 +348,7 @@ teammate's call. Both sides validate the config **at load**.
 
 | Key                                 | Default       | Notes                                                    |
 | ----------------------------------- | ------------- | -------------------------------------------------------- |
-| `scenario`                          | `keepaway`    | or `goto_target`, `passing_drill`, `pass_practice`, `pass_practice_moving`, `claim_ball` (§9) |
+| `scenario`                          | `keepaway`    | or `goto_target`, `passing_drill`, `pass_practice`, `pass_practice_moving`, `claim_ball`, `soccer` (§9) |
 | `n_blue`, `n_red`                   | 1, 1          | milestone 1 is 1v1; `n_red = 0` in goto_target, pass_practice |
 | `physics_dt`                        | 1/240 s       |                                                          |
 | `control_k`                         | 12            | → 20 Hz control                                          |
@@ -341,6 +362,7 @@ teammate's call. Both sides validate the config **at load**.
 | `ball_damping`                      | 0.4           | loose-ball slowdown (§8): a 6 m/s kick rolls ~4.9 m, 3 m/s ~3.5 m |
 | `possession_radius`                 | [OPEN]        | §8                                                       |
 | start-distribution options          | see §9        |                                                          |
+| `soccer.goal_width`, `soccer.goal_depth` | 2.0, 0.5 m | soccer only (2026-11-23): each goal's mouth, post to post, and how far its pocket goes back |
 
 **Calibration:** before training, the RL side tunes `red_max_speed` (and `carry_speed_factor` if needed) so
 that a scripted "flee" policy survives roughly 30–70% of `max_episode_steps`. If red is always faster
@@ -353,7 +375,7 @@ The RL side will write a test suite against this ICD that can run on **both** th
 (it doubles as an acceptance test for the real env):
 - same seed + options → identical episode;
 - malformed actions raise;
-- `terminated` ⇒ some red has `has_possession` in `s_next` (except in `pass_practice`, §9);
+- `terminated` ⇒ some red has `has_possession` in `s_next` (except in `pass_practice` and `soccer`, §9);
 - terminated takes priority over truncated;
 - the final `s_next` is the true final state (no auto-reset);
 - a returned `s` is never modified afterwards, by later `step()` or `reset()` calls (§5);

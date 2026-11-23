@@ -57,6 +57,10 @@
 #     the new warnings (a module-level disable of unused-argument and
 #     redefined-outer-name for the shared term signature); no behaviour
 #     change. (Austin Beinder)
+#   - 2026-11-23: Soccer (docs/soccer_env_plan.md §5): the goal base term,
+#     the pbrs_ball_to_goal shaping term, pbrs_ball_acquisition treating a
+#     red-held ball as one to win back, and goal counts in PassMemory.
+#     (Austin Beinder)
 # ==============================================================================
 """RL-side reward module (design #14, #15). The env never computes rewards.
 
@@ -155,6 +159,20 @@ Claiming a loose ball (2026-11-14; claim_ball: a loose ball, no red, ends when a
   nothing there charged for it. Every dead step also makes a miss cost more, so keep the coef well
   below (catch value) / (dead steps per miss), or holding the ball beats kicking it.
 
+Soccer (2026-11-23; the game ends on the first goal, red keeps playing when it has the ball):
+
+* ``goal`` (base) -- +1 / (1 - gamma) on the step blue scores, -1 / (1 - gamma) on the step red
+  scores (own goals included: a ball in blue's goal is red's point), 0 otherwise. Read from the
+  step's ``goal`` events (ICD §9). The 1 / (1 - gamma) cancels the (1 - gamma) scale, so the
+  learner sees +-1 per goal, the size of keep-away's best return; a plain 1 would reach it as
+  ~0.01, tiny next to any shaping.
+* ``pbrs_ball_to_goal`` (shaping, potential-based) -- Phi = minus the ball's distance to the
+  centre of red's goal (east, ``x = Lx / 2``), over the field length. Moving the ball toward the
+  goal earns, losing ground costs.
+* ``pbrs_ball_acquisition`` in soccer: Phi is 0 only while a BLUE holds the ball; a red-held ball
+  counts like a loose one (a ball to win back). In keep-away red possession is terminal, so this
+  changes nothing there.
+
 A pass is a blue's kick picked up by a different blue with nobody else touching it first. With
 ``rl.reward.min_pass_distance`` d > 0 (2026-11-10), the catch must also be at least d from where
 the ball was kicked, the receiver must have been at least d from the kick point when the ball was
@@ -205,12 +223,14 @@ def goto_target(s, actions, s_next, effective_terminal, truncated, info, cfg) ->
     return -sum(dists) / len(dists)
 
 
-def ball_potential(s: dict) -> float:
+def ball_potential(s: dict, red_held_counts: bool = False) -> float:
     """Phi(s) for ``pbrs_ball_acquisition``: minus the distance (m) from the CLOSEST
     blue to the ball while it is loose (ICD §5: no ``has_possession`` set), 0 while
     anyone holds it. Closest only: a team potential, so at N > 1 it doesn't pull
-    every teammate onto the ball."""
-    if any(p["has_possession"] for p in s["blue"]) or any(p["has_possession"] for p in s["red"]):
+    every teammate onto the ball. With ``red_held_counts`` (soccer, 2026-11-23) a ball a red
+    holds counts like a loose one: only a blue holder makes Phi 0."""
+    if any(p["has_possession"] for p in s["blue"]) or (
+            not red_held_counts and any(p["has_possession"] for p in s["red"])):  # AI GENERATED
         return 0.0
     ball = s["ball"]["pos"]
     return -min(math.dist(b["pos"], ball) for b in s["blue"])
@@ -225,8 +245,35 @@ def pbrs_ball_acquisition(s, actions, s_next, effective_terminal, truncated, inf
     earns about possession_radius; red capturing the ball refunds +d. These cancel
     over an episode: the discounted sum is gamma^L * Phi(s_L) - Phi(s_0) for EVERY
     policy (a test checks it)."""
-    phi_next = 0.0 if effective_terminal else ball_potential(s_next)
-    return cfg.gamma * phi_next - ball_potential(s)
+    red_held = cfg.shared.scenario == "soccer"  # AI GENERATED (2026-11-23)
+    phi_next = 0.0 if effective_terminal else ball_potential(s_next, red_held)
+    return cfg.gamma * phi_next - ball_potential(s, red_held)
+
+
+### AI GENERATED (2026-11-23: soccer)
+def goal(s, actions, s_next, effective_terminal, truncated, info, cfg) -> float:
+    """+-1 / (1 - gamma) per goal this step: + for blue's, - for red's (see the docstring)."""
+    score = sum(1.0 if e["team"] == "blue" else -1.0 for e in info["events"] if e["type"] == "goal")
+    return score / (1.0 - cfg.gamma)
+
+
+def goal_potential(s: dict, cfg) -> float:
+    """Phi(s) for ``pbrs_ball_to_goal``: minus the ball's distance (m) to the centre of red's
+    goal (blue attacks east, x = Lx / 2), over the field length Lx: about -1 at blue's own goal,
+    0 in red's."""
+    length = cfg.shared.field_size[0]
+    return -math.dist(s["ball"]["pos"][:2], (length / 2, 0.0)) / length
+
+
+def pbrs_ball_to_goal(s, actions, s_next, effective_terminal, truncated, info, cfg) -> float:
+    """F = gamma * Phi(s') - Phi(s), Phi(s') = 0 at an effective terminal (#15). Per unit coef, a
+    carry at full speed toward the goal earns about carry speed * dt_control / Lx (0.005 at the
+    defaults) a step. At a goal Phi(s') = 0, so a red goal refunds the ball's distance (~1): small
+    next to the goal's own -1 / (1 - gamma). Over an episode it sums to gamma^L Phi(s_L) - Phi(s_0)
+    for every policy, so it can't change which policy is best."""
+    phi_next = 0.0 if effective_terminal else goal_potential(s_next, cfg)
+    return cfg.gamma * phi_next - goal_potential(s, cfg)
+### END AI GENERATED
 
 
 ### AI GENERATED (2026-11-08: the passing drill)
@@ -293,6 +340,19 @@ class PassMemory:
     pickups: int = 0
     called: float = 0.0
     miscalled: float = 0.0
+    # 2026-11-23, soccer: goals by blue (goals_for) and by red (goals_against) this episode
+    goals_for: int = 0
+    goals_against: int = 0
+    keeps_score: bool = False  # 2026-11-23: a soccer episode (outcome says who won)
+
+    @property
+    def outcome(self) -> str | None:  # AI GENERATED (2026-11-23)
+        """Soccer: "win", "loss" or "draw" (no goal, or level); None in other scenarios."""
+        if not self.keeps_score:
+            return None
+        if self.goals_for != self.goals_against:
+            return "win" if self.goals_for > self.goals_against else "loss"
+        return "draw"
 
     def _far_enough(self, ball) -> bool:  # AI GENERATED (2026-11-10)
         """The ball is min_distance from the kick point (always, with no minimum or no kick
@@ -312,6 +372,13 @@ class PassMemory:
         # AI GENERATED (2026-11-13: returned)
         in_play, completed, returned = self.kicker, False, False
         for event in info["events"]:
+            ### AI GENERATED (2026-11-23: soccer)
+            if event["type"] == "goal":
+                if event["team"] == "blue":
+                    self.goals_for += 1
+                else:
+                    self.goals_against += 1
+            ### END AI GENERATED
             if event["type"] == "kick":
                 self.kicker = in_play = event["agent"][1]  # blue kicks are the only kicks (ICD §6)
                 self.kicks += 1  # AI GENERATED (2026-11-11)
@@ -661,6 +728,7 @@ BASE_TERMS: dict[str, Term] = {
     "pass_practice": pass_practice,  # AI GENERATED (2026-11-09)
     "pass_catch": pass_catch,  # AI GENERATED (2026-11-11)
     "claim": claim,  # AI GENERATED (2026-11-14)
+    "goal": goal,  # AI GENERATED (2026-11-23)
 }
 SHAPING_TERMS: dict[str, Term] = {
     "pbrs_ball_acquisition": pbrs_ball_acquisition,
@@ -671,6 +739,7 @@ SHAPING_TERMS: dict[str, Term] = {
     "call_accuracy": call_accuracy,  # AI GENERATED (2026-11-13)
     "call_yield": call_yield,  # AI GENERATED (2026-11-14)
     "dead_ball": dead_ball,  # AI GENERATED (2026-11-14)
+    "pbrs_ball_to_goal": pbrs_ball_to_goal,  # AI GENERATED (2026-11-23)
     "pbrs_red_distance": _deferred("pbrs_red_distance", "#15"),
 }
 
@@ -706,7 +775,8 @@ class RewardModule:
     ### AI GENERATED (2026-11-08)
     def new_episode(self) -> PassMemory:
         """Fresh per-episode memory, to pass to every ``parts`` call of that episode."""
-        return PassMemory(min_distance=self._cfg.rl.reward.min_pass_distance)  # 2026-11-10
+        return PassMemory(min_distance=self._cfg.rl.reward.min_pass_distance,  # 2026-11-10
+                          keeps_score=self._cfg.shared.scenario == "soccer")  # 2026-11-23
     ### END AI GENERATED
 
     def parts(

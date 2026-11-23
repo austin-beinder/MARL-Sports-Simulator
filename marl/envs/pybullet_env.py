@@ -37,6 +37,8 @@
 #     (Player.show_calling). (Austin Beinder)
 #   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters; no
 #     behaviour change. (Austin Beinder)
+#   - 2026-11-23: The game is built in _make_game, a hook the soccer adapter
+#     (pybullet_soccer_env.py) overrides; no behaviour change. (Austin Beinder)
 # ==============================================================================
 ### AI GENERATED
 """ICD adapter around the PyBullet keep-away game (``pybulletGame.KeepAwayEnv``).
@@ -90,13 +92,14 @@ _UNSET = object()
 class PyBulletEnv:
     """ICD-conformant wrapper around ``KeepAwayEnv``. ``reset`` and ``step`` speak plain Python types."""
 
+    # AI GENERATED (2026-11-23: a class attribute, so the soccer adapter can replace it)
+    SCENARIOS: tuple[str, ...] = ("keepaway", "goto_target", "passing_drill",
+                                  *PASS_PRACTICE_SCENARIOS, "claim_ball")
+
     def __init__(self, cfg: SharedConfig, render_mode: str | None = None, print_collisions: bool = False):
         """render_mode="human" opens the pybullet GUI (only if this process has no pybullet connection
         yet). print_collisions turns on the sim's collision debug prints, for the whole process."""
-        # AI GENERATED (drills)
-        if cfg.scenario not in ("keepaway", "goto_target", "passing_drill",
-                                *PASS_PRACTICE_SCENARIOS,
-                                "claim_ball"):  # AI GENERATED (2026-11-14)
+        if cfg.scenario not in self.SCENARIOS:  # AI GENERATED (drills; 2026-11-23: SCENARIOS)
             raise NotImplementedError(f"the PyBullet env doesn't implement scenario {cfg.scenario!r}")
         self.cfg = cfg
         self.n_blue, self.n_red = cfg.n_blue, cfg.n_red
@@ -112,8 +115,17 @@ class PyBulletEnv:
         self._calls = [False] * cfg.n_blue  # each blue's latest call, echoed in s (ICD §5)
         ### END AI GENERATED
         Entity.print_collisions = print_collisions
+        self._game = self._make_game(cfg, render_mode)  # AI GENERATED (2026-11-23: a hook for soccer)
+        if not np.isclose(self._game.time_step, cfg.physics_dt):
+            raise ValueError(f"physics_dt {cfg.physics_dt} doesn't match pybullet's time step {self._game.time_step}")
+        self._ready = False
+
+    ### AI GENERATED (2026-11-23: was inline in __init__)
+    @staticmethod
+    def _make_game(cfg: SharedConfig, render_mode: str | None) -> Any:
+        """The game this adapter drives: keep-away (PyBulletSoccerEnv overrides it)."""
         episode_time = cfg.max_episode_steps * cfg.control_k * cfg.physics_dt
-        self._game = KeepAwayEnv(
+        return KeepAwayEnv(
             KeepAwayConfig(
                 blue_max_speed=cfg.max_speed,
                 red_max_speed=cfg.red_max_speed,
@@ -135,9 +147,7 @@ class PyBulletEnv:
             ),
             render_mode=render_mode,
         )
-        if not np.isclose(self._game.time_step, cfg.physics_dt):
-            raise ValueError(f"physics_dt {cfg.physics_dt} doesn't match pybullet's time step {self._game.time_step}")
-        self._ready = False
+    ### END AI GENERATED
 
     # --- API (ICD §4) ----------------------------------------------------------
     def reset(self, seed: int, options: dict[str, Any] | None = None) -> tuple[dict, dict]:
@@ -217,8 +227,16 @@ class PyBulletEnv:
             {"type": "possession_change", "from": self._holder_id(old), "to": self._holder_id(new)}
             for _, old, new in self._game.possession_events
         ]
+        events += self._game_events(game_info)  # AI GENERATED (2026-11-23): e.g. soccer's goal
         self._track_passer(events)  # AI GENERATED (2026-11-13)
         return self._state(), bool(terminated), truncated, self._info(events, kick_applied)
+
+    ### AI GENERATED (2026-11-23)
+    def _game_events(self, game_info: dict) -> list[dict]:
+        """Events of the game's own after the kicks and possession changes: none in keep-away
+        (PyBulletSoccerEnv adds its goal)."""
+        return []
+    ### END AI GENERATED
 
     ### AI GENERATED (2026-11-13)
     def _track_passer(self, events: list[dict]) -> None:

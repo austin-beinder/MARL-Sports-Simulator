@@ -20,6 +20,9 @@
 #   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters and
 #     disabled redefined-outer-name for the pytest fixture; no behaviour
 #     change. (Austin Beinder)
+#   - 2026-11-23: The soccer adapter runs the suite too, on the keepaway
+#     configs turned into soccer; the two "red possession is terminal" tests
+#     skip it. (Austin Beinder)
 # ==============================================================================
 """ICD (docs/ICD.md v0.2) conformance tests.
 
@@ -30,6 +33,7 @@ the acceptance test for the real env: add its constructor to ``ENV_FACTORIES``.
 # pylint: disable=redefined-outer-name
 
 import copy
+import dataclasses  # AI GENERATED (2026-11-23)
 
 import numpy as np
 import pytest
@@ -39,10 +43,20 @@ from marl.envs.mock_env import MockEnv
 
 ### AI GENERATED
 from marl.envs.pybullet_env import PyBulletEnv  # noqa: E402
+from marl.envs.pybullet_soccer_env import PyBulletSoccerEnv  # noqa: E402  (2026-11-23)
+
+
+def soccer_env(shared):
+    """2026-11-23: the soccer adapter on a keepaway config made soccer (same spawns, the same
+    ICD); other scenarios skip."""
+    if shared.scenario != "keepaway":
+        raise NotImplementedError(f"the soccer adapter runs soccer, not {shared.scenario}")
+    return PyBulletSoccerEnv(dataclasses.replace(shared, scenario="soccer"))
+
 
 # name -> callable(SharedConfig) -> env. A factory that raises NotImplementedError for a config
 # (e.g. the 1v1-only PyBullet env with n_blue = 2) skips that test instead of failing it.
-ENV_FACTORIES = {"mock": MockEnv, "pybullet": PyBulletEnv}
+ENV_FACTORIES = {"mock": MockEnv, "pybullet": PyBulletEnv, "pybullet_soccer": soccer_env}
 ### END AI GENERATED
 
 GOTO = {"shared": {"scenario": "goto_target", "n_red": 0}, "rl": {"reward": {"base": "goto_target"}}}
@@ -61,7 +75,13 @@ def make_env(request):
             pytest.skip(f"{request.param}: {e}")
         ### END AI GENERATED
 
+    make.kind = request.param  # AI GENERATED (2026-11-23): which factory, for tests that differ
     return make
+
+
+def skip_soccer(make_env):  # AI GENERATED (2026-11-23)
+    if make_env.kind == "pybullet_soccer":
+        pytest.skip("in soccer red possession isn't terminal (only a goal is)")
 
 
 def zero_actions(n):
@@ -225,6 +245,7 @@ def standstill_capture(make_env, seed, max_steps=100_000):
 
 @pytest.mark.parametrize("seed", range(5))
 def test_terminated_implies_red_possession_and_true_final_state(make_env, seed):
+    skip_soccer(make_env)  # AI GENERATED (2026-11-23)
     s, term, trunc, info, steps = standstill_capture(make_env, seed)
     assert term and not trunc
     assert any(r["has_possession"] for r in s["red"])
@@ -236,6 +257,7 @@ def test_terminated_implies_red_possession_and_true_final_state(make_env, seed):
 @pytest.mark.parametrize("seed", range(3))
 def test_terminated_takes_priority_over_truncated(make_env, seed):
     # Find the capture step L, then set max_episode_steps = L: both conditions hit at once.
+    skip_soccer(make_env)  # AI GENERATED (2026-11-23)
     *_, steps = standstill_capture(make_env, seed)
     s, term, trunc, info, steps2 = standstill_capture(make_env, seed, max_steps=steps)
     assert steps2 == steps and term and not trunc

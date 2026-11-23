@@ -10,6 +10,7 @@
 #     (Austin Beinder)
 #   - 2026-10-31: Removed SHARED_SIM_ENVS: every PyBulletEnv now has its own
 #     simulation. (Austin Beinder)
+#   - 2026-11-23: The soccer scenario gets PyBulletSoccerEnv. (Austin Beinder)
 # Prompt summary: Implement Phase 3 of the issue #7 plan (RL layer + mock env).
 # Human review:   Pending review
 # ==============================================================================
@@ -37,6 +38,13 @@ def make_env(cfg: Config, *, render: bool = False, print_collisions: bool = Fals
 
         return MockEnv(cfg.shared)
     if cfg.run.env == "pybullet":
+        ### AI GENERATED (2026-11-23: soccer has its own game and adapter)
+        if cfg.shared.scenario == "soccer":
+            from marl.envs.pybullet_soccer_env import PyBulletSoccerEnv
+
+            return PyBulletSoccerEnv(cfg.shared, render_mode="human" if render else None,
+                                     print_collisions=print_collisions)
+        ### END AI GENERATED
         from marl.envs.pybullet_env import PyBulletEnv  # imported lazily: pulls in pybullet
 
         return PyBulletEnv(cfg.shared, render_mode="human" if render else None, print_collisions=print_collisions)

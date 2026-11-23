@@ -22,6 +22,8 @@
 #     fresh init. (Austin Beinder)
 #   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters; no
 #     behaviour change. (Austin Beinder)
+#   - 2026-11-23: warm_start maps the soccer goals block too, so a keep-away
+#     actor warm-starts into soccer. (Austin Beinder)
 # ==============================================================================
 """Checkpoints (#23): actor + critic weights, optimizer states, progress counters
 and the resolved config, so a checkpoint is self-describing (``load_actor`` can
@@ -63,7 +65,7 @@ from marl.common.config import Config, config_to_dict, saved_config_from_dict
 from marl.common.config import Config, config_from_dict, config_to_dict
 
 from marl.rl.networks import Actor, Critic, build_networks
-from marl.rl.obs import obs_blocks  # AI GENERATED
+from marl.rl.obs import goal_obs_for, obs_blocks  # AI GENERATED (goal_obs_for 2026-11-23)
 from marl.rl.state import state_blocks  # AI GENERATED
 from marl.rl.ppo import PPOUpdater
 from marl.rl.rollout import Featurizer
@@ -130,8 +132,9 @@ def warm_start(
             f"can't warm start a {cfg.rl.critic_input!r} critic from a {old.rl.critic_input!r} one"
         )
     ### AI GENERATED (2026-11-13: the layouts may also differ in the passer / call flags)
-    old_obs = obs_blocks(o.n_blue, o.n_red, old.rl.passer_obs, old.rl.call_enabled)
-    new_obs = obs_blocks(n.n_blue, n.n_red, cfg.rl.passer_obs, cfg.rl.call_enabled)
+    # AI GENERATED (2026-11-23: and the soccer goals block)
+    old_obs = obs_blocks(o.n_blue, o.n_red, old.rl.passer_obs, old.rl.call_enabled, goal_obs_for(o))
+    new_obs = obs_blocks(n.n_blue, n.n_red, cfg.rl.passer_obs, cfg.rl.call_enabled, goal_obs_for(n))
     old_state = state_blocks(o.n_blue, o.n_red, old.rl.passer_obs, old.rl.call_enabled)
     new_state = state_blocks(n.n_blue, n.n_red, cfg.rl.passer_obs, cfg.rl.call_enabled)
     if (old_obs, old_state) != (new_obs, new_state):

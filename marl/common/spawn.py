@@ -18,6 +18,7 @@
 #   - 2026-11-11: The catch_start_mix option: a share of keepaway resets use
 #     the pass practice layout, plus red. (Austin Beinder)
 #   - 2026-11-14: claim_ball: always a loose ball. (Austin Beinder)
+#   - 2026-11-23: soccer: drawn exactly like keepaway. (Austin Beinder)
 #   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters; no
 #     behaviour change. (Austin Beinder)
 # ==============================================================================
@@ -118,7 +119,8 @@ def sample_spawn(
     # AI GENERATED (drills)
     if scenario not in ("keepaway", "goto_target", "passing_drill", "pass_practice",
                         "pass_practice_moving",
-                        "claim_ball"):  # AI GENERATED (2026-11-14)
+                        "claim_ball",  # AI GENERATED (2026-11-14)
+                        "soccer"):  # AI GENERATED (2026-11-23): drawn exactly like keepaway
         raise ValueError(f"unknown scenario {scenario!r}")
 
     clearance = float(options["min_clearance"])

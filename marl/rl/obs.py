@@ -16,6 +16,8 @@
 #   - 2026-11-13: rl.call_enabled: a "calling" flag after it. (Austin Beinder)
 #   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters; no
 #     behaviour change. (Austin Beinder)
+#   - 2026-11-23: The soccer goals block at the end of o_i (goal_obs).
+#     (Austin Beinder)
 # ==============================================================================
 """Actor observations o_i = f(s, i), built RL-side (design #13).
 
@@ -44,6 +46,11 @@ Dimension = 6 + 7 * (N - 1) + 6 * M + 6.
 
 With ``call_obs`` (``rl.call_enabled``, 2026-11-13) they end with one more after that: 1 while that
 blue is calling (``s["blue"][i]["calling"]``, its "got it" on the latest step).
+
+With ``goal_obs`` (the soccer scenario, 2026-11-23) a ``goals`` block of one slot (4) follows the
+ball: the centre of the goal blue attacks (east, ``(Lx / 2, 0)``) minus the agent's position, then
+the centre of the goal it defends (west) minus its position, both over half_field. Outside soccer
+the block has no slots, so the layout is unchanged.
 """
 
 from __future__ import annotations
@@ -55,20 +62,29 @@ from marl.rl.state import StateArrays, blue_flags  # AI GENERATED (2026-11-13: b
 
 SELF_DIM = 5
 SLOT_DIM = 6
+GOALS_DIM = 4  # AI GENERATED (2026-11-23): attacking goal rel pos (2), defending goal rel pos (2)
 # index of "I hold the ball" in o_i; the actor's kick masks read it  # AI GENERATED
 OWN_POSSESSION = 4
 
 
 ### AI GENERATED
 def obs_blocks(
-    n_blue: int, n_red: int, passer_obs: bool = False, call_obs: bool = False
+    n_blue: int, n_red: int, passer_obs: bool = False, call_obs: bool = False,
+    goal_obs: bool = False,  # AI GENERATED (2026-11-23)
 ) -> list[tuple[str, int, int]]:
     """The layout above as (block, numbers per slot, slots), in order. ``passer_obs`` and
     ``call_obs`` (2026-11-13) add their flags at the end of the self block and of each teammate
-    slot."""
+    slot. ``goal_obs`` (2026-11-23) gives the goals block its one slot (none otherwise), so a
+    keep-away actor warm-starts into soccer like one growing a team."""
     extra = int(passer_obs) + int(call_obs)
     return [("self", SELF_DIM + extra, 1), ("teammates", SLOT_DIM + extra, n_blue - 1),
-            ("reds", SLOT_DIM, n_red), ("ball", SLOT_DIM, 1)]
+            ("reds", SLOT_DIM, n_red), ("ball", SLOT_DIM, 1),
+            ("goals", GOALS_DIM, int(goal_obs))]  # AI GENERATED (2026-11-23)
+
+
+def goal_obs_for(cfg: SharedConfig) -> bool:  # AI GENERATED (2026-11-23)
+    """Whether this scenario's observations have the goals block: soccer only."""
+    return cfg.scenario == "soccer"
 ### END AI GENERATED
 
 
@@ -84,9 +100,13 @@ class ObsBuilder:
         self._half = np.asarray(cfg.field_size, dtype=np.float64) / 2.0
         self._vmax = cfg.max_speed
         self.passer_obs, self.call_obs = passer_obs, call_obs  # AI GENERATED (2026-11-13)
+        ### AI GENERATED (2026-11-23: soccer's goals, blue attacking east)
+        self.goal_obs = goal_obs_for(cfg)
+        self._goals = np.array([[cfg.field_size[0] / 2, 0.0], [-cfg.field_size[0] / 2, 0.0]])
+        ### END AI GENERATED
         # AI GENERATED
         self.dim = sum(width * slots for _, width, slots
-                       in obs_blocks(self.n_blue, self.n_red, passer_obs, call_obs))
+                       in obs_blocks(self.n_blue, self.n_red, passer_obs, call_obs, self.goal_obs))
 
     def __call__(self, st: StateArrays) -> np.ndarray:
         """Observations for all blue agents at once: float32 array [N, dim]."""
@@ -103,6 +123,8 @@ class ObsBuilder:
             ### END AI GENERATED
             parts.append(self._block(p, v, st.red_pos, st.red_vel, st.red_poss))
             parts.append(self._slot(p, v, st.ball_pos, st.ball_vel, held))
+            if self.goal_obs:  # AI GENERATED (2026-11-23)
+                parts.append(((self._goals - p) / self._half).ravel())
             out[i] = np.concatenate(parts)
         return out
 

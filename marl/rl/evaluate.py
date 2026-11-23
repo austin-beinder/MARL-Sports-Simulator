@@ -28,6 +28,8 @@
 #     miscalled_per_pickup. (Austin Beinder)
 #   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters; no
 #     behaviour change. (Austin Beinder)
+#   - 2026-11-23: Records each soccer episode's outcome; summarize adds
+#     win_rate, loss_rate and draw_rate. (Austin Beinder)
 # ==============================================================================
 """Policy evaluation on fixed seeds (design #17, #23; walk-through steps 0 and 5).
 
@@ -123,6 +125,7 @@ def run_episodes(
                 pickups=memory.pickups,  # AI GENERATED (2026-11-13)
                 called=memory.called,  # AI GENERATED (2026-11-13)
                 miscalled=memory.miscalled,  # AI GENERATED (2026-11-13)
+                outcome=memory.outcome,  # AI GENERATED (2026-11-23)
             )
         )
     return records
@@ -161,6 +164,7 @@ def summarize(records: Sequence[EpisodeRecord]) -> dict[str, float]:
         "pass_rate": _pass_rate(records),  # AI GENERATED (2026-11-11)
         "return_share": _return_share(records),  # AI GENERATED (2026-11-13)
         **_call_stats(records),  # AI GENERATED (2026-11-13)
+        **_outcome_rates(records),  # AI GENERATED (2026-11-23)
     }
     for st in START_TYPES:
         sel = lengths[[r.start_type == st for r in records]] if len(records) else lengths
@@ -193,6 +197,14 @@ def _call_stats(records: Sequence[EpisodeRecord]) -> dict[str, float]:
         return {"called_share": float("nan"), "miscalled_per_pickup": float("nan")}
     return {"called_share": sum(r.called for r in records) / pickups,
             "miscalled_per_pickup": sum(r.miscalled for r in records) / pickups}
+
+
+def _outcome_rates(records: Sequence[EpisodeRecord]) -> dict[str, float]:
+    """2026-11-23, soccer: the share of episodes blue won (scored), lost (red scored) and drew
+    (time ran out). nan for scenarios without an outcome."""
+    outcomes = [r.outcome for r in records if r.outcome is not None]
+    return {f"{name}_rate": (outcomes.count(name) / len(outcomes) if outcomes else float("nan"))
+            for name in ("win", "loss", "draw")}
 ### END AI GENERATED
 
 

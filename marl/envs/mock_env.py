@@ -17,6 +17,7 @@
 #     kick, so nobody ever passes. (Austin Beinder)
 #   - 2026-11-13: The optional "call" action, echoed as each blue's "calling"
 #     in s (parse_calls). (Austin Beinder)
+#   - 2026-11-23: Refuses the soccer scenario (no goals). (Austin Beinder)
 #   - 2026-11-14: The claim_ball scenario: a loose ball, no red, terminated
 #     when a blue picks it up. (Austin Beinder)
 #   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters and set
@@ -68,6 +69,9 @@ class MockEnv:
             raise NotImplementedError(
                 f"the mock env can't run {cfg.scenario}: it has no kicks (use the PyBullet env)"
             )
+        # AI GENERATED (2026-11-23): no goals in the mock
+        if cfg.scenario == "soccer":
+            raise NotImplementedError("the mock env can't run soccer: it has no goals (use the PyBullet env)")
         self.cfg = cfg
         self.n_blue, self.n_red = cfg.n_blue, cfg.n_red
         half = np.asarray(cfg.field_size, dtype=float) / 2.0
