@@ -33,6 +33,8 @@
 #   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters and set
 #     _reward_memory in __init__ (attribute-defined-outside-init); no
 #     behaviour change. (Austin Beinder)
+#   - 2026-11-23: EpisodeRecord.outcome (soccer: win, loss or draw).
+#     (Austin Beinder)
 # ==============================================================================
 """Rollout collection: step the env with the current policy and fill the buffer.
 
@@ -125,6 +127,8 @@ class EpisodeRecord:
     called: float = 0.0
     miscalled: float = 0.0  # how loudly the other blues had called for those pickups, summed
     ### END AI GENERATED
+    # AI GENERATED (2026-11-23): soccer: "win", "loss" or "draw"; None in other scenarios
+    outcome: str | None = None
 
 
 @dataclass(frozen=True)
@@ -233,6 +237,7 @@ class RolloutCollector:
                         pickups=self._reward_memory.pickups,  # AI GENERATED (2026-11-13)
                         called=self._reward_memory.called,  # AI GENERATED (2026-11-13)
                         miscalled=self._reward_memory.miscalled,  # AI GENERATED (2026-11-13)
+                        outcome=self._reward_memory.outcome,  # AI GENERATED (2026-11-23)
                     )
                 )
                 self._s = None  # no auto-reset (ICD §4): the next step starts a new episode

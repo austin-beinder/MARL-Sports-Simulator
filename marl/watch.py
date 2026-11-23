@@ -7,6 +7,8 @@
 #   - 2026-10-18: Generated this entire file: watch a trained policy (or a
 #     scripted baseline) play keep-away in the PyBullet GUI in real time.
 #   - 2026-10-18: Added --start free|possession to force the start type.
+#   - 2026-11-23: Soccer games end with who scored, not "red got the ball";
+#     the --baseline help lists every scenario's baselines. (Austin Beinder)
 # Prompt summary: Make a watch script that plays games with the latest trained
 #   model in the PyBullet GUI.
 # Human review:   Pending review
@@ -73,12 +75,22 @@ def watch_episodes(
             t0 = time.perf_counter()
             with torch.no_grad():
                 actions = policy(s)
-            s, terminated, truncated, _ = env.step(actions)
+            s, terminated, truncated, info = env.step(actions)
             if terminated or truncated:
                 break
             sleep(max(0.0, dt - (time.perf_counter() - t0)))
         seconds = s["step"] * cfg.shared.dt_control
         ending = "red got the ball" if terminated else "blue survived the whole episode"
+        ### AI GENERATED (2026-11-23: soccer ends on a goal, or a draw)
+        if cfg.shared.scenario == "soccer":
+            goal = next((e for e in info["events"] if e["type"] == "goal"), None)
+            if goal is None:
+                ending = "no goal: a draw"
+            else:
+                how = "carried in" if goal["carried"] else "kicked in"
+                own = ", an own goal" if goal["own_goal"] else ""
+                ending = f"{goal['team']} scored ({how}{own})"
+        ### END AI GENERATED
         log(f"[watch] seed {seed}: {start} -> {ending} after {s['step']}/{max_steps} steps ({seconds:.1f} s)")
         results.append({"seed": int(seed), "steps": s["step"], "terminated": terminated, "truncated": truncated})
         sleep(1.0 / speed if np.isfinite(speed) else 0.0)  # a beat before the next kickoff
@@ -89,7 +101,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Watch a trained policy (or a baseline) play keep-away in the PyBullet GUI.")
     ap.add_argument("run", nargs="?", type=Path, help="run directory (plays its newest checkpoint) or a .pt checkpoint")
     ap.add_argument("--checkpoint", help="checkpoint name inside the run, e.g. iter_00100.pt (default: newest)")
-    ap.add_argument("--baseline", help="watch a scripted policy instead of a checkpoint: random, still or flee")
+    ap.add_argument("--baseline", help="watch a scripted policy instead of a checkpoint: random, still, "
+                         "flee (keep-away), oracle (goto_target) or dribble (soccer)")  # AI GENERATED
     ap.add_argument("--config", type=Path, default=Path("configs/keepaway_1v1.toml"),
                     help="config for --baseline (a checkpoint carries its own)")
     ap.add_argument("--episodes", type=int, default=1, help="games to play (default 1)")

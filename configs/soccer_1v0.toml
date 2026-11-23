@@ -1,0 +1,35 @@
+# ==============================================================================
+# AI CITATION
+# Tool:    Claude Code (Claude Opus 5.5)
+# Date:    2026-11-23
+# Author:  Austin Beinder
+# Usage:
+#   - 2026-11-23: Created this file: the soccer smoke test, an empty net
+#     (docs/soccer_env_plan.md §5.5).
+# ==============================================================================
+# Soccer smoke test: 1 blue, no red, score in the east goal within 30 s.
+# If blue can't learn to score with nobody in the way, nothing else will work.
+# The scripted "dribble" baseline wins every episode here; random never scores.
+# PyBullet only. Omitted keys take the defaults in marl/common/config.py.
+
+[shared]
+scenario = "soccer"
+n_blue = 1
+n_red = 0
+max_episode_steps = 600  # 30 s at 20 decisions a second
+
+[rl]
+horizon_seconds = 10.0  # gamma = 0.995: at 5 s a goal 15 s away is worth ~5%
+kick_enabled = true
+
+[rl.reward]
+base = "goal"  # +-1 per goal, as the learner sees it
+# Both potential-based, so neither changes which policy is best. Starting points, not tuned:
+# a full carry from blue's own goal line earns pbrs_ball_to_goal ~20 (raw), a tenth of a goal.
+shaping = [
+    { name = "pbrs_ball_to_goal", enabled = true, coef = 20.0 },
+    { name = "pbrs_ball_acquisition", enabled = true, coef = 2.0 },
+]
+
+[run]
+total_steps = 500_000

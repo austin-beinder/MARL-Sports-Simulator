@@ -1,6 +1,7 @@
 """
 This file was AI generated, see the ### AI GENERATED markers.
 AI edit 2026-11-23 (Claude Code, Austin Beinder): exports the goal classes (goal.py).
+AI edit 2026-11-23 (Claude Code, Austin Beinder): exports SoccerConfig and SoccerEnv (soccer_env.py).
 
 The pybullet keep away game as a package, so other code (the marl RL layer) can import it with
 `from pybulletGame import KeepAwayEnv`. The folder isn't called "pybullet" because a package
@@ -26,8 +27,9 @@ if _here not in sys.path:
 from entity import Entity  # noqa: E402
 from goal import Goal, GoalEvent, GoalSpec, standard_goals  # noqa: E402  (2026-11-23)
 from keep_away_env import KeepAwayConfig, KeepAwayEnv  # noqa: E402
+from soccer_env import SoccerConfig, SoccerEnv  # noqa: E402  (2026-11-23)
 from teams import Team  # noqa: E402
 
-__all__ = ["Entity", "Goal", "GoalEvent", "GoalSpec", "KeepAwayConfig", "KeepAwayEnv", "Team",
-           "standard_goals"]
+__all__ = ["Entity", "Goal", "GoalEvent", "GoalSpec", "KeepAwayConfig", "KeepAwayEnv", "SoccerConfig",
+           "SoccerEnv", "Team", "standard_goals"]
 ### END AI GENERATED

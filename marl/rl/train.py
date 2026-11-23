@@ -57,6 +57,8 @@
 #   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters, and the
 #     nan checks use math.isnan instead of comparing a value with itself; no
 #     behaviour change. (Austin Beinder)
+#   - 2026-11-23: The progress lines show soccer's win / loss / draw rates.
+#     (Austin Beinder)
 # ==============================================================================
 """Training loop (walk-through steps 0-6) and its command-line entry point.
 
@@ -341,6 +343,7 @@ def _train_line(r: dict[str, Any], n_iters: int) -> str:
         f"passes {r['ep_passes_mean']:4.2f} ({r['ep_pass_rate']:4.0%} caught, "
         f"{r['ep_return_share']:4.0%} back) | "  # AI GENERATED (2026-11-13)
         + _call_text(r, "ep_") +  # AI GENERATED (2026-11-13)
+        _outcome_text(r, "ep_") +  # AI GENERATED (2026-11-23)
         f"r/step {r['reward_mean_unscaled']:+7.3f} | ent {r['entropy']:+.3f} | vloss {r['value_loss']:.2e} | "
         f"ev {r['explained_variance']:+.2f} | kl {r['approx_kl']:.4f} | clip {r['clip_frac']:.3f} | "
         f"{r['sps']:,.0f} sps"
@@ -356,6 +359,17 @@ def _call_text(r: dict[str, Any], prefix: str) -> str:
     if math.isnan(called) or called + wrong == 0:  # nan, or nobody ever called
         return ""
     return f"calls {called:4.0%} right, {wrong:.2f} wrong | "
+### END AI GENERATED
+
+
+### AI GENERATED (2026-11-23)
+def _outcome_text(r: dict[str, Any], prefix: str) -> str:
+    """Soccer: the share of episodes won, lost and drawn. Nothing in other scenarios (nan)."""
+    win = r.get(f"{prefix}win_rate", float("nan"))
+    if math.isnan(win):
+        return ""
+    return (f"win {win:4.0%} loss {r[f'{prefix}loss_rate']:4.0%} "
+            f"draw {r[f'{prefix}draw_rate']:4.0%} | ")
 ### END AI GENERATED
 
 
@@ -383,6 +397,8 @@ def _eval_line(r: dict[str, Any]) -> str:
         f"{r['return_share']:4.0%} straight back)"  # AI GENERATED (2026-11-13)
         # AI GENERATED (2026-11-13)
         + (" | " + _call_text(r, "").rstrip(" |") if _call_text(r, "") else "")
+        # AI GENERATED (2026-11-23)
+        + (" | " + _outcome_text(r, "").rstrip(" |") if _outcome_text(r, "") else "")
     )
 
 

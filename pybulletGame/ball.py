@@ -15,6 +15,8 @@ AI edit 2026-11-15 (Claude Code, Austin Beinder): pylint cleanup (wrapped lines 
 characters); no behaviour change.
 AI edit 2026-11-23 (Claude Code, Austin Beinder): last_holder, the last player to hold the ball,
 kept after a kick, so a goal knows who put the ball in (goal.py).
+AI edit 2026-11-23 (Claude Code, Austin Beinder): goal_lanes, so a kick at a goal's mouth isn't
+clamped back onto the kicker by play_area (soccer_env.py). Empty by default: keep-away is unchanged.
 """
 
 import numpy as np
@@ -90,6 +92,10 @@ class Ball(Entity):
         # None for no walls (2026-11-07). kick_ball keeps a kicked ball inside it. KeepAwayEnv sets
         # it.
         self.play_area = None
+        # Goal pockets a kick may place the ball in, past the end line (2026-11-23): goal.GoalSpecs
+        # (read through to_local, width and depth). Empty, as in keep-away, clamps every kick to
+        # play_area. soccer_env.SoccerEnv sets it.
+        self.goal_lanes = []
         ### END AI GENERATED
 
         super().__init__(
@@ -315,7 +321,8 @@ class Ball(Entity):
             c = self.client
             kicker_xy = np.array(p.getLinkState(kicker.body_id, 2, physicsClientId=c)[0][:2])
             target = kicker_xy + direction * (kicker.radius + self.radius + self.KICK_GAP)
-            if self.play_area is not None:
+            # AI GENERATED (2026-11-23): a kick into a goal's mouth isn't clamped back to the end line
+            if self.play_area is not None and not self._in_goal_lane(target):
                 limit = np.asarray(self.play_area, dtype=float) - self.radius - self.KICK_GAP
                 target = np.clip(target, -limit, limit)
                 if np.linalg.norm(target - kicker_xy) < kicker.radius + self.radius:
@@ -337,6 +344,18 @@ class Ball(Entity):
 
         self.apply_velocity(x, y)
         return True  # AI GENERATED
+
+    ### AI GENERATED (2026-11-23)
+    def _in_goal_lane(self, xy) -> bool:
+        """Whether a kicked ball placed at xy fits in a goal's mouth or pocket (goal_lanes): between
+        the posts, from where play_area's clamp would stop it up to the back of the pocket."""
+        for spec in self.goal_lanes:
+            along, across = spec.to_local(xy)
+            if (-(self.radius + self.KICK_GAP) <= along <= spec.depth - self.radius - self.KICK_GAP
+                    and abs(across) <= spec.width / 2 - self.radius):
+                return True
+        return False
+    ### END AI GENERATED
 
 
 if __name__ == "__main__":

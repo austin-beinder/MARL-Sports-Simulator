@@ -12,6 +12,8 @@
 #   - 2026-11-09: So do pass_practice and pass_practice_moving. (Austin Beinder)
 #   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters; no
 #     behaviour change. (Austin Beinder)
+#   - 2026-11-23: Soccer offers random, still and dribble, a scripted
+#     "get the ball, run it into red's goal" reference. (Austin Beinder)
 # ==============================================================================
 """Scripted baseline policies (design #23) and the goto_target oracle.
 
@@ -31,6 +33,9 @@ runs through exactly the same protocol as the learned policy
     - a teammate holds it: stand still (there is no passing yet).
 * ``oracle``: goto_target only. Drive straight at the target and land on it
   (an approximate upper bound for that task).
+* ``dribble`` (soccer, 2026-11-23): every blue without the ball runs at it (a red-held ball
+  included: touching the carrier takes it); a blue with it runs at red's goal, first to a point
+  in front of the mouth until lined up between the posts, then into the pocket. No kicks.
 
 Scripted policies read the global state directly. Under milestone-1 full
 observability the learned policy has the same information, so the comparison is fair.
@@ -46,7 +51,7 @@ from marl.common.config import SharedConfig
 from marl.rl.state import parse_state
 
 Policy = Callable[[dict], dict]
-BASELINES = ("random", "still", "flee", "oracle")
+BASELINES = ("random", "still", "flee", "oracle", "dribble")  # AI GENERATED (2026-11-23: dribble)
 
 
 def baselines_for(scenario: str) -> tuple[str, ...]:
@@ -55,6 +60,8 @@ def baselines_for(scenario: str) -> tuple[str, ...]:
     if scenario in ("passing_drill", "pass_practice", "pass_practice_moving"):
         return ("random", "still")
     ### END AI GENERATED
+    if scenario == "soccer":  # AI GENERATED (2026-11-23)
+        return ("random", "still", "dribble")
     return ("random", "still", "flee") if scenario == "keepaway" else ("random", "still", "oracle")
 
 
@@ -71,6 +78,12 @@ def make_baseline(name: str, cfg: SharedConfig, seed: int = 0) -> Policy:
         if cfg.scenario != "goto_target":
             raise ValueError("the oracle exists for goto_target only")
         return OraclePolicy(cfg)
+    ### AI GENERATED (2026-11-23)
+    if name == "dribble":
+        if cfg.scenario != "soccer":
+            raise ValueError("dribble is a soccer baseline")
+        return DribblePolicy(cfg)
+    ### END AI GENERATED
     raise ValueError(f"unknown baseline {name!r}; choose from {BASELINES}")
 
 
@@ -154,3 +167,33 @@ class FleePolicy:
             r = r + to / np.maximum(d, 1e-12)[..., None] * step[..., None]
             closest = np.minimum(closest, np.linalg.norm(p[:, None, :] - r, axis=-1).min(axis=1))
         return self.dirs[int(np.argmax(closest))]
+
+
+### AI GENERATED (2026-11-23)
+class DribblePolicy:
+    """soccer: fetch the ball, then carry it into red's goal (east, x = Lx / 2). The carrier aims
+    at a point LINE_UP m in front of the mouth until it is between the posts (with a player's
+    radius to spare), then at the middle of the pocket, so it doesn't run into the wall beside a
+    post."""
+
+    LINE_UP = 0.5  # m in front of the goal line
+
+    def __init__(self, cfg: SharedConfig):
+        self.cfg = cfg
+        x = cfg.field_size[0] / 2
+        self.lane = cfg.soccer.goal_width / 2 - cfg.player_radius  # |y| that fits between the posts
+        self.approach = np.array([x - self.LINE_UP, 0.0])
+        self.pocket = np.array([x + cfg.soccer.goal_depth / 2, 0.0])
+
+    def __call__(self, s: dict) -> dict:
+        st = parse_state(s, self.cfg.n_blue, self.cfg.n_red)
+        moves = np.zeros((self.cfg.n_blue, 2))
+        for i in range(self.cfg.n_blue):
+            if st.blue_poss[i]:
+                me = st.blue_pos[i]
+                lined_up = abs(me[1]) < self.lane and me[0] >= self.approach[0] - 1.0
+                moves[i] = _unit((self.pocket if lined_up else self.approach) - me)
+            elif not st.blue_poss.any():
+                moves[i] = _unit(st.ball_pos - st.blue_pos[i])
+        return _actions(moves)
+### END AI GENERATED

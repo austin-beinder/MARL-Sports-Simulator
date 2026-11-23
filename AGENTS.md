@@ -37,15 +37,16 @@ built in the PyBullet env only (`rl.kick_enabled = true`, which needs
 
 | Path | What it is |
 | --- | --- |
-| `pybulletGame/` | The PyBullet game: `KeepAwayEnv`, `Entity`/`Player`/`Ball`/`Field`, joystick tool, unittest tests |
+| `pybulletGame/` | The PyBullet games: `KeepAwayEnv`, `SoccerEnv`, `Entity`/`Player`/`Ball`/`Field`/`Goal`, joystick tool, unittest tests |
 | `marl/common/` | Config schema + TOML loading (`config.py`), spawn sampling (`spawn.py`). Torch-free. |
-| `marl/envs/` | `make_env` selector, `MockEnv` (pure-numpy ICD env), `PyBulletEnv` (ICD adapter around `KeepAwayEnv`) |
+| `marl/envs/` | `make_env` selector, `MockEnv` (pure-numpy ICD env), `PyBulletEnv` (ICD adapter around `KeepAwayEnv`), `PyBulletSoccerEnv` (its subclass around `SoccerEnv`) |
 | `marl/rl/` | PPO: networks, rollout, buffer, GAE, rewards, observations, training loop, evaluation, checkpoints, CSV logging |
 | `marl/` (top level) | `baselines.py` (random/still/flee/oracle), `calibrate.py`, `plots.py`, `watch.py` |
 | `curriculum/` | Curriculum training: `runner.py` (everything) and curriculum TOMLs such as `keepaway_1v1.toml` |
 | `scripts/` | Thin CLI wrappers: `train.py`, `evaluate.py`, `watch.py`, `calibrate.py`, `plot.py` |
-| `configs/` | Experiment configs: `keepaway_1v1.toml`, `goto_target.toml` |
+| `configs/` | Experiment configs: `keepaway_1v1.toml`, `goto_target.toml`, `soccer_1v0.toml`, `soccer_1v1.toml` |
 | `docs/ICD.md` | Env ↔ RL interface control document (DRAFT v0.2) |
+| `docs/*_plan.md` | Design plans, one per PR (e.g. `goal_plan.md`, `soccer_env_plan.md`) |
 | `tests/` | pytest suite for `marl/`, including ICD conformance tests run against both envs |
 | `examples/` | Early PyBullet prototypes, not used by the project code |
 | `papers/` | Reference papers and the project proposal |
@@ -57,6 +58,7 @@ built in the PyBullet env only (`rl.kick_enabled = true`, which needs
 configs/*.toml -> marl.common.config.Config
                -> marl.envs.make_env(cfg)  -- run.env = "mock"     -> MockEnv
                                            -- run.env = "pybullet" -> PyBulletEnv -> pybulletGame.KeepAwayEnv
+                                              (scenario "soccer")   -> PyBulletSoccerEnv -> pybulletGame.SoccerEnv
                -> marl.rl.train (featurize s -> obs, compute rewards, PPO update)
 ```
 
@@ -95,6 +97,29 @@ configs/*.toml -> marl.common.config.Config
 - `MockEnv` implements the same ICD in numpy. It's fast, so most tests and quick
   experiments use it (tests set `run.env = "mock"` explicitly, since the default
   is PyBullet). The ICD conformance tests run against both envs.
+
+## Soccer
+
+- `scenario = "soccer"` (PyBullet only; plan: `docs/soccer_env_plan.md`). `pybulletGame/soccer_env.py`
+  is its own game, not a keep-away scenario: a goal in each end wall (`goal.standard_goals`, sized by
+  `[shared.soccer]` `goal_width` / `goal_depth`), blue defends west and attacks east. Red possession
+  is not terminal; either team takes the ball by touching the carrier. The first goal ends the
+  episode (`terminated`), any team, own goals included; no goal by the time limit is a draw
+  (`truncated`). Spawns are keepaway's.
+- Red's fixed policy (`SoccerEnv.red_policy`) just chases the ball, so a red holding it stands still
+  and red can't score yet; a dribble-to-goal red is the next PR.
+- `PyBulletSoccerEnv` subclasses `PyBulletEnv` through two hooks, `_make_game` and `_game_events`
+  (which adds the ICD `goal` event). `Ball.goal_lanes` lets a kick at a goal's mouth go in instead
+  of being clamped back by `play_area`; keep-away leaves it empty.
+- RL side: base reward `goal` pays ±1 / (1 − γ), so the learner sees ±1 per goal after the
+  (1 − γ) scale. `pbrs_ball_to_goal` (soccer only) is potential-based on the ball's distance to
+  red's goal. In soccer `pbrs_ball_acquisition` treats a red-held ball like a loose one. `o_i` ends
+  with a `goals` block (attacking and defending goal centres relative to the agent), so keep-away
+  actors warm-start into soccer like a growing team. `train.csv` / `eval.csv` log `win_rate`,
+  `loss_rate` and `draw_rate` (NaN in other scenarios). The scripted `dribble` baseline is soccer's
+  reference (`watch.py --baseline dribble`).
+- `configs/soccer_1v0.toml` (an empty net, the smoke test) and `configs/soccer_1v1.toml`. A soccer
+  curriculum (keep-away actor → go to goal → add red) is planned after this.
 
 ## Hard constraints
 
@@ -312,7 +337,7 @@ configs/*.toml -> marl.common.config.Config
   velocity unit in every observation and the action scale.
 - Both envs support `keepaway`, `goto_target` and `claim_ball` and any team sizes the config
   allows; only `PyBulletEnv` runs `passing_drill`, `pass_practice` and
-  `pass_practice_moving`. Only `PyBulletEnv` kicks; `MockEnv` raises on a kick it would have
+  `pass_practice_moving`, and only `PyBulletSoccerEnv` runs `soccer`. Only `PyBulletEnv` kicks; `MockEnv` raises on a kick it would have
   to apply. `PyBulletEnv` also needs `physics_dt = 1/240` (pybullet's fixed
   time step).
 
@@ -323,6 +348,7 @@ Run from the repo root with the venv active.
 ```bash
 python scripts/train.py --config configs/keepaway_1v1.toml --env pybullet --seed 0
 python scripts/train.py --config configs/goto_target.toml          # mock env (add --env pybullet for the sim)
+python scripts/train.py --config configs/soccer_1v0.toml --seed 0  # soccer, empty net (PyBullet)
 python curriculum/runner.py curriculum/keepaway_1v1.toml --seed 0  # PyBullet only (it kicks)
 python curriculum/runner.py curriculum/passing_3v1.toml --seed 0   # the passing drill, then 3v1
 python curriculum/runner.py curriculum/passing_3v1.toml --seed 0 --start-at 3 --overwrite  # keep stages 1-2
@@ -334,6 +360,7 @@ python scripts/plot.py
 python scripts/regress.py                                          # regression check vs results/silver (~1 min)
 python scripts/plot.py --curriculum runs/curriculum_passing_3v1_pybullet_seed0  # a curriculum run's progress (scripts/README.md)
 python pybulletGame/keep_away_env.py                               # play blue with the on-screen joystick
+python pybulletGame/soccer_env.py                                  # the same, playing soccer
 ```
 
 `train.py` also takes `--render` (GUI on the training env), `--debug` (sim
@@ -362,8 +389,9 @@ python -m unittest discover -s pybulletGame/tests -p "*_test.py" -t pybulletGame
   intended change, `--update --reason "..."` and commit `results/silver/`. See the
   README's "Regression tests (silver record)".
 - `pytest` covers `tests/` only (`pyproject.toml`). It takes about 2 minutes.
-  The 1 skip is expected: the kick-with-possession conformance test on the
-  mock, which doesn't kick.
+  The 11 skips are expected: the kick-with-possession conformance test on the
+  mock, which doesn't kick, and 10 conformance tests the soccer adapter
+  sits out (red possession isn't terminal there, and it runs no goto_target).
 - `tests/test_env_dynamics.py` checks the game rules both envs share, through
   each env's `set_state_for_testing` hook; `tests/test_mock_env.py` pins the
   mock's exact kinematics.
