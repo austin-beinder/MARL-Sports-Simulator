@@ -9,9 +9,11 @@
 #     bonus, MSE value loss, separate Adam optimizers with per-network
 #     gradient clipping, the first-minibatch ratio guard and diagnostics),
 #     following design #10, #20, #23 and PPO defaults D.
-# Prompt summary: Implement Phase 3 step 8 of the issue #7 plan (PPO update +
-#   training loop).
-# Human review:   Pending review
+#   - 2026-11-14: call_coef > 0 gives the call head its own clipped surrogate
+#     with its own per-blue advantage (RolloutBuffer.compute_call_advantages);
+#     the team advantage then scores every other head. (Austin Beinder)
+#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters; no
+#     behaviour change. (Austin Beinder)
 # ==============================================================================
 """The PPO update (walk-through step 4).
 
@@ -31,6 +33,13 @@ Ratio guard (walk-through step 4): on the first minibatch of the first epoch the
 policy hasn't changed yet, so every ratio must be 1 up to float noise. If not,
 the stored log-probs and the update's log-probs disagree (a wiring bug), and
 training stops loudly instead of learning from garbage.
+
+The call head (2026-11-14, ``call_coef`` > 0): its log-prob comes out of the team ratio and gets a
+surrogate of its own, with the buffer's per-blue call advantages (raw, not normalized: they are
+already O(1), and most minibatches hold only a few pickups):
+
+    L_call     = -mean over valid (t, i) of min(r_call * A_call, clip(r_call) * A_call)
+    L_actor    = L_policy + call_coef * L_call - ent_coef * entropy
 """
 
 from __future__ import annotations
@@ -60,8 +69,10 @@ def clipped_surrogate_loss(ratio: torch.Tensor, adv: torch.Tensor, clip_eps: flo
 
 
 class PPOUpdater:
-    def __init__(self, actor: Actor, critic: Critic, ppo: PPOConfig):
+    # AI GENERATED (call_coef)
+    def __init__(self, actor: Actor, critic: Critic, ppo: PPOConfig, call_coef: float = 0.0):
         self.actor, self.critic, self.ppo = actor, critic, ppo
+        self.call_coef = call_coef  # AI GENERATED (2026-11-14): > 0 = the call head's own advantage
         self.actor_opt = torch.optim.Adam(actor.parameters(), lr=ppo.lr, eps=ppo.adam_eps)
         self.critic_opt = torch.optim.Adam(critic.parameters(), lr=ppo.lr, eps=ppo.adam_eps)
 
@@ -74,11 +85,23 @@ class PPOUpdater:
         ratio_check = float("nan")
         for epoch in range(p.update_epochs):
             for k, mb in enumerate(buf.minibatches(p.num_minibatches, rng)):
-                logp, entropy, head_entropy = self.actor.evaluate(mb.obs, mb.samples)
-                log_ratio = logp - mb.log_probs
+                ### AI GENERATED (2026-11-14: the call head apart)
+                if self.call_coef > 0:
+                    logp, call_logp, entropy, head_entropy = self.actor.evaluate_split(
+                        mb.obs, mb.samples)
+                    log_ratio = logp - (mb.log_probs - mb.call_log_probs)
+                    call_ratio = (call_logp - mb.call_log_probs).exp()
+                else:
+                    logp, entropy, head_entropy = self.actor.evaluate(mb.obs, mb.samples)
+                    log_ratio = logp - mb.log_probs
+                    call_ratio = None
+                ### END AI GENERATED
                 ratio = log_ratio.exp()
                 if epoch == 0 and k == 0:
                     ratio_check = (ratio.detach() - 1.0).abs().max().item()
+                    if call_ratio is not None:  # AI GENERATED (2026-11-14)
+                        ratio_check = max(ratio_check,
+                                          (call_ratio.detach() - 1.0).abs().max().item())
                     if not ratio_check < RATIO_GUARD_ATOL:  # also catches NaN
                         raise RuntimeError(
                             f"PPO ratio guard: max |ratio - 1| = {ratio_check:.3g} before any update; "
@@ -88,6 +111,13 @@ class PPOUpdater:
                 policy_loss = clipped_surrogate_loss(ratio, normalize_advantages(mb.advantages), p.clip_eps)
                 entropy_mean = entropy.mean()  # = sum of the gated per-sample entropies / B (#10)
                 actor_loss = policy_loss - p.ent_coef * entropy_mean
+                ### AI GENERATED (2026-11-14)
+                call_loss = torch.zeros(())
+                if call_ratio is not None:
+                    call_loss = _masked_surrogate(call_ratio, mb.call_advantages, mb.call_valid,
+                                                  p.clip_eps)
+                    actor_loss = actor_loss + self.call_coef * call_loss
+                ### END AI GENERATED
                 self.actor_opt.zero_grad(set_to_none=True)
                 actor_loss.backward()
                 grad_actor = clip_grad_norm_(self.actor.parameters(), p.max_grad_norm)
@@ -111,6 +141,8 @@ class PPOUpdater:
                         "grad_norm_critic": grad_critic.item(),
                     }
                     step |= {f"entropy_{h}": e.mean().item() for h, e in head_entropy.items()}
+                    if call_ratio is not None:  # AI GENERATED (2026-11-14)
+                        step["call_loss"] = call_loss.item()  # AI GENERATED
                 for key, value in step.items():
                     sums[key] = sums.get(key, 0.0) + value
                 n_updates += 1
@@ -118,6 +150,17 @@ class PPOUpdater:
         stats["ratio_check"] = ratio_check
         stats["updates"] = n_updates
         return stats
+
+
+### AI GENERATED (2026-11-14)
+def _masked_surrogate(
+    ratio: torch.Tensor, adv: torch.Tensor, valid: torch.Tensor, clip_eps: float
+) -> torch.Tensor:
+    """``clipped_surrogate_loss`` averaged over the valid samples only (0 if there are none)."""
+    unclipped = ratio * adv
+    clipped = ratio.clamp(1.0 - clip_eps, 1.0 + clip_eps) * adv
+    return -(torch.min(unclipped, clipped) * valid).sum() / valid.sum().clamp(min=1.0)
+### END AI GENERATED
 
 
 def explained_variance(values: np.ndarray, returns: np.ndarray) -> float:

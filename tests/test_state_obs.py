@@ -10,9 +10,12 @@
 #     equivariance and N=1 information equivalence.
 #   - 2026-10-11: Updated the expected red velocity for the max_speed scaling
 #     amendment to #11.
-# Prompt summary: Implement Phase 3 step 4 of the issue #7 plan (state
-#   flattener + obs builder).
-# Human review:   Pending review
+#   - 2026-11-13: The rl.passer_obs flags and the optional s["ball"]["passer"].
+#     (Austin Beinder)
+#   - 2026-11-13: The call flags after them, from each blue's optional
+#     "calling". (Austin Beinder)
+#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters; no
+#     behaviour change. (Austin Beinder)
 # ==============================================================================
 import copy
 
@@ -42,6 +45,53 @@ def make_s(blue, red, ball_pos, ball_vel=(0.0, 0.0), step=0):
         "red": [ent(j, *r) for j, r in enumerate(red)],
         "ball": {"pos": list(ball_pos), "vel": list(ball_vel)},
     }
+
+
+### AI GENERATED (2026-11-13)
+def test_passer_flags_in_the_observations_and_the_state():
+    sc = shared(3, 1)
+    s = make_s(blue=[((0.0, 0.0), (0.0, 0.0), True), ((3.0, 0.0),), ((0.0, 4.0),)],
+               red=[((5.0, 4.0),)], ball_pos=(0.0, 0.0))
+    s["ball"]["passer"] = 2  # blue 2 passed to blue 0
+    st = parse_state(s, 3, 1)
+    obs = ObsBuilder(sc, passer_obs=True)(st)
+    assert obs.shape == (3, 6 + 7 * 2 + 6 + 6)
+    np.testing.assert_array_equal(obs[:, 5], [0, 0, 1])  # "I passed": only blue 2
+    # blue 0's teammates, nearest first: blue 1, then blue 2
+    assert obs[0, 6 + 6] == 0 and obs[0, 13 + 6] == 1
+    # the flags are the only new numbers: the rest is the plain layout
+    np.testing.assert_array_equal(np.delete(obs, [5, 12, 19], axis=1), ObsBuilder(sc)(st))
+    flat = StateFlattener(sc, passer_obs=True)(st)
+    assert flat.shape == (6 * 3 + 5 + 4,) and list(flat[5:18:6]) == [0, 0, 1]
+    np.testing.assert_array_equal(np.delete(flat, [5, 11, 17]), StateFlattener(sc)(st))
+    del s["ball"]["passer"]  # optional: a state without it has no passer
+    assert not ObsBuilder(sc, passer_obs=True)(parse_state(s, 3, 1))[:, 5].any()
+    for bad in (3, -1, True, 1.0):
+        with pytest.raises(ValueError, match="passer"):
+            parse_state({**s, "ball": {**s["ball"], "passer": bad}}, 3, 1)
+
+
+def test_call_flags_follow_the_passer_flags():
+    sc = shared(3, 1)
+    s = make_s(blue=[((0.0, 0.0), (0.0, 0.0), True), ((3.0, 0.0),), ((0.0, 4.0),)],
+               red=[((5.0, 4.0),)], ball_pos=(0.0, 0.0))
+    s["ball"]["passer"] = 2
+    s["blue"][1]["calling"] = True  # blue 1 calls
+    st = parse_state(s, 3, 1)
+    obs = ObsBuilder(sc, passer_obs=True, call_obs=True)(st)
+    assert obs.shape == (3, 7 + 8 * 2 + 6 + 6)
+    np.testing.assert_array_equal(obs[:, 5:7], [[0, 0], [0, 1], [1, 0]])  # self: passed, calling
+    # blue 1, then blue 2
+    assert list(obs[0, 7 + 6:7 + 8]) == [0, 1] and list(obs[0, 15 + 6:15 + 8]) == [1, 0]
+    np.testing.assert_array_equal(np.delete(obs, [6, 14, 22], axis=1),
+                                  ObsBuilder(sc, passer_obs=True)(st))
+    flat = StateFlattener(sc, passer_obs=True, call_obs=True)(st)
+    assert flat.shape == (7 * 3 + 5 + 4,) and list(flat[6:21:7]) == [0, 1, 0]
+    with pytest.raises(TypeError, match="calling"):
+        parse_state({**s, "blue": [{**s["blue"][0], "calling": 1}, *s["blue"][1:]]}, 3, 1)
+    with pytest.raises(ValueError, match="unknown keys"):  # reds don't call
+        parse_state({**s, "red": [{**s["red"][0], "calling": False}]}, 3, 1)
+### END AI GENERATED
 
 
 # Defaults: field 16 x 10 -> half (8, 5); max_speed 2.0; red_max_speed 1.7.

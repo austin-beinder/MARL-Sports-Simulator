@@ -1,5 +1,7 @@
 """
 Many cited parts entity_test.py were AI generated. This test file was largely copy pasted from entity_test.py.
+AI edit 2026-11-15 (Claude Code, Austin Beinder): pylint cleanup (wrapped lines over 100
+characters, a protected-access disable on the test's _release call); no behaviour change.
 """
 
 import os
@@ -195,6 +197,9 @@ class TestAdd(unittest.TestCase):
         ball = Ball(initial_position=np.array([5.0, 5.0, 0.0]))  # away from the players
         ball.possession_flip_percentage = 100  # steals always succeed unless a test says otherwise
         ball.on_new_collision(player)
+        # AI GENERATED (2026-11-07): move on a physics step, since the ball changes hands at most
+        # once per step
+        ball.sim_time += p.getPhysicsEngineParameters()["fixedTimeStep"]
         return ball
 
     def test_player_takes_possession_from_no_one(self):
@@ -355,6 +360,114 @@ class TestAdd(unittest.TestCase):
         self.assertIs(ball.possession_player, blue)
         self.assertIs(blue.ball, ball)
         self.assertIsNone(blue2.ball)
+    ### END AI GENERATED
+
+    ### AI GENERATED (2026-11-07)
+    # check_held_contacts: contacts that were already there when the ball changed hands. These set
+    # collided_entities by hand instead of stepping physics, like the on_new_collision tests above.
+
+    def test_held_contact_takes_the_ball_from_a_new_carrier(self):
+        red = Player(team=Team.RED, initial_position=np.array([0.0, 0.0, 0.0]))
+        blue = Player(team=Team.BLUE, initial_position=np.array([2.0, 0.0, 0.0]))
+        blue.collided_entities = [red]  # red was touching blue before blue picked up the ball
+        ball = self._ball_held_by(blue)
+
+        self.assertTrue(ball.check_held_contacts())
+
+        self.assertIs(ball.possession_player, red)
+        self.assertIs(red.ball, ball)
+        self.assertIsNone(blue.ball)
+        self.assertEqual(ball.contested, {blue})
+
+    def test_held_contact_with_the_ball_counts_too(self):
+        red = Player(team=Team.RED, initial_position=np.array([0.0, 0.0, 0.0]))
+        blue = Player(team=Team.BLUE, initial_position=np.array([2.0, 0.0, 0.0]))
+        ball = self._ball_held_by(blue)
+        ball.collided_entities = [red]
+
+        self.assertTrue(ball.check_held_contacts())
+        self.assertIs(ball.possession_player, red)
+
+    def test_old_carrier_must_let_go_before_stealing_back(self):
+        red = Player(team=Team.RED, initial_position=np.array([0.0, 0.0, 0.0]))
+        blue = Player(team=Team.BLUE, initial_position=np.array([2.0, 0.0, 0.0]))
+        ball = self._ball_held_by(blue)
+        ball.sim_time = 1.0
+        self.assertTrue(ball.on_new_collision(red))  # red's first touch takes it
+        red.collided_entities = [blue]
+
+        ball.sim_time = 2.0  # long past the cooldown, but blue never let go
+        self.assertFalse(ball.check_held_contacts())
+        self.assertIs(ball.possession_player, red)
+
+        red.collided_entities = []  # they separate...
+        self.assertFalse(ball.check_held_contacts())
+        self.assertEqual(ball.contested, set())
+        red.collided_entities = [blue]  # ...and touch again
+        self.assertTrue(ball.check_held_contacts())
+        self.assertIs(ball.possession_player, blue)
+
+    def test_contact_during_the_cooldown_gets_no_roll(self):
+        # As before check_held_contacts: a contact that starts inside the cooldown is ignored, so a
+        # scrum can't bounce the ball back and forth every STEAL_COOLDOWN
+        red = Player(team=Team.RED, initial_position=np.array([0.0, 0.0, 0.0]))
+        blue = Player(team=Team.BLUE, initial_position=np.array([2.0, 0.0, 0.0]))
+        blue2 = Player(team=Team.BLUE, initial_position=np.array([0.0, -2.0, 0.0]))
+        ball = self._ball_held_by(blue)
+        ball.sim_time = 1.0
+        self.assertTrue(ball.on_new_collision(red))
+        red.collided_entities = [blue, blue2]  # a second blue touches red inside the cooldown
+
+        ball.sim_time = 1.0 + ball.STEAL_COOLDOWN / 2
+        self.assertFalse(ball.check_held_contacts())
+        self.assertEqual(ball.contested, {blue, blue2})
+        ball.sim_time = 1.0 + ball.STEAL_COOLDOWN * 2
+        self.assertFalse(ball.check_held_contacts())  # still the same contact
+        red.collided_entities = [blue]  # blue2 lets go...
+        ball.check_held_contacts()
+        red.collided_entities = [blue, blue2]  # ...and touches again, after the cooldown
+        self.assertTrue(ball.check_held_contacts())
+        self.assertIs(ball.possession_player, blue2)
+
+    def test_one_roll_per_contact(self):
+        red = Player(team=Team.RED, initial_position=np.array([0.0, 0.0, 0.0]))
+        blue = Player(team=Team.BLUE, initial_position=np.array([2.0, 0.0, 0.0]))
+        ball = self._ball_held_by(blue)
+        ball.possession_flip_percentage = 0  # the roll always fails
+        blue.collided_entities = [red]
+
+        self.assertFalse(ball.check_held_contacts())
+        self.assertEqual(ball.contested, {red})
+        ball.possession_flip_percentage = 100
+        self.assertFalse(ball.check_held_contacts())  # same contact: no second roll
+        self.assertIs(ball.possession_player, blue)
+
+    def test_ball_changes_hands_at_most_once_per_step(self):
+        red = Player(team=Team.RED, initial_position=np.array([0.0, 0.0, 0.0]))
+        blue = Player(team=Team.BLUE, initial_position=np.array([2.0, 0.0, 0.0]))
+        ball = Ball(initial_position=np.array([5.0, 5.0, 0.0]))
+        ball.sim_time = 1.0
+        ball.collided_entities = [red, blue]  # both touch the loose ball on the same step
+
+        self.assertTrue(ball.on_new_collision(red))  # red is first in the contact list
+        self.assertFalse(ball.on_new_collision(blue))  # blue can't take it on that same step...
+        self.assertFalse(ball.check_held_contacts())
+        self.assertEqual(ball.contested, set())  # ...and hasn't used up its roll
+
+        ball.sim_time += p.getPhysicsEngineParameters()["fixedTimeStep"]
+        self.assertTrue(ball.check_held_contacts())  # it gets it on the next step
+        self.assertIs(ball.possession_player, blue)
+
+    def test_teammates_walls_and_the_loose_ball_are_ignored(self):
+        blue = Player(team=Team.BLUE, initial_position=np.array([2.0, 0.0, 0.0]))
+        blue2 = Player(team=Team.BLUE, initial_position=np.array([-2.0, 0.0, 0.0]))
+        ball = self._ball_held_by(blue)
+        blue.collided_entities = [blue2, ball]
+
+        self.assertFalse(ball.check_held_contacts())
+        self.assertIs(ball.possession_player, blue)
+        ball._release()  # pylint: disable=protected-access
+        self.assertFalse(ball.check_held_contacts())  # nobody holds it: nothing to steal
     ### END AI GENERATED
 
     def test_kick_moves_ball_clear_of_kicker(self):

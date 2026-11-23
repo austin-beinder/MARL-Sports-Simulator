@@ -7,8 +7,13 @@
 #   - 2026-10-10: Generated this entire file: spawn sampler tests (constraints
 #     over many seeds, determinism, start mix, infeasible constraints, no torch
 #     dependency).
-# Prompt summary: Implement Phase 3 step 2 of the issue #7 plan (spawn sampler).
-# Human review:   Pending review
+#   - 2026-11-07: The reset options now include max_ball_dist. (Austin Beinder)
+#   - 2026-11-08: ... and drill_radius. (Austin Beinder)
+#   - 2026-11-09: ... and pass_distance. (Austin Beinder)
+#   - 2026-11-11: ... and catch_start_mix: keepaway starts in the pass
+#     practice layout, plus red. (Austin Beinder)
+#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters; no
+#     behaviour change. (Austin Beinder)
 # ==============================================================================
 import subprocess
 import sys
@@ -111,7 +116,11 @@ def test_infeasible_constraints_raise():
             field_size=(2.0, 2.0),
             player_radius=0.25,
             possession_radius=0.5,
-            options={"start_mix": 0.5, "require_blue_closer": True, "min_clearance": 1.0, "min_red_ball_dist": 3.0},
+            options={"start_mix": 0.5, "require_blue_closer": True, "min_clearance": 1.0,
+                     "min_red_ball_dist": 3.0,
+                     # AI GENERATED (max_ball_dist, drills)
+                     "max_ball_dist": 0.0, "drill_radius": 2.0, "pass_distance": 2.0,
+                     "catch_start_mix": 0.0},  # AI GENERATED (2026-11-11)
             max_tries=200,
         )
 
@@ -129,6 +138,46 @@ def test_bad_options_raise(bad):
             possession_radius=0.5,
             options=bad,
         )
+
+
+### AI GENERATED (2026-11-11: catch_start_mix)
+THREE_V_ONE = {"n_blue": 3, "n_red": 1, "start": {"pass_distance": 3.9}}
+
+
+def test_catch_starts_use_the_pass_practice_layout_with_red():
+    for seed in range(200):
+        s, opt, sp = spawn(seed, THREE_V_ONE, catch_start_mix=1.0)
+        blue, red, ball = np.array(sp.blue_pos), np.array(sp.red_pos), np.array(sp.ball_pos)
+        assert (sp.start_type == START_POSSESSION and tuple(blue[sp.holder]) == tuple(ball)
+                and len(red) == 1)
+        d = np.linalg.norm(np.delete(blue, sp.holder, axis=0) - ball, axis=-1)
+        # teammates pass_distance away
+        assert np.all((d >= 0.85 * 3.9 - 1e-9) & (d <= 1.15 * 3.9 + 1e-9))
+        assert np.linalg.norm(red - ball, axis=-1).min() >= opt["min_red_ball_dist"]
+        players = np.concatenate([blue, red])
+        gaps = np.linalg.norm(players[:, None] - players[None], axis=-1)[np.triu_indices(4, k=1)]
+        assert gaps.min() >= opt["min_clearance"]
+        assert np.all(np.abs(players) <= np.array(s.field_size) / 2 - s.player_radius + 1e-12)
+
+
+def test_catch_start_mix_is_the_share_of_catch_starts():
+    def layout(sp):  # a catch start: everyone but the holder is ~pass_distance from the ball
+        if sp.holder is None:
+            return False
+        d = np.linalg.norm(np.delete(np.array(sp.blue_pos), sp.holder, axis=0) - sp.ball_pos,
+                           axis=-1)
+        return bool(np.all(np.abs(d - 3.9) <= 0.15 * 3.9 + 1e-9))
+    shares = [np.mean([layout(spawn(seed, THREE_V_ONE, catch_start_mix=mix, start_mix=0.0)[2])
+                       for seed in range(300)]) for mix in (0.0, 0.5, 1.0)]
+    assert shares[0] == 0.0 and 0.4 < shares[1] < 0.6 and shares[2] == 1.0
+
+
+def test_catch_start_mix_zero_draws_exactly_as_before():
+    for seed in range(20):  # the option draws nothing at 0, so the usual starts are unchanged
+        assert spawn(seed, THREE_V_ONE)[2] == spawn(seed, THREE_V_ONE, catch_start_mix=0.0)[2]
+    with pytest.raises(ValueError, match="catch_start_mix"):
+        spawn(0, THREE_V_ONE, catch_start_mix=2.0)
+### END AI GENERATED
 
 
 def test_shared_modules_do_not_import_torch():
