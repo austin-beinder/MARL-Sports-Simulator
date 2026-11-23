@@ -8,6 +8,10 @@ Usage:
     and the joystick demo. Modelled on keep_away_env.py (whose static helpers it reuses), with
     the goals from goal.py. Design decisions (red possession isn't terminal, the first goal ends
     the game, red just goes to the ball, blue attacks east) by Austin Beinder.
+  - 2026-11-23: SoccerConfig.red_policy: "chase" (as before) or "dribble", where a red with the
+    ball carries it into blue's goal (GoalSpec.dribble_waypoint) and every other red keeps
+    chasing the ball. The joystick demo takes --red-policy. From docs/red_dribble_plan.md;
+    decisions by Austin Beinder.
 
 The "gym" layer for soccer. Like keep_away_env.KeepAwayEnv, it owns its own pybullet simulation
 and is the only thing the RL code needs to talk to:
@@ -16,9 +20,11 @@ and is the only thing the RL code needs to talk to:
   ticks pybullet forward and checks the goals every physics tick.
 
 Rules of soccer (this version):
-- Blue is the learner, red follows a fixed policy: every red chases the ball. A red that gets the
-  ball is standing on it, so it keeps still until a blue takes it back. (A red that dribbles to
-  goal comes in a later version, through red_policy.)
+- Blue is the learner, red follows a fixed policy, config.red_policy:
+  - "chase": every red chases the ball. A red that gets the ball is standing on it, so it keeps
+    still until a blue takes it back.
+  - "dribble": a red with the ball carries it into blue's goal (GoalSpec.dribble_waypoint); every
+    other red still chases the ball, its own teammate carrying it included, so they trail it.
 - Blue defends the west goal (x = -field_length / 2) and attacks east.
 - Possession is keep-away's: touching a loose ball takes it, and an opponent touching the carrier
   (or the ball) takes it from them, either way round. Only a kick releases the ball; teammates
@@ -50,6 +56,7 @@ from keep_away_env import KeepAwayEnv
 from player import Player
 from teams import Team
 
+RED_POLICIES = ("chase", "dribble")
 RESET_OPTIONS = frozenset({"blue_position", "red_position", "blue_positions", "red_positions",
                            "ball_position", "blue_has_ball", "ball_holder", "red_ball_holder"})
 
@@ -93,6 +100,9 @@ class SoccerConfig:
     n_blue: int = 1
     n_red: int = 1
 
+    # Red's fixed policy (RED_POLICIES): "chase" the ball, or "dribble" it into blue's goal
+    red_policy: str = "chase"
+
 
 class SoccerEnv:
 
@@ -104,6 +114,8 @@ class SoccerEnv:
         cfg = self.config
         if cfg.n_blue < 1 or cfg.n_red < 0:
             raise ValueError(f"need n_blue >= 1 and n_red >= 0, got {cfg.n_blue} and {cfg.n_red}")
+        if cfg.red_policy not in RED_POLICIES:
+            raise ValueError(f"red_policy must be one of {RED_POLICIES}, got {cfg.red_policy!r}")
         self.render_mode = render_mode
         self.client = p.connect(p.GUI if render_mode == "human" else p.DIRECT)
         if self.client < 0:
@@ -118,6 +130,8 @@ class SoccerEnv:
         # Blue defends the west goal, red the east one
         self.goal_specs = standard_goals(cfg.field_length, cfg.field_width, width=cfg.goal_width,
                                          depth=cfg.goal_depth, west_team=Team.BLUE)
+        # The goal red attacks: the one blue defends
+        self._red_target = next(spec for spec in self.goal_specs if spec.defending_team == Team.BLUE)
 
         self.field: Optional[Field] = None
         self.ball: Optional[Ball] = None
@@ -300,10 +314,16 @@ class SoccerEnv:
     # ---------- Red's fixed policy ----------
 
     def red_policy(self, player: Player) -> np.ndarray:
-        """Every red chases the ball with keep-away's P-controller. A red holding the ball is on
-        top of it, so it keeps still. (The one place a smarter red policy would go.)"""
-        return KeepAwayEnv.chase_velocity(player.position, self.ball.position,
-                                          self.config.red_gain, self.config.red_max_speed)
+        """Red's velocity (m/s), with keep-away's P-controller. Every red chases the ball; a red
+        holding it is on top of it, so under "chase" it keeps still. Under "dribble" a red holding
+        the ball runs it into blue's goal instead, through the waypoints of
+        GoalSpec.dribble_waypoint (the same rule as blue's scripted dribble baseline). Red keeps
+        its own speed while carrying."""
+        cfg = self.config
+        target = self.ball.position
+        if cfg.red_policy == "dribble" and self.ball.possession_player is player:
+            target = self._red_target.dribble_waypoint(player.position, cfg.player_radius)
+        return KeepAwayEnv.chase_velocity(player.position, target, cfg.red_gain, cfg.red_max_speed)
 
     # ---------- Goals ----------
 
@@ -399,14 +419,20 @@ class SoccerEnv:
 
 def main() -> None:
     """
-    Play soccer as blue with an on-screen joystick against the chasing red. Space kicks the ball
-    the way the joystick points; pushing the knob further kicks harder. Every goal is printed, and
-    a new game starts after each goal or time-out.
+    Play soccer as blue with an on-screen joystick against red (--red-policy chase, the default,
+    or dribble). Space kicks the ball the way the joystick points; pushing the knob further kicks
+    harder. Every goal is printed, and a new game starts after each goal or time-out.
     """
+    import argparse  # pylint: disable=import-outside-toplevel
     import tkinter as tk  # pylint: disable=import-outside-toplevel
     from joystick import Joystick  # pylint: disable=import-outside-toplevel
 
-    env = SoccerEnv(render_mode="human")
+    parser = argparse.ArgumentParser(description="Play soccer as blue with an on-screen joystick.")
+    parser.add_argument("--red-policy", choices=RED_POLICIES, default="chase",
+                        help="red chases the ball (chase) or carries it into your goal (dribble)")
+    args = parser.parse_args()
+
+    env = SoccerEnv(SoccerConfig(red_policy=args.red_policy), render_mode="human")
     env.reset()
     tally = {Team.BLUE: 0, Team.RED: 0, Team.NONE: 0}
 

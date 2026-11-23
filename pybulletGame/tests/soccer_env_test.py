@@ -7,11 +7,15 @@ Usage:
   - 2026-11-23: Generated this entire file: tests for soccer_env.py (goals end the game, red
     possession doesn't, the chasing red, time-outs, team sizes, separate simulations) and for
     Ball.goal_lanes.
+  - 2026-11-23: Tests for red_policy = "dribble" (red carries the ball into blue's goal, from the
+    middle and from near a sideline; other reds chase their own carrier; a loose ball is still
+    chased; unknown policies raise). (Austin Beinder)
 """
 
 ### AI GENERATED
 import os
 import sys
+import dataclasses
 import unittest
 
 import numpy as np
@@ -26,6 +30,7 @@ from teams import Team
 CONFIG = SoccerConfig(field_length=16.0, field_width=10.0, player_radius=0.25, blue_max_speed=2.0,
                       action_repeat=12)
 FAR_RED = (-6.0, 4.0)  # out of the way of anything happening near the east goal
+FAR_BLUE = (7.0, -4.5)  # out of the way of anything happening near the west goal
 
 
 def play(env, action=(0.0, 0.0), kicks=None, max_steps=500):
@@ -221,6 +226,62 @@ class TestTimeAndTeams(SoccerEnvTestCase):
             other.step((0.0, 0.0))
         finally:
             other.close()
+
+
+class TestDribblingRed(SoccerEnvTestCase):
+    """red_policy = "dribble" (2026-11-23, docs/red_dribble_plan.md)."""
+    config = dataclasses.replace(CONFIG, red_policy="dribble")
+
+    def assert_red_carried_it_in(self, info):
+        self.assertEqual(info["winner"], Team.RED)
+        self.assertTrue(info["goal"].carried)
+        self.assertFalse(info["goal"].own_goal)
+        self.assertTrue(self.env.blue_goal.ball_inside)
+        self.assertFalse(self.env.red_goal.ball_inside)
+
+    def test_red_carries_the_ball_into_blues_goal(self):
+        self.env.reset(seed=0, options={"blue_position": FAR_BLUE, "red_position": (2.0, 0.0),
+                                        "red_ball_holder": 0})
+        _, reward, terminated, _, info = play(self.env, max_steps=200)  # 10 m at 1.8 m/s: ~110 steps
+        self.assertTrue(terminated)
+        self.assertEqual(reward, -1.0)
+        self.assert_red_carried_it_in(info)
+
+    def test_red_lines_up_from_near_a_sideline(self):
+        self.env.reset(seed=0, options={"blue_position": FAR_BLUE, "red_position": (-5.0, 4.0),
+                                        "red_ball_holder": 0})
+        _, _, _, _, info = play(self.env, max_steps=200)
+        self.assert_red_carried_it_in(info)
+
+    def test_red_chases_a_loose_ball(self):
+        self.env.reset(seed=0, options={"blue_position": FAR_BLUE, "red_position": (4.0, 0.0),
+                                        "ball_position": (0.0, 0.0)})
+        self.env.step((0.0, 0.0))
+        self.assertLess(self.env.reds[0].velocity[0], -1.0)
+
+    def test_the_other_reds_chase_their_own_carrier(self):
+        env = SoccerEnv(dataclasses.replace(self.config, n_red=2))
+        try:
+            env.reset(seed=0, options={"blue_position": FAR_BLUE,
+                                       "red_positions": [(0.0, 0.0), (3.0, 3.0)], "red_ball_holder": 0})
+            env.step((0.0, 0.0))
+            to_carrier = env.reds[0].position[:2] - env.reds[1].position[:2]
+            self.assertGreater(float(np.dot(env.reds[1].velocity[:2], to_carrier)), 0.0)
+            for _ in range(300):
+                _, _, terminated, _, info = env.step((0.0, 0.0))
+                if terminated:
+                    break
+                self.assertIs(env.ball.possession_player, env.reds[0])  # teammates can't take it
+            self.assertEqual(info["winner"], Team.RED)
+        finally:
+            env.close()
+
+    def test_chase_is_the_default(self):
+        self.assertEqual(SoccerConfig().red_policy, "chase")  # TestPossessionAndRed covers chase
+
+    def test_unknown_red_policy_raises(self):
+        with self.assertRaises(ValueError):
+            SoccerEnv(dataclasses.replace(CONFIG, red_policy="shoot"))
 
 
 class TestKeepAwayKicksUnchanged(unittest.TestCase):

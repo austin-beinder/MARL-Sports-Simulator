@@ -14,6 +14,9 @@
 #     behaviour change. (Austin Beinder)
 #   - 2026-11-23: Soccer offers random, still and dribble, a scripted
 #     "get the ball, run it into red's goal" reference. (Austin Beinder)
+#   - 2026-11-23: DribblePolicy uses GoalSpec.dribble_waypoint, the rule red's
+#     in-game "dribble" policy shares; no behaviour change
+#     (docs/red_dribble_plan.md). (Austin Beinder)
 # ==============================================================================
 """Scripted baseline policies (design #23) and the goto_target oracle.
 
@@ -171,19 +174,19 @@ class FleePolicy:
 
 ### AI GENERATED (2026-11-23)
 class DribblePolicy:
-    """soccer: fetch the ball, then carry it into red's goal (east, x = Lx / 2). The carrier aims
-    at a point LINE_UP m in front of the mouth until it is between the posts (with a player's
-    radius to spare), then at the middle of the pocket, so it doesn't run into the wall beside a
-    post."""
-
-    LINE_UP = 0.5  # m in front of the goal line
+    """soccer: fetch the ball, then carry it into red's goal (east, x = Lx / 2). The carrier
+    follows ``GoalSpec.dribble_waypoint`` (2026-11-23), the same rule as red's in-game "dribble"
+    policy: a point in front of the mouth until it is between the posts (with a player's radius to
+    spare), then the middle of the pocket, so it doesn't run into the wall beside a post."""
 
     def __init__(self, cfg: SharedConfig):
+        # Imported here so the mock-only code paths never load pybullet (2026-11-23)
+        from pybulletGame import Team, standard_goals  # pylint: disable=import-outside-toplevel
+
         self.cfg = cfg
-        x = cfg.field_size[0] / 2
-        self.lane = cfg.soccer.goal_width / 2 - cfg.player_radius  # |y| that fits between the posts
-        self.approach = np.array([x - self.LINE_UP, 0.0])
-        self.pocket = np.array([x + cfg.soccer.goal_depth / 2, 0.0])
+        goals = standard_goals(cfg.field_size[0], cfg.field_size[1], width=cfg.soccer.goal_width,
+                               depth=cfg.soccer.goal_depth, west_team=Team.BLUE)
+        self.target = next(spec for spec in goals if spec.defending_team == Team.RED)
 
     def __call__(self, s: dict) -> dict:
         st = parse_state(s, self.cfg.n_blue, self.cfg.n_red)
@@ -191,8 +194,7 @@ class DribblePolicy:
         for i in range(self.cfg.n_blue):
             if st.blue_poss[i]:
                 me = st.blue_pos[i]
-                lined_up = abs(me[1]) < self.lane and me[0] >= self.approach[0] - 1.0
-                moves[i] = _unit((self.pocket if lined_up else self.approach) - me)
+                moves[i] = _unit(self.target.dribble_waypoint(me, self.cfg.player_radius) - me)
             elif not st.blue_poss.any():
                 moves[i] = _unit(st.ball_pos - st.blue_pos[i])
         return _actions(moves)

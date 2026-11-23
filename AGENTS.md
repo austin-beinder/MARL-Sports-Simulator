@@ -106,8 +106,14 @@ configs/*.toml -> marl.common.config.Config
   is not terminal; either team takes the ball by touching the carrier. The first goal ends the
   episode (`terminated`), any team, own goals included; no goal by the time limit is a draw
   (`truncated`). Spawns are keepaway's.
-- Red's fixed policy (`SoccerEnv.red_policy`) just chases the ball, so a red holding it stands still
-  and red can't score yet; a dribble-to-goal red is the next PR.
+- Red's fixed policy (`SoccerEnv.red_policy`) is `[shared.soccer] red_policy` (plan:
+  `docs/red_dribble_plan.md`). `"chase"` (default): every red chases the ball, so a red holding it
+  stands still and red never scores. `"dribble"`: a red with the ball carries it into blue's goal at
+  its full 1.8 m/s (slower than a free blue); every other red keeps chasing the ball, its own carrier
+  included, so they clump behind it. No shooting. The carrier's route is
+  `GoalSpec.dribble_waypoint` (a point 0.5 m in front of the mouth until lined up between the posts,
+  then the pocket), the same rule blue's scripted `dribble` baseline uses for the east goal. A
+  curriculum stage turns it on with `[stage.overrides.shared.soccer] red_policy = "dribble"`.
 - `PyBulletSoccerEnv` subclasses `PyBulletEnv` through two hooks, `_make_game` and `_game_events`
   (which adds the ICD `goal` event). `Ball.goal_lanes` lets a kick at a goal's mouth go in instead
   of being clamped back by `play_area`; keep-away leaves it empty.
@@ -118,7 +124,9 @@ configs/*.toml -> marl.common.config.Config
   actors warm-start into soccer like a growing team. `train.csv` / `eval.csv` log `win_rate`,
   `loss_rate` and `draw_rate` (NaN in other scenarios). The scripted `dribble` baseline is soccer's
   reference (`watch.py --baseline dribble`).
-- `configs/soccer_1v0.toml` (an empty net, the smoke test) and `configs/soccer_1v1.toml`. A soccer
+- `configs/soccer_1v0.toml` (an empty net, the smoke test), `configs/soccer_1v1.toml` and
+  `configs/soccer_1v1_dribble.toml` (against a dribbling red; `python pybulletGame/soccer_env.py
+  --red-policy dribble` plays it by hand). A soccer
   curriculum (keep-away actor → go to goal → add red) is planned after this.
 
 ## Hard constraints

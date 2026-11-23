@@ -9,6 +9,9 @@ Usage:
     counts for the team that doesn't defend the goal, players may walk into the pocket, the
     2.0 m default width) by Austin Beinder. The scorer is Ball.last_holder (added to ball.py the
     same day), so a kick before any update still has its kicker.
+  - 2026-11-23: GoalSpec.dribble_waypoint, where a ball carrier heads to score in this goal; the
+    one dribble rule red's in-game policy and blue's scripted baseline share
+    (docs/red_dribble_plan.md). (Austin Beinder)
 
 A goal for the field: a mouth in one of the field walls with a pocket behind it. Pong-like:
 whenever the whole ball gets over the goal line between the posts, the goal reports a GoalEvent.
@@ -55,6 +58,9 @@ PANEL_THICKNESS = 0.1
 # The visual panels are this much smaller than the collision panels on every side, so their faces
 # never lie in the same plane as a field wall's face (the GUI would flicker between the two)
 VISUAL_INSET = 0.003
+
+# How far in front of the goal line a dribbler lines up before going in (GoalSpec.dribble_waypoint)
+DRIBBLE_LINE_UP = 0.5
 
 POST_RADIUS = 0.05
 POST_COLOR = [1.0, 1.0, 1.0, 1.0]
@@ -133,6 +139,20 @@ class GoalSpec:
     def posts(self) -> Tuple[np.ndarray, np.ndarray]:
         """World (x, y) of the two posts (the ends of the mouth)."""
         return self.to_world(0.0, -self.width / 2), self.to_world(0.0, self.width / 2)
+
+    def dribble_waypoint(self, position, player_radius: float,
+                         line_up: float = DRIBBLE_LINE_UP) -> np.ndarray:
+        """
+        Where a player carrying the ball should head to score in this goal (2026-11-23, the
+        "dribble" policy, docs/red_dribble_plan.md): a point line_up m in front of the middle of
+        the mouth, until the player is between the posts (with its radius to spare) and no more
+        than 1 m short of that point; then the middle of the pocket. The two waypoints keep the
+        carrier from pinning itself against the wall beside a post. Used by red's in-game policy
+        (SoccerEnv.red_policy) and blue's scripted baseline (marl.baselines.DribblePolicy).
+        """
+        along, across = self.to_local(position)
+        lined_up = abs(across) < self.width / 2 - player_radius and along >= -(line_up + 1.0)
+        return self.to_world(self.depth / 2, 0.0) if lined_up else self.to_world(-line_up, 0.0)
 
 
 @dataclass(frozen=True)
