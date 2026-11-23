@@ -7,6 +7,8 @@
 #   - 2026-11-23: Generated this entire file from docs/soccer_env_plan.md §3:
 #     the ICD adapter around the PyBullet soccer game
 #     (pybulletGame.SoccerEnv), a subclass of the keep-away adapter.
+#   - 2026-11-23: Passes shared.soccer.red_policy to the game
+#     (docs/red_dribble_plan.md). (Austin Beinder)
 # ==============================================================================
 ### AI GENERATED
 """ICD adapter around the PyBullet soccer game (``pybulletGame.SoccerEnv``).
@@ -26,7 +28,8 @@ possession events, ``s["ball"]["passer"]``, the calls and the test hook. Soccer 
   ``team`` gets the point (any ball in a goal scores for the side that doesn't defend it);
   ``scorer`` is whoever last held the ball.
 
-Red's fixed policy is the game's: every red chases the ball. The RL side computes the reward from
+Red's fixed policy is the game's, chosen by ``shared.soccer.red_policy``: ``"chase"`` (every red
+chases the ball) or ``"dribble"`` (a red with the ball carries it into blue's goal). The RL side computes the reward from
 the goal event (``rl.reward.base = "goal"``).
 """
 
@@ -63,6 +66,7 @@ class PyBulletSoccerEnv(PyBulletEnv):
                 action_repeat=cfg.control_k,
                 n_blue=cfg.n_blue,
                 n_red=cfg.n_red,
+                red_policy=cfg.soccer.red_policy,  # AI GENERATED (2026-11-23)
             ),
             render_mode=render_mode,
         )

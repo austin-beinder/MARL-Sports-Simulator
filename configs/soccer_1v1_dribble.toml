@@ -1,0 +1,37 @@
+# ==============================================================================
+# AI CITATION
+# Tool:    Claude Code (Claude Opus 5.5)
+# Date:    2026-11-23
+# Author:  Austin Beinder
+# Usage:
+#   - 2026-11-23: Created this file: soccer_1v1.toml against a red that
+#     dribbles the ball into blue's goal (docs/red_dribble_plan.md).
+# ==============================================================================
+# Soccer 1v1 against a red that attacks: without the ball it chases it, with
+# the ball it carries it into blue's (west) goal at its full 1.8 m/s, slower
+# than a free blue (2.0 m/s). First goal wins, a time-out within 30 s is a draw.
+# PyBullet only. Omitted keys take the defaults in marl/common/config.py.
+
+[shared]
+scenario = "soccer"
+n_blue = 1
+n_red = 1
+max_episode_steps = 600  # 30 s at 20 decisions a second
+
+[shared.soccer]
+red_policy = "dribble"
+
+[rl]
+horizon_seconds = 10.0  # gamma = 0.995: at 5 s a goal 15 s away is worth ~5%
+kick_enabled = true
+
+[rl.reward]
+base = "goal"  # +-1 per goal, as the learner sees it
+# Both potential-based, as in soccer_1v1.toml. Starting points, not tuned.
+shaping = [
+    { name = "pbrs_ball_to_goal", enabled = true, coef = 20.0 },
+    { name = "pbrs_ball_acquisition", enabled = true, coef = 2.0 },
+]
+
+[run]
+total_steps = 1_000_000

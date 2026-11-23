@@ -6,6 +6,7 @@ Author:  Austin Beinder
 Usage:
   - 2026-11-23: Generated this entire file: tests for goal.py (GoalSpec geometry, the goal's
     body, the mouths Field opens in its walls, and the goal events).
+  - 2026-11-23: Tests for GoalSpec.dribble_waypoint. (Austin Beinder)
 """
 
 ### AI GENERATED
@@ -140,6 +141,31 @@ class TestGoalSpec(unittest.TestCase):
         for name in ("width", "depth", "height"):
             with self.subTest(size=name), self.assertRaises(ValueError):
                 GoalSpec(center=(5.0, 0.0), normal=(-1.0, 0.0), defending_team=Team.RED, **{name: 0.0})
+
+
+class TestDribbleWaypoint(unittest.TestCase):
+    """GoalSpec.dribble_waypoint (2026-11-23). Goals 2 m wide, 0.5 m deep, players 0.25 m."""
+
+    def setUp(self):
+        self.west, self.east = standard_goals(LENGTH, WIDTH)
+
+    def test_off_line_heads_for_the_point_in_front_of_the_mouth(self):
+        np.testing.assert_allclose(self.east.dribble_waypoint((0.0, 2.0), 0.25), (4.5, 0.0))
+        np.testing.assert_allclose(self.west.dribble_waypoint((0.0, 2.0), 0.25), (-4.5, 0.0))
+
+    def test_lined_up_heads_into_the_pocket(self):
+        np.testing.assert_allclose(self.east.dribble_waypoint((4.0, 0.5), 0.25), (5.25, 0.0))
+        np.testing.assert_allclose(self.west.dribble_waypoint((-4.0, -0.5), 0.25), (-5.25, 0.0))
+
+    def test_lined_up_needs_a_radius_to_spare_and_to_be_close(self):
+        # |across| must be under 1 - 0.25, and the player within 1.5 m of the goal line
+        np.testing.assert_allclose(self.east.dribble_waypoint((4.0, 0.8), 0.25), (4.5, 0.0))
+        np.testing.assert_allclose(self.east.dribble_waypoint((3.0, 0.0), 0.25), (4.5, 0.0))
+
+    def test_the_two_ends_mirror_each_other(self):
+        for x, y in ((0.0, 0.0), (3.9, 0.7), (4.2, -0.2), (-2.0, 2.5), (4.8, 1.5)):
+            np.testing.assert_allclose(self.west.dribble_waypoint((-x, -y), 0.25),
+                                       -self.east.dribble_waypoint((x, y), 0.25))
 
 
 class TestFieldWithGoals(unittest.TestCase):

@@ -50,6 +50,8 @@
 #   - 2026-11-23: The soccer scenario (PyBullet only), its goal base reward,
 #     the pbrs_ball_to_goal shaping term and the [shared.soccer] table (goal
 #     size), from docs/soccer_env_plan.md. (Austin Beinder)
+#   - 2026-11-23: shared.soccer.red_policy ("chase" or "dribble"), from
+#     docs/red_dribble_plan.md. (Austin Beinder)
 # ==============================================================================
 """Configuration schema, TOML loading and validation.
 
@@ -91,6 +93,7 @@ OPTIONS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
     "obs_mode": (frozenset({"full"}), frozenset({"radius"})),
     "env": (frozenset({"mock", "pybullet"}), frozenset()),  # AI GENERATED
     "new_player_init": (frozenset({"zero", "random"}), frozenset()),  # AI GENERATED (2026-11-12)
+    "red_policy": (frozenset({"chase", "dribble"}), frozenset()),  # AI GENERATED (2026-11-23: soccer)
 }
 
 # Reward term names (#14). The registry in marl/rl/reward.py must match these
@@ -171,6 +174,9 @@ class SoccerShared:
 
     goal_width: float = 2.0  # m, post to post
     goal_depth: float = 0.5  # m, how far the pocket goes back behind the goal line
+    # Red's fixed policy (pybulletGame.SoccerConfig.red_policy, docs/red_dribble_plan.md): "chase"
+    # the ball, or "dribble": a red with the ball carries it into blue's goal, the others chase it.
+    red_policy: str = "chase"
 ### END AI GENERATED
 
 
@@ -506,6 +512,7 @@ def _validate_shared(s: SharedConfig) -> None:
              "shared.soccer.goal_width must exceed the player diameter")
     _require(s.soccer.goal_width < s.field_size[1], "shared.soccer.goal_width must be < the field width")
     _require(s.soccer.goal_depth > 0, "shared.soccer.goal_depth must be > 0")
+    _check_option("red_policy", s.soccer.red_policy)
     ### END AI GENERATED
 
 

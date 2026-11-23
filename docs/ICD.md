@@ -47,6 +47,8 @@ Usage:
   2026-11-23: §5, §7, §8, §9, §10, §11: the soccer scenario (PyBullet only):
     goals, red possession not terminal, the goal event, [shared.soccer].
     Decisions by Austin Beinder (docs/soccer_env_plan.md).
+  2026-11-23: §9, §10: soccer.red_policy ("chase" or "dribble"). Decisions
+    by Austin Beinder (docs/red_dribble_plan.md).
 -->
 
 # Gym ↔ RL Layer Interface Control Document (ICD)
@@ -335,7 +337,8 @@ options = {
   has a goal in the middle of each end wall (`[shared.soccer]`, §10): blue defends the west goal
   (`x = -Lx / 2`) and attacks east. Spawns are drawn exactly as for `keepaway`. Red possession is
   **not** terminal: play goes on, and either team takes the ball from the other by touching the
-  carrier. Every red chases the ball. The episode is `terminated` on the first goal: the whole ball
+  carrier. Every red chases the ball; with `soccer.red_policy = "dribble"` (§10) a red holding it
+  carries it into blue's goal instead. The episode is `terminated` on the first goal: the whole ball
   over a goal line between the posts, kicked, carried in, or an own goal; it scores for the team that
   doesn't defend that goal. That step's `events` end with one `goal` event (`team` gets the point,
   `scorer` is whoever last held the ball, `own_goal`, `carried`). No goal by the time limit:
@@ -363,6 +366,7 @@ teammate's call. Both sides validate the config **at load**.
 | `possession_radius`                 | [OPEN]        | §8                                                       |
 | start-distribution options          | see §9        |                                                          |
 | `soccer.goal_width`, `soccer.goal_depth` | 2.0, 0.5 m | soccer only (2026-11-23): each goal's mouth, post to post, and how far its pocket goes back |
+| `soccer.red_policy`                 | `chase`       | soccer only (2026-11-23): red's fixed policy, `chase` (every red chases the ball) or `dribble` (a red with the ball carries it into blue's goal, the others chase it) |
 
 **Calibration:** before training, the RL side tunes `red_max_speed` (and `carry_speed_factor` if needed) so
 that a scripted "flee" policy survives roughly 30–70% of `max_episode_steps`. If red is always faster

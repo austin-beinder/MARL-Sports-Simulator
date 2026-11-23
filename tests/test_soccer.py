@@ -9,6 +9,9 @@
 #     goal events and episode ends, the goal reward and shaping, the goals
 #     observation block, warm starts from keep-away, outcome metrics, the
 #     dribble baseline and a tiny training run.
+#   - 2026-11-23: shared.soccer.red_policy: config validation, the adapter
+#     passing it on, a dribbling red scoring through the ICD, and its loss
+#     rate against a still blue (docs/red_dribble_plan.md). (Austin Beinder)
 # ==============================================================================
 ### AI GENERATED
 """The soccer scenario, RL side (the game itself: pybulletGame/tests/soccer_env_test.py)."""
@@ -244,6 +247,47 @@ def test_dribble_baseline_scores_on_an_empty_net():
     finally:
         env.close()
     assert summarize(records)["win_rate"] == 1.0
+
+
+# --- Red's policy (2026-11-23, docs/red_dribble_plan.md) ------------------------------------
+def test_red_policy_config():
+    assert soccer().shared.soccer.red_policy == "chase"
+    assert soccer(shared={"soccer": {"red_policy": "dribble"}}).shared.soccer.red_policy == "dribble"
+    with pytest.raises(ValueError, match="red_policy"):
+        soccer(shared={"soccer": {"red_policy": "shoot"}})
+
+
+@pytest.mark.parametrize("policy", ["chase", "dribble"])
+def test_adapter_passes_red_policy_to_the_game(policy):
+    env = make_env(soccer(shared={"soccer": {"red_policy": policy}}))
+    try:
+        assert env._game.config.red_policy == policy  # pylint: disable=protected-access
+    finally:
+        env.close()
+
+
+def test_dribbling_red_scores_through_the_icd():
+    env = make_env(soccer(shared={"soccer": {"red_policy": "dribble"}, "max_episode_steps": 600}))
+    try:
+        env.reset(seed=0)
+        # The test hook can't make red the holder: a loose ball just ahead of it, which it picks up
+        env.set_state_for_testing(blue_pos=[[7.0, -4.5]], red_pos=[[2.0, 0.0]], ball_pos=[1.4, 0.0])
+        _, term, _, info = play(env, move((0.0, 0.0)))
+    finally:
+        env.close()
+    goal = info["events"][-1]
+    assert term and goal == {"type": "goal", "team": "red", "scorer": ("red", 0),
+                             "own_goal": False, "carried": True}
+
+
+def test_dribbling_red_beats_a_still_blue():
+    cfg = soccer(shared={"soccer": {"red_policy": "dribble"}, "max_episode_steps": 600})
+    env = make_env(cfg)
+    try:
+        records = run_episodes(env, make_baseline("still", cfg.shared), cfg, RewardModule(cfg), range(5))
+    finally:
+        env.close()
+    assert summarize(records)["loss_rate"] >= 0.8  # 95% over seeds 0-19
 
 
 # --- Training ---------------------------------------------------------------------------------
