@@ -37,6 +37,11 @@
 #     pass_practice_moving stages. (Austin Beinder)
 #   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters; no
 #     behaviour change. (Austin Beinder)
+#   - 2026-11-23: Fixed a merge (d3040a1) that had left render_manifest's
+#     body in a stray second main(), so render_manifest returned None and
+#     --curriculum was gone: restored the body, moved --curriculum into the
+#     record/ad-hoc main(), and curriculum figures save a PDF too again, as
+#     scripts/README.md says. (Austin Beinder)
 # ==============================================================================
 """Report figures. Reads only CSVs that training, ``scripts/evaluate.py`` and
 ``scripts/calibrate.py`` already wrote, so making figures never re-runs anything.
@@ -65,10 +70,14 @@ from __future__ import annotations
 import argparse
 import csv
 import glob
+import json  # AI GENERATED (2026-11-23): lost in a merge
 import math
+import sys  # AI GENERATED (2026-11-23): lost in a merge
+import tomllib  # AI GENERATED (2026-11-23): curriculum.toml (the merge dropped it)
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any  # AI GENERATED (2026-11-23): the merge dropped it
 
 import matplotlib
 
@@ -322,9 +331,11 @@ def _keepaway_refs(ax, baselines: dict[str, dict[str, float]] | None, key: str) 
     return refs
 
 
-def _save(fig, out_dir: Path, name: str) -> Path:
+def _save(fig, out_dir: Path, name: str, pdf: bool = False) -> Path:
     path = out_dir / f"{name}.png"
     fig.savefig(path, dpi=200, metadata={"Software": None})  # no version stamp: fewer byte changes
+    if pdf:  # AI GENERATED (2026-11-23): curriculum figures also go out as PDF (scripts/README.md)
+        fig.savefig(out_dir / f"{name}.pdf", metadata={"Creator": None, "Producer": None})  # AI GENERATED
     plt.close(fig)
     return path
 
@@ -702,8 +713,30 @@ def render_tables(manifest: Manifest) -> tuple[list[str], list[str]]:
 def render_manifest(manifest: Manifest, out_dir: Path) -> tuple[list[Path], list[str]]:
     """Write every figure (PNG) and the table view into ``out_dir``. A figure or table whose
     inputs are missing is skipped with a note; anything else wrong is an error."""
-    
-SWEEP_DEFAULT = ("runs/eval_keepaway_1v1_seed0_iter_00100_per_run.csv", "runs/eval_pilot_pbrs_coef*_seed10_per_run.csv")
+    ### AI GENERATED (2026-11-23): restored the body a merge (d3040a1) had moved into a stray main()
+    apply_style()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    colors = assign_colors(manifest.figures)
+    made: list[Path] = []
+    notes: list[str] = []
+    for spec in manifest.figures:
+        for warning in eval_mismatch([a.to_arm() for a in spec.arms]):
+            if f"warning: {warning}" not in notes:  # ad-hoc figures share their arms: say it once
+                notes.append(f"warning: {warning}")
+        try:
+            fig = render_figure(spec, colors)
+        except MissingInput as e:
+            notes.append(f"skipped {spec.name}: {e}")
+            continue
+        made.append(_save(fig, out_dir, spec.name))
+    sections, table_notes = render_tables(manifest)
+    notes += table_notes
+    if sections:
+        path = out_dir / "results_tables.md"
+        path.write_text("\n".join(sections), encoding="utf-8")
+        made.append(path)
+    return made, notes
+    ### END AI GENERATED
 
 
 ### AI GENERATED (2026-11-13)
@@ -713,6 +746,9 @@ SWEEP_DEFAULT = ("runs/eval_keepaway_1v1_seed0_iter_00100_per_run.csv", "runs/ev
 # on one step axis. Training lines are trailing means over iterations; eval points are the
 # stochastic policy on the stage's real task.
 STAGE_BAND = "#f1f0ec"  # every other stage's background: a shade off SURFACE
+# AI GENERATED (2026-11-23): the old ACCENT / SERIES_2 colors the refactor removed, as the
+# palette's first two slots (the training and eval lines)
+ACCENT, SERIES_2 = PALETTE[0], PALETTE[1]  # AI GENERATED
 
 
 def curriculum_stages(run_dir: str | Path) -> list[tuple[Path, dict[str, Any], dict[str, Any]]]:
@@ -850,7 +886,7 @@ def fig_curriculum(run_dir: str | Path, out_dir: Path) -> Path:
     axes[2].set_ylabel("reward per step, unscaled\n(10-iteration mean)")
     axes[2].set_xlabel("env steps across the run (thousands)")
     fig.suptitle(run_dir.name, fontsize=11)
-    return _save(fig, out_dir, f"{run_dir.name}_progress")
+    return _save(fig, out_dir, f"{run_dir.name}_progress", pdf=True)
 
 
 def fig_catch_stages(run_dir: str | Path, out_dir: Path) -> Path | None:
@@ -905,66 +941,14 @@ def fig_catch_stages(run_dir: str | Path, out_dir: Path) -> Path | None:
     axes[2].set_xlabel("env steps in the pass practice stages (thousands)")
     axes[2].legend(loc="best", fontsize=8)
     fig.suptitle(f"{run_dir.name}: pass practice stages", fontsize=11)
-    return _save(fig, out_dir, f"{run_dir.name}_catch")
+    return _save(fig, out_dir, f"{run_dir.name}_catch", pdf=True)
 ### END AI GENERATED
-
-
-def main(argv: Sequence[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="Make the report figures from finished runs (step 11).")
-    ap.add_argument("--keepaway", default="runs/keepaway_1v1_seed*", help="glob of keep-away run directories")
-    ap.add_argument("--goto", default="runs/goto_target_seed*", help="glob of goto_target run directories")
-    ap.add_argument("--pbrs", default="runs/keepaway_1v1_pbrs_seed*", help="glob of the PBRS-ablation run directories")
-    ap.add_argument("--sweep", nargs="+", default=list(SWEEP_DEFAULT),
-                    help="per-run evaluation CSVs of the PBRS coefficient pilot (globs allowed)")
-    ap.add_argument("--calibration", type=Path, default=Path("runs/calibration_keepaway_1v1.csv"))
-    ap.add_argument("--config", type=Path, default=Path("configs/keepaway_1v1.toml"),
-                    help="keep-away config (for the chosen red speed and the carrier speed)")
-    ap.add_argument("--out", type=Path, default=Path("runs/figures"))
-    ### AI GENERATED (2026-11-13)
-    ap.add_argument("--curriculum", type=Path, nargs="+", metavar="RUN_DIR",
-                    help="curriculum run folder(s), e.g. "
-                         "runs/curriculum_passing_3v1_pybullet_seed0: plot their "
-                         "progress (<run>_progress, plus <run>_catch if they have pass practice "
-                         "stages) instead of "
-                         "the report figures")
-    ### END AI GENERATED
-    args = ap.parse_args(argv)
-
-    apply_style()
-    out_dir.mkdir(parents=True, exist_ok=True)
-    colors = assign_colors(manifest.figures)
-    ### AI GENERATED (2026-11-13)
-    if args.curriculum:
-        for run in args.curriculum:
-            for path in (fig_curriculum(run, args.out), fig_catch_stages(run, args.out)):
-                if path is not None:
-                    print(f"[plot] {path}")
-        return 0
-    ### END AI GENERATED
-    made: list[Path] = []
-    notes: list[str] = []
-    for spec in manifest.figures:
-        for warning in eval_mismatch([a.to_arm() for a in spec.arms]):
-            if f"warning: {warning}" not in notes:  # ad-hoc figures share their arms: say it once
-                notes.append(f"warning: {warning}")
-        try:
-            fig = render_figure(spec, colors)
-        except MissingInput as e:
-            notes.append(f"skipped {spec.name}: {e}")
-            continue
-        made.append(_save(fig, out_dir, spec.name))
-    sections, table_notes = render_tables(manifest)
-    notes += table_notes
-    if sections:
-        path = out_dir / "results_tables.md"
-        path.write_text("\n".join(sections), encoding="utf-8")
-        made.append(path)
-    return made, notes
 
 
 # --- Command line ---------------------------------------------------------------------
 GOLDEN = Path("results/golden/manifest.toml")
 PLOTS = Path("runs/plots")
+CURRICULUM_OUT = Path("runs/figures")  # AI GENERATED (2026-11-23): --curriculum's default output folder
 RENDER_MARKER = ".rendered_from"  # in a record's render folder: the manifest it was rendered from
 DEFAULT_KINDS = {"goto_target": ("goto", "diagnostics")}  # any other scenario: keep-away's kinds
 KEEPAWAY_KINDS = ("curves", "final", "diagnostics")
@@ -1005,7 +989,27 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--title", help="ad hoc: figure title")
     ap.add_argument("--out", type=Path, help="output folder (default: runs/plots/<name>/)")
     ap.add_argument("--overwrite", action="store_true", help="replace the figures in a non-empty output folder")
+    ### AI GENERATED (2026-11-13)
+    ap.add_argument("--curriculum", type=Path, nargs="+", metavar="RUN_DIR",
+                    help="curriculum run folder(s), e.g. "
+                         "runs/curriculum_passing_3v1_pybullet_seed0: plot their "
+                         "progress (<run>_progress, plus <run>_catch if they have pass practice "
+                         f"stages) into --out (default: {CURRICULUM_OUT}/) instead of a record")
+    ### END AI GENERATED
     args = ap.parse_args(argv)
+    ### AI GENERATED (2026-11-23): --curriculum moved here from a stray main() a merge left behind
+    if args.curriculum:
+        if args.arm or args.manifest:
+            ap.error("--curriculum doesn't go with --manifest or --arm")
+        apply_style()
+        out = args.out or CURRICULUM_OUT
+        out.mkdir(parents=True, exist_ok=True)
+        for run in args.curriculum:
+            for path in (fig_curriculum(run, out), fig_catch_stages(run, out)):
+                if path is not None:
+                    print(f"[plot] {path}")
+        return 0
+    ### END AI GENERATED
     if args.arm and args.manifest:
         ap.error("give either --manifest or --arm, not both")
     if not args.arm and (args.kind or args.baselines or args.title):
