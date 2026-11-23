@@ -15,18 +15,23 @@ in either the static x/y frame or a frame that turns with the player's velocity.
 
 AI edit 2026-10-31 (Claude Code, Austin Beinder): physics_client, so a field can be built in any
 pybullet simulation, not just the default connection.
+
+AI edit 2026-11-23 (Claude Code, Austin Beinder): goals. Field(goals=[GoalSpec, ...]) opens a
+mouth in the wall each goal sits on and builds the goals (goal.py) behind them, in field.goals.
+Without goals the field is built exactly as before.
 """
 
 ### AI GENERATED
 import math
 import os
 import time
-from typing import Dict, List
+from typing import Dict, List, Sequence
 
 import numpy as np
 import pybullet as p
 
 from entity import Entity
+from goal import Goal, GoalSpec  # 2026-11-23
 from teams import Team
 
 GRASS_TEXTURE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "textures", "grass.png")
@@ -81,12 +86,16 @@ class Field:
                  line_width: float = 0.08,
                  grass_tile_size: float = 2.0,
                  grass_texture_path: str = GRASS_TEXTURE_PATH,
-                 physics_client: int = 0):
+                 physics_client: int = 0,
+                 goals: Sequence[GoalSpec] = ()):
         """
         length: size along x, in metres. The default is a fifth of a real pitch.
         width: size along y, in metres.
         grass_tile_size: metres covered by one repeat of the grass texture (one light and one dark stripe).
         physics_client: which pybullet simulation to build the field in (0 = the default connection).
+        goals (2026-11-23): GoalSpecs, e.g. goal.standard_goals(length, width). Each one's mouth has to
+            lie on one wall's inner face, inside the field's edge and clear of the other goals on that
+            wall. The wall gets an opening there and the goal is built behind it (self.goals).
         """
         self.client = physics_client
         self.length = length
@@ -103,9 +112,13 @@ class Field:
         # One scale for all markings so circles stay circular on non-standard field shapes
         self.marking_scale = min(length / REAL_LENGTH, width / REAL_WIDTH)
 
+        openings = self._goal_openings(goals)  # 2026-11-23: checked before anything is built
+
         self.floor_id = self._create_floor(grass_tile_size, grass_texture_path)
         self.lines_id = self._create_lines()
-        self.walls: Dict[str, Wall] = self._create_walls()
+        self.walls: Dict[str, Wall] = self._create_walls(openings)
+        # 2026-11-23: built after the walls, so a field without goals has the same body ids as before
+        self.goals: List[Goal] = [Goal(spec, physics_client=physics_client) for spec in goals]
 
     # ---------- Building the field ----------
 
@@ -196,7 +209,45 @@ class Field:
         return p.createMultiBody(baseMass=0, baseCollisionShapeIndex=-1, baseVisualShapeIndex=visual,
                                  physicsClientId=self.client)
 
-    def _create_walls(self) -> Dict[str, Wall]:
+    ### AI GENERATED (2026-11-23)
+    # Each wall's inner face, for placing goals: (normal into the field, which coordinate is fixed
+    # on the face (0 = x, 1 = y) and its value, which coordinate runs along the wall)
+    def _wall_faces(self) -> Dict[str, tuple]:
+        return {
+            "east": (np.array([-1.0, 0.0]), 0, self.x_max, 1),
+            "west": (np.array([1.0, 0.0]), 0, self.x_min, 1),
+            "north": (np.array([0.0, -1.0]), 1, self.y_max, 0),
+            "south": (np.array([0.0, 1.0]), 1, self.y_min, 0),
+        }
+
+    def _goal_openings(self, goals: Sequence[GoalSpec]) -> Dict[str, List[tuple]]:
+        """For each wall, the (low, high) stretches of its long coordinate (y for east and west, x
+        for north and south) that goal mouths take up. Raises ValueError for a goal that isn't on a
+        wall's inner face, sticks out past the field's edge, or overlaps another goal."""
+        faces = self._wall_faces()
+        openings: Dict[str, List[tuple]] = {name: [] for name in faces}
+        for spec in goals:
+            on_wall = [name for name, (normal, fixed, value, _) in faces.items()
+                       if np.allclose(spec.normal, normal, atol=1e-6)
+                       and math.isclose(spec.center[fixed], value, abs_tol=1e-6)]
+            if not on_wall:
+                raise ValueError(f"goal {spec.name!r} at {spec.center} facing {spec.normal} isn't on a field "
+                                 f"wall: its center has to be on a wall's inner face and its normal has to "
+                                 f"point into the field")
+            name = on_wall[0]
+            along = faces[name][3]
+            low, high = spec.center[along] - spec.width / 2, spec.center[along] + spec.width / 2
+            edge = (self.x_min, self.x_max) if along == 0 else (self.y_min, self.y_max)
+            if low < edge[0] - 1e-9 or high > edge[1] + 1e-9:
+                raise ValueError(f"goal {spec.name!r} is {spec.width} m wide and doesn't fit on the {name} wall")
+            for other_low, other_high in openings[name]:
+                if low < other_high and other_low < high:
+                    raise ValueError(f"goal {spec.name!r} overlaps another goal on the {name} wall")
+            openings[name].append((low, high))
+        return openings
+    ### END AI GENERATED
+
+    def _create_walls(self, openings: Dict[str, List[tuple]] = None) -> Dict[str, Wall]:
         t = self.wall_thickness
         h = self.wall_height
         z = WALL_BOTTOM_Z + h / 2
@@ -212,13 +263,54 @@ class Field:
         walls = {}
         for name, (position, half_extents, normal) in specs.items():
             c = self.client
-            collision = p.createCollisionShape(p.GEOM_BOX, halfExtents=half_extents, physicsClientId=c)
-            visual = p.createVisualShape(p.GEOM_BOX, halfExtents=half_extents, rgbaColor=[0.85, 0.85, 0.82, 1],
-                                         physicsClientId=c)
+            # AI GENERATED (2026-11-23): a wall with goal mouths is one body made of the pieces between them
+            if openings and openings.get(name):  # AI GENERATED
+                collision, visual = self._wall_with_openings(name, half_extents, openings[name])  # AI GENERATED
+            else:  # AI GENERATED
+                collision = p.createCollisionShape(p.GEOM_BOX, halfExtents=half_extents, physicsClientId=c)
+                visual = p.createVisualShape(p.GEOM_BOX, halfExtents=half_extents, rgbaColor=[0.85, 0.85, 0.82, 1],
+                                             physicsClientId=c)
             body_id = p.createMultiBody(baseMass=0, baseCollisionShapeIndex=collision,
                                         baseVisualShapeIndex=visual, basePosition=position, physicsClientId=c)
             walls[name] = Wall(name, body_id, normal, physics_client=c)
         return walls
+
+    ### AI GENERATED (2026-11-23)
+    def _wall_with_openings(self, name: str, half_extents: list, wall_openings: List[tuple]) -> tuple:
+        """Collision and visual shapes for a wall with goal mouths in it: one box per piece of wall
+        between the mouths, placed relative to the wall's centre. The wall stays one body (one
+        body_id) and its outer bounds don't change."""
+        along = self._wall_faces()[name][3]
+        half_length = half_extents[along]
+        pieces, start = [], -half_length
+        for low, high in sorted(wall_openings) + [(half_length, half_length)]:
+            if low - start > 1e-9:
+                pieces.append((start, low))
+            start = high
+        if not pieces:  # can't happen for a goal that fits on the field's edge; guards the shape arrays
+            raise ValueError(f"the goals leave nothing of the {name} wall")
+
+        piece_halves, piece_positions = [], []
+        for low, high in pieces:
+            half = list(half_extents)
+            half[along] = (high - low) / 2
+            position = [0.0, 0.0, 0.0]
+            position[along] = (low + high) / 2
+            piece_halves.append(half)
+            piece_positions.append(position)
+
+        c = self.client
+        collision = p.createCollisionShapeArray([p.GEOM_BOX] * len(pieces), halfExtents=piece_halves,
+                                                collisionFramePositions=piece_positions, physicsClientId=c)
+        visual = p.createVisualShapeArray([p.GEOM_BOX] * len(pieces), halfExtents=piece_halves,
+                                          visualFramePositions=piece_positions,
+                                          rgbaColors=[[0.85, 0.85, 0.82, 1]] * len(pieces), physicsClientId=c)
+        return collision, visual
+
+    def goal_defended_by(self, team: Team) -> List[Goal]:
+        """The goals this team defends (a ball in one is a point for the other team)."""
+        return [goal for goal in self.goals if goal.defending_team == team]
+    ### END AI GENERATED
 
     # ---------- Wall distances for players ----------
 

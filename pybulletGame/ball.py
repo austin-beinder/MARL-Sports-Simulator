@@ -13,6 +13,8 @@ fire only on the first tick of a contact), and last_change_time: the ball change
 once per physics step.
 AI edit 2026-11-15 (Claude Code, Austin Beinder): pylint cleanup (wrapped lines over 100
 characters); no behaviour change.
+AI edit 2026-11-23 (Claude Code, Austin Beinder): last_holder, the last player to hold the ball,
+kept after a kick, so a goal knows who put the ball in (goal.py).
 """
 
 import numpy as np
@@ -48,6 +50,10 @@ class Ball(Entity):
 
         self.possession = Team.NONE
         self.possession_player: Player = None
+        # AI GENERATED (2026-11-23): the last player to hold the ball. Unlike possession_player it
+        # stays set after a kick, so goal.Goal can say who put the ball in. Only a new holder
+        # replaces it.
+        self.last_holder = None
         self.carry_constraint = None
 
         self.possession_flip_percentage: int = 100  # 1-100%
@@ -266,6 +272,7 @@ class Ball(Entity):
         # Record possession on both the ball and the player, for every way a player can get the ball
         self.possession = player.team
         self.possession_player = player
+        self.last_holder = player  # AI GENERATED (2026-11-23)
         player.ball = self
         self.last_change_time = self.sim_time  # 2026-11-07
         ### END AI GENERATED
