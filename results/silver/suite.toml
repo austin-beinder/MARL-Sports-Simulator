@@ -8,6 +8,8 @@
 #     (every config x env that runs today), reserved seeds and budget, from
 #     the student's design decisions (backlog task 4, step 6).
 #   - 2026-11-03: Added goto_target on PyBullet (supported since #26).
+#   - 2026-11-24: Added claim_ball (both envs) and pass_practice_moving
+#     (PyBullet), from #41's passing curriculum.
 # Prompt summary: Freeze silver v1, the first regression baseline.
 # Human review:   Pending review
 # ==============================================================================
@@ -39,3 +41,11 @@ envs   = ["mock", "pybullet"]
 [[case]]                      # the RL sanity check
 config = "configs/goto_target.toml"
 envs   = ["mock", "pybullet"] # PyBullet runs goto_target since Austin's #26
+
+[[case]]                      # 3v0 "got it" call practice (#41): call head, call_accuracy, call_yield
+config = "configs/claim_ball.toml"
+envs   = ["mock", "pybullet"]
+
+[[case]]                      # 3v0 moving pass practice (#41): kick + call heads, every passing reward option
+config = "configs/pass_practice_moving.toml"
+envs   = ["pybullet"]         # it kicks: PyBullet only
