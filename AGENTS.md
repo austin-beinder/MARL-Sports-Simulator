@@ -20,7 +20,9 @@ Usage:
     review lines. (Austin Beinder)
   - 2026-11-24: Wrote the team's citation and docstring rules into Code
     conventions; repaired this header (a merge had spliced the 2026-11-15
-    entry into the 2026-11-01 one). (JC Stinson III)
+    entry into the 2026-11-01 one). Regression rules for agents (run it before
+    handing work over, never --update alone, new behaviour needs a suite case);
+    red_gain 20 -> 240 in Architecture; regress.py takes ~3 min. (JC Stinson III)
 -->
 
 # AGENTS.md
@@ -93,8 +95,9 @@ configs/*.toml -> marl.common.config.Config
   before blue got the ball still steals (`on_new_collision` only fires on a
   contact's first tick). Each contact gets one roll (`Ball.contested`); the
   ball changes hands at most once per tick. Red's
-  P-controller (`KeepAwayConfig.red_gain = 20`) only slows within 9 cm of the
-  ball, so in practice it chases at full speed, like the mock's red.
+  P-controller (`KeepAwayConfig.red_gain = 240`) only slows within
+  `red_max_speed / red_gain` = 7.5 mm of the ball, so in practice it chases at
+  full speed, like the mock's red.
 - `MockEnv` implements the same ICD in numpy. It's fast, so most tests and quick
   experiments use it (tests set `run.env = "mock"` explicitly, since the default
   is PyBullet). The ICD conformance tests run against both envs.
@@ -334,7 +337,7 @@ python scripts/watch.py runs/keepaway_1v1_pybullet_seed0           # newest chec
 python scripts/watch.py --baseline flee
 python scripts/calibrate.py --config configs/keepaway_1v1.toml     # -> runs/calibration_keepaway_1v1_pybullet.csv
 python scripts/plot.py
-python scripts/regress.py                                          # regression check vs results/silver (~1 min)
+python scripts/regress.py                                          # regression check vs results/silver (~3 min)
 python scripts/plot.py --curriculum runs/curriculum_passing_3v1_pybullet_seed0  # a curriculum run's progress (scripts/README.md)
 python pybulletGame/keep_away_env.py                               # play blue with the on-screen joystick
 ```
@@ -364,6 +367,22 @@ python -m unittest discover -s pybulletGame/tests -p "*_test.py" -t pybulletGame
   all `IDENTICAL`; commit the rewritten `results/silver/report.md` with it. For an
   intended change, `--update --reason "..."` and commit `results/silver/`. See the
   README's "Regression tests (silver record)".
+  - **Agents run it before handing work over:** before a push, a PR, or calling a
+    task done, if the branch changes code or configs (`marl/`, `pybulletGame/`,
+    `curriculum/`, `configs/`, `scripts/`). Docs-only changes skip it. Commit the
+    report with the work.
+  - **Never `--update` on your own.** Report the deltas and say which change you
+    think caused them; the human decides and writes the reason. If a change meant
+    to be result-neutral isn't all `IDENTICAL`, stop and find out why first.
+  - **New behaviour needs a case.** A new scenario, reward base, shaping term,
+    action head or observation option must be switched on by some case in
+    `suite.toml`. If none does, propose one, usually a small config in `configs/`
+    copied from the curriculum stage that uses it. Then check two things:
+    - the case reaches the new code in the suite's 3 PPO iterations. Look at its
+      `train.csv`: `claim_ball` needed `max_ball_dist = 1` before any blue got to
+      the ball;
+    - a re-run after the `--update` comes back `IDENTICAL` (the case is
+      deterministic).
 - `pytest` covers `tests/` only (`pyproject.toml`). It takes about 2 minutes.
   The 1 skip is expected: the kick-with-possession conformance test on the
   mock, which doesn't kick.

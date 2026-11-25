@@ -3,7 +3,7 @@ This file was AI generated, see the ### AI GENERATED markers.
 AI edits 2026-10-31 (Claude Code, Austin Beinder): teams of any size (n_blue, n_red), the
 goto_target mode (ball_is_target), the teammate_handoff switch, red_max_speed 2.0 -> 1.8, and a
 pybullet connection plus steal-roll generator per game (several games per process).
-AI edit 2026-11-02 (Claude Code, Austin Beinder): red_gain 2.0 -> 20.0.
+AI edit 2026-11-02 (Claude Code, Austin Beinder): red_gain 2.0 -> 240.0 (#36).
 AI edit 2026-11-07 (Claude Code, Austin Beinder): kicking (step's kicks argument, max_kick_speed,
 ball_damping) and a space-bar kick on the joystick.
 AI edit 2026-11-07 (Claude Code, Austin Beinder): the ball's play_area, so kicks can't put the ball
@@ -21,6 +21,8 @@ practice).
 AI edit 2026-11-15 (Claude Code, Austin Beinder): pylint cleanup (wrapped lines over 100
 characters, kicks_applied set in __init__, the joystick script moved into main()); no behaviour
 change.
+AI edit 2026-11-24 (Claude Code, JC Stinson III): the 2026-11-02 line above said 20.0; #36 set
+240.0, as the code does. Docs only.
 
 The "gym" layer for the keep away game. It owns the pybullet simulation and is the only thing
 the RL code needs to talk to:
