@@ -4,20 +4,23 @@ Tool:    Claude Code (Claude Opus 5.5)
 Date:    2026-10-25
 Author:  Austin Beinder
 Usage:
-  2026-10-25: Rewrote this file for the repo as it stands after PRs #22 and #23
+  - 2026-10-25: Rewrote this file for the repo as it stands after PRs #22 and #23
     (marl/ RL layer, pybulletGame/ rename, PyBullet adapter). The issue #10
     version described a YAML/runner infrastructure that was never merged.
-  2026-10-31: PyBulletEnv now runs N blue vs M red and goto_target; updated
-    the limits, the expected test skips and the dynamics test file.
-  2026-10-31: Replaced the one-simulation-per-process constraint: every env
-    has its own pybullet connection.
-  2026-11-15: The AI CITATION format drops the   2026-11-01: (Claude Code (Claude Opus 5.5), prompted by JC Stinson III)
-    PyBullet is now the default run.env; updated the Configuration notes, the
-    run-name convention and the command examples (backlog task 3).
-  2026-11-03: (Claude Code (Claude Opus 5.5), prompted by JC Stinson III)
-    Added scripts/regress.py and the regression-record rule (backlog task 4).
-Prompt summary and Human review
-    lines. (Austin Beinder)
+  - 2026-10-31: PyBulletEnv now runs N blue vs M red and goto_target; updated
+    the limits, the expected test skips and the dynamics test file. Replaced
+    the one-simulation-per-process constraint: every env has its own pybullet
+    connection.
+  - 2026-11-01: PyBullet is now the default run.env; updated the Configuration
+    notes, the run-name convention and the command examples (backlog task 3).
+    (JC Stinson III)
+  - 2026-11-03: Added scripts/regress.py and the regression-record rule
+    (backlog task 4). (JC Stinson III)
+  - 2026-11-15: The AI CITATION format drops the Prompt summary and Human
+    review lines. (Austin Beinder)
+  - 2026-11-24: Wrote the team's citation and docstring rules into Code
+    conventions; repaired this header (a merge had spliced the 2026-11-15
+    entry into the 2026-11-01 one). (JC Stinson III)
 -->
 
 # AGENTS.md
@@ -383,12 +386,57 @@ python -m unittest discover -s pybulletGame/tests -p "*_test.py" -t pybulletGame
 
 ## Code conventions
 
-- **AI attribution is required.** Files generated with an AI tool start with an
-  `AI CITATION` header (Tool, Date, Author, Usage log with dated entries;
-  no Prompt summary or Human review lines); see any file in `marl/` for the format. AI
-  edits inside other files are wrapped in `### AI GENERATED` …
-  `### END AI GENERATED`, or marked with a trailing `# AI GENERATED` on single
-  lines. When you change a file, keep its markers and add a dated Usage entry.
+### AI citations (required)
+
+The course allows AI tools only with a clear account of how they were used.
+Team format (agreed in the review of #37-#40):
+
+- **A file that is mostly AI-written starts with an `AI CITATION` header:**
+  Tool (the tool and model actually used), Date (when the file was created),
+  Author (who prompted the AI), and a Usage log. No `Prompt summary` or
+  `Human review` lines.
+- **Usage: one entry per PR, oldest first, newest at the bottom.** Say briefly
+  what the AI did. If the same PR changes the file again, edit its entry
+  instead of adding another. If you aren't the header's Author, end your
+  entry with your name in parentheses.
+- **No citations or changelogs on functions or classes.** What changed goes in
+  the file's Usage entry.
+- **AI edits inside a human-written file** (one with no header) are wrapped in
+  `### AI GENERATED (<date>: <what>)` … `### END AI GENERATED`, or marked with
+  a trailing `# AI GENERATED` on a single line.
+- When you change a file, keep its header and markers and add your entry. A
+  cleanup may merge one PR's entries into one, as long as it keeps what they
+  say. Older files still have Prompt summary / Human review lines and
+  function-level citations: don't copy them; they are being cleaned up.
+
+**Python: the citation is a `#` block; `"""` is only for docstrings.** Only
+the first string in a file is its docstring (`__doc__`, what `help()` shows),
+so a `"""` citation would push out the real description. The module docstring
+comes right after the header and says what the file is, does and uses.
+Functions, methods and classes get docstrings where they need explaining.
+
+```python
+# ==============================================================================
+# AI CITATION
+# Tool:    Claude Code (Claude Opus 5.5)
+# Date:    2026-11-07
+# Author:  Austin Beinder
+# Usage:
+#   - 2026-11-07: Generated this file: <what it does>.
+#   - 2026-11-20: <what a later PR changed>. (JC Stinson III)
+# ==============================================================================
+"""What this file is, what it does, and what it uses."""
+```
+
+**Other files** use their own comment syntax with the same fields: `<!-- -->`
+in Markdown and HTML (see the top of this file), `#` in TOML, YAML and shell
+scripts. Files that can't hold comments (JSON, CSV) are cited in the commit
+message and PR description instead.
+
+### Style
+
+- In functions longer than about 5 lines, leave a blank line after each block
+  ends (where the indentation steps back out), so the blocks are easy to see.
 - Comments cite design decisions by number (`#21`, `#23`) and ICD sections
   (`ICD §7`). Keep those references when editing nearby code.
 
