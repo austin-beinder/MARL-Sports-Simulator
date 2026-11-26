@@ -10,11 +10,17 @@
 #   - 2026-10-14: Added the race-metric tests (hand-built races with exact
 #     answers, the observer never changes the episodes, scripted flee wins).
 #   - 2026-11-25: Unused unpacked values replaced with _ (pylint cleanup,
-#     backlog task 13); no behaviour change.
-# Prompt summary: Implement Phase 3 step 8 of the issue #7 plan (PPO update +
-#   training loop).
-# Human review:   Pending review
+#     backlog task 13). Citation cleanup (backlog task 9): dropped the Prompt
+#     summary and Human review lines; added the module docstring; no behaviour
+#     change.
 # ==============================================================================
+"""Tests for policy evaluation (marl/rl/evaluate.py).
+
+Fixed evaluation seeds, torch RNG isolation (fork_rng), reproducibility, a scripted policy with an
+exactly known result, the fixed summary columns, and the race metrics on hand-built races with
+exact answers. Runs on the mock env.
+"""
+
 import math
 
 import numpy as np

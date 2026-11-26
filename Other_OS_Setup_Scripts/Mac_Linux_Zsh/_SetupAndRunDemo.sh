@@ -6,12 +6,12 @@
 # Author:  JC Stinson III (LifeHackerIII)
 # Usage:
 #   - 2026-09-26: Generated this entire file: macOS/Linux entry point that sets
-#     up and activates the venv, then runs the out-of-the-box demo.
-#   - 2026-09-26: Moved to Other_OS_Setup_Scripts/Mac_Linux_Zsh; now resolves
-#     the project root two folders up.
-# Prompt summary: Create _SetupAndRunDemo that creates/activates the project
-#   venv, installs requirements.in if missing, then runs a demo placeholder.
-# Human review:   Pending review
+#     up and activates the venv, then runs the out-of-the-box demo. Moved to
+#     Other_OS_Setup_Scripts/Mac_Linux_Zsh, so it resolves the project root two
+#     folders up.
+#   - 2026-11-25: Citation cleanup (backlog task 9): dropped the Prompt summary
+#     and Human review lines; one Usage entry per PR, oldest first; no behaviour
+#     change.
 # ==============================================================================
 # Usage:  Other_OS_Setup_Scripts/Mac_Linux_Zsh/_SetupAndRunDemo.sh [extra demo args...]
 #     or: source Other_OS_Setup_Scripts/Mac_Linux_Zsh/_SetupAndRunDemo.sh [extra demo args...]   # venv stays active

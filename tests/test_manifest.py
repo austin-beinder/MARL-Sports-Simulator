@@ -7,10 +7,15 @@
 #   - 2026-11-01: Generated this entire file: tests for the record manifest
 #     loader (strict validation, relative paths, frozen vs unfrozen inputs)
 #     for backlog task 2, step 2.
-# Prompt summary: Implement step 2 of the task 2 plotting-refactor plan
-#   (marl/manifest.py), tests first.
-# Human review:   Pending review
+#   - 2026-11-25: Citation cleanup (backlog task 9): dropped the Prompt summary
+#     and Human review lines; added the module docstring; no behaviour change.
 # ==============================================================================
+"""Tests for the results-record manifest loader (marl/manifest.py).
+
+Strict validation of the TOML schema, paths relative to the manifest's folder, and which inputs
+count as frozen (inside the record) or unfrozen (still read from runs/).
+"""
+
 import os
 from pathlib import Path
 

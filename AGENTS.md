@@ -22,7 +22,11 @@ Usage:
     conventions; repaired this header (a merge had spliced the 2026-11-15
     entry into the 2026-11-01 one). Regression rules for agents (run it before
     handing work over, never --update alone, new behaviour needs a suite case);
-    red_gain 20 -> 240 in Architecture; regress.py takes ~3 min. (JC Stinson III)
+    red_gain 20 -> 240 in Architecture; regress.py takes ~3 min. With the
+    citation sweep done, dropped the note on older files' leftover lines.
+    Layout: the reporting modules, every script, the configs and results/.
+    Python 3.13+ (the team runs 3.13 and 3.14); how to run pylint.
+    (JC Stinson III)
 -->
 
 # AGENTS.md
@@ -46,10 +50,11 @@ built in the PyBullet env only (`rl.kick_enabled = true`, which needs
 | `marl/common/` | Config schema + TOML loading (`config.py`), spawn sampling (`spawn.py`). Torch-free. |
 | `marl/envs/` | `make_env` selector, `MockEnv` (pure-numpy ICD env), `PyBulletEnv` (ICD adapter around `KeepAwayEnv`) |
 | `marl/rl/` | PPO: networks, rollout, buffer, GAE, rewards, observations, training loop, evaluation, checkpoints, CSV logging |
-| `marl/` (top level) | `baselines.py` (random/still/flee/oracle), `calibrate.py`, `plots.py`, `watch.py` |
+| `marl/` (top level) | `baselines.py` (random/still/flee/oracle), `calibrate.py`, `watch.py`; reporting: `results.py` (reads runs), `plots.py` (figures), `manifest.py` + `record.py` (results records), `regression.py` (the silver regression harness) |
 | `curriculum/` | Curriculum training: `runner.py` (everything) and curriculum TOMLs such as `keepaway_1v1.toml` |
-| `scripts/` | Thin CLI wrappers: `train.py`, `evaluate.py`, `watch.py`, `calibrate.py`, `plot.py` |
-| `configs/` | Experiment configs: `keepaway_1v1.toml`, `goto_target.toml` |
+| `scripts/` | Thin CLI wrappers: `train.py`, `evaluate.py`, `watch.py`, `calibrate.py`, `plot.py`, `freeze.py` (freeze a results record), `regress.py` (regression check), `plot_episode_length.py` (see `scripts/README.md`) |
+| `configs/` | Experiment configs: `keepaway_1v1.toml` (+ `_pbrs`), `goto_target.toml`, `claim_ball.toml`, `pass_practice_moving.toml` |
+| `results/` | Frozen, committed results records: `golden/` (the midterm mock results; `tests/test_golden.py`) and `silver/` (the regression record) |
 | `docs/ICD.md` | Env ↔ RL interface control document (DRAFT v0.2) |
 | `tests/` | pytest suite for `marl/`, including ICD conformance tests run against both envs |
 | `examples/` | Early PyBullet prototypes, not used by the project code |
@@ -394,7 +399,8 @@ python -m unittest discover -s pybulletGame/tests -p "*_test.py" -t pybulletGame
 
 ## Environment
 
-- Python 3.13 (the code needs ≥ 3.11 for `tomllib`). The team venv is
+- Python 3.13+ (the team runs 3.13 and 3.14; the code needs ≥ 3.11 for
+  `tomllib`). The team venv is
   `.venv-CSE-5106-Project-Beinder-Stinson-Wang/`, created by
   `__DevEnvSetup.ps1` / `_env_setup.py`. A plain `.venv/` also works.
 - Dependencies: `requirements.in` → `pip-compile` → `requirements.txt`. See
@@ -425,8 +431,7 @@ Team format (agreed in the review of #37-#40):
   a trailing `# AI GENERATED` on a single line.
 - When you change a file, keep its header and markers and add your entry. A
   cleanup may merge one PR's entries into one, as long as it keeps what they
-  say. Older files still have Prompt summary / Human review lines and
-  function-level citations: don't copy them; they are being cleaned up.
+  say.
 
 **Python: the citation is a `#` block; `"""` is only for docstrings.** Only
 the first string in a file is its docstring (`__doc__`, what `help()` shows),
@@ -458,6 +463,10 @@ message and PR description instead.
   ends (where the indentation steps back out), so the blocks are easy to see.
 - Comments cite design decisions by number (`#21`, `#23`) and ICD sections
   (`ICD §7`). Keep those references when editing nearby code.
+- Lint with pylint, a dev tool (not in `requirements.in`), from the repo root:
+  `python -m pylint $(git ls-files '*.py')`. Its settings, and which checks
+  are turned off and why, are in `pyproject.toml`. No linter checks the
+  blank-line rule above.
 
 ## Known stale spots
 

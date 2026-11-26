@@ -5,13 +5,13 @@ rem Tool:    Claude Code (Claude Opus 5.5)
 rem Date:    2026-09-26
 rem Author:  JC Stinson III (LifeHackerIII)
 rem Usage:
-rem   - 2026-09-26: Generated this entire file: shared Windows steps (find system
-rem     Python, create venv, activate it, install requirements.in).
-rem   - 2026-09-26: Moved to Other_OS_Setup_Scripts\Win_Bat; now resolves the
-rem     project root two folders up.
-rem Prompt summary: Create all-in-one setup scripts that create/activate the
-rem   project venv and install requirements.in if missing.
-rem Human review:   Pending review
+rem   - 2026-09-26: Generated this entire file: shared Windows steps (find
+rem     system Python, create venv, activate it, install requirements.in). Moved
+rem     to Other_OS_Setup_Scripts\Win_Bat, so it resolves the project root two
+rem     folders up.
+rem   - 2026-11-25: Citation cleanup (backlog task 9): dropped the Prompt
+rem     summary and Human review lines; one Usage entry per PR, oldest first; no
+rem     behaviour change.
 rem ==============================================================================
 rem Shared by _DevEnvSetup.bat and _SetupAndRunDemo.bat via "call".
 rem No setlocal on purpose: the venv activation must survive into the caller's

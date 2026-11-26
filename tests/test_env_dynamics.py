@@ -8,14 +8,14 @@
 #     must share (speed cap, carry slowdown, walls, possession, termination,
 #     teammates, goto_target), run on the mock and on PyBullet through their
 #     set_state_for_testing hooks.
-#   - 2026-11-07: The PyBullet env kicks now, so the kick test accepts a
-#     real kick there and still checks the mock's clean refusal. (Austin Beinder)
-#   - 2026-11-08: free_speed_factor (blue's speed without the ball). (Austin Beinder)
-#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters, an unused
-#     unpacked term/trunc replaced with _, and redefined-outer-name disabled
-#     for the pytest fixture; no behaviour change. (Austin Beinder)
+#   - 2026-11-07: The PyBullet env kicks now, so the kick test accepts a real
+#     kick there and still checks the mock's clean refusal; free_speed_factor
+#     (blue's speed without the ball). Pylint cleanup: wrapped lines over 100
+#     characters, an unused unpacked term/trunc replaced with _, and
+#     redefined-outer-name disabled for the pytest fixture; no behaviour change.
 #   - 2026-11-25: Unused unpacked values replaced with _ (pylint cleanup,
-#     backlog task 13); no behaviour change. (JC Stinson III)
+#     backlog task 13). Citation cleanup (backlog task 9): one Usage entry per
+#     PR, oldest first; no behaviour change. (JC Stinson III)
 # ==============================================================================
 """Game behaviour both envs must share, run on the mock and on PyBullet.
 

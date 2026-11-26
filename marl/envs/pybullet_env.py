@@ -4,39 +4,31 @@
 # Date:    2026-10-18
 # Author:  Austin Beinder
 # Usage:
-#   - 2026-10-18: Generated this entire file: an adapter that makes the
-#     PyBullet keep-away game (pybulletGame.KeepAwayEnv) speak docs/ICD.md
-#     v0.2, so it can replace MockEnv in training and evaluation.
-#   - 2026-10-18: Added the render_mode and print_collisions options.
+#   - 2026-10-18: Generated this entire file: an adapter that makes the PyBullet
+#     keep-away game (pybulletGame.KeepAwayEnv) speak docs/ICD.md v0.2, so it
+#     can replace MockEnv in training and evaluation, with the render_mode and
+#     print_collisions options.
 #   - 2026-10-31: N blue vs M red, the goto_target scenario, teammate handoff
-#     off (ICD §8), and the set_state_for_testing hook (same as MockEnv's).
-#   - 2026-10-31: Each env now has its own simulation, so the one-env-mid-
-#     episode guard is gone.
-#   - 2026-11-07: Kicking (ICD §6): kick_vec -> the ball's velocity, kick
-#     events and kick_applied; max_kick_speed and ball_damping passed through.
-#   - 2026-11-08: free_speed_factor passed through (blue's speed without the
-#     ball).
-#   - 2026-11-08: The passing_drill scenario: keep-away with the blues frozen
-#     in place (their move actions are ignored), so only kicks matter.
-#   - 2026-11-08: reset raises if a passing_drill episode would start without
-#     a blue holding the ball.
-#   - 2026-11-09: The pass_practice scenario: frozen blues, no red, and the
-#     episode ends once the one kick has played out.
-#   - 2026-11-09: pass_practice_moving: the same, with the blues free to move;
-#     a teammate who can still run to the ball in time keeps the kick alive.
-#   - 2026-11-11: pass_practice_moving no longer ends when a kick plays out:
-#     it runs to the time limit, with as many kicks as the blues like.
-#     (Austin Beinder)
-#   - 2026-11-13: s["ball"]["passer"] (ICD §5): the blue whose kick the
-#     holder picked up. (Austin Beinder)
-#   - 2026-11-13: The optional "call" action, echoed as each blue's "calling"
-#     in s. (Austin Beinder)
-#   - 2026-11-14: The claim_ball scenario: a loose ball, no red, terminated
-#     when a blue picks it up. (Austin Beinder)
-#   - 2026-11-14: In the GUI, a blue who calls turns a brighter blue
-#     (Player.show_calling). (Austin Beinder)
-#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters; no
-#     behaviour change. (Austin Beinder)
+#     off (ICD §8), and the set_state_for_testing hook (same as MockEnv's). Each
+#     env now has its own simulation, so the one-env-mid-episode guard is gone.
+#   - 2026-11-07: Kicking (ICD §6): kick_vec -> the ball's velocity, kick events
+#     and kick_applied; max_kick_speed, ball_damping and free_speed_factor
+#     (blue's speed without the ball) passed through. The passing_drill
+#     scenario: keep-away with the blues frozen in place (their move actions are
+#     ignored), so only kicks matter; reset raises if an episode would start
+#     without a blue holding the ball. The pass_practice scenario: frozen blues,
+#     no red, and the episode ends once the one kick has played out.
+#     pass_practice_moving: the same with the blues free to move (a teammate who
+#     can still run to the ball in time keeps the kick alive); later it no
+#     longer ends when a kick plays out but runs to the time limit, with as many
+#     kicks as the blues like. s["ball"]["passer"] (ICD §5): the blue whose kick
+#     the holder picked up. The optional "call" action, echoed as each blue's
+#     "calling" in s; in the GUI a blue who calls turns a brighter blue
+#     (Player.show_calling). The claim_ball scenario: a loose ball, no red,
+#     terminated when a blue picks it up. Pylint cleanup: wrapped lines over 100
+#     characters; no behaviour change.
+#   - 2026-11-25: Citation cleanup (backlog task 9): one Usage entry per PR,
+#     oldest first; no behaviour change. (JC Stinson III)
 # ==============================================================================
 ### AI GENERATED
 """ICD adapter around the PyBullet keep-away game (``pybulletGame.KeepAwayEnv``).

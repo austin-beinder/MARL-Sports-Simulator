@@ -15,10 +15,16 @@
 #     iteration (backlog task 1: the old ~50-line throttle was removed).
 #   - 2026-11-01: Pinned run.env = "mock" in every test config: PyBullet is the
 #     default now, and these test the training loop, not the physics (task 3).
-# Prompt summary: Implement Phase 3 step 8 of the issue #7 plan (PPO update +
-#   training loop).
-# Human review:   Pending review
+#   - 2026-11-25: Citation cleanup (backlog task 9): dropped the Prompt summary
+#     and Human review lines; added the module docstring; no behaviour change.
 # ==============================================================================
+"""End-to-end tests of the training loop (marl/rl/train.py) on tiny configs.
+
+The outputs, checkpoint reload, determinism, evaluation isolation, the same eval seeds for every
+training seed, output-directory safety, --set parsing, the shaping column in train.csv, and the
+CLI script.
+"""
+
 import csv
 import json
 import subprocess

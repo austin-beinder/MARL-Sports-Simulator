@@ -4,16 +4,16 @@
 # Date:    2026-10-18
 # Author:  Austin Beinder
 # Usage:
-#   - 2026-10-18: Generated this entire file: the training loop's evaluator,
-#     run in-process for the mock env and in its own process for envs that
-#     share one simulation per process (PyBullet).
-#   - 2026-10-18: Pass print_collisions through to the worker's env.
+#   - 2026-10-18: Generated this entire file: the training loop's evaluator, run
+#     in-process for the mock env and in its own process for envs that share one
+#     simulation per process (PyBullet); print_collisions is passed through to
+#     the worker's env.
 #   - 2026-10-31: make_evaluator is in-process for every env: PyBullet envs
 #     no longer share one simulation. InProcessEvaluator.close() now closes
 #     its env. (Austin Beinder)
-# Prompt summary: Run evaluation in its own process so the shared pybullet
-#   simulation doesn't break training.
-# Human review:   Pending review
+#   - 2026-11-25: Citation cleanup (backlog task 9): dropped the Prompt summary
+#     and Human review lines; one Usage entry per PR, oldest first; no behaviour
+#     change. (JC Stinson III)
 # ==============================================================================
 ### AI GENERATED
 """The training loop's evaluator.

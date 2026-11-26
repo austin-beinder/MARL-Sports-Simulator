@@ -4,18 +4,17 @@
 # Date:    2026-11-01
 # Author:  JC Stinson III (LifeHackerIII)
 # Usage:
-#   - 2026-11-01: Generated this entire file: freezing a results record in
-#     place (copy the manifest's unfrozen inputs into data/, mirrored under
-#     runs/; rewrite only those path strings in the manifest's text; append
-#     provenance; render the record's figures), validated before any write,
-#     plus its command line (backlog task 2, step 6).
-#   - 2026-11-01: Demo fix: git_revision ignores untracked files (the record
-#     being frozen is untracked until committed) (task 2, step 7).
+#   - 2026-11-01: Generated this entire file: freezing a results record in place
+#     (copy the manifest's unfrozen inputs into data/, mirrored under runs/;
+#     rewrite only those path strings in the manifest's text; append provenance;
+#     render the record's figures), validated before any write, plus its command
+#     line (backlog task 2, step 6). Demo fix: git_revision ignores untracked
+#     files (the record being frozen is untracked until committed) (step 7).
 #   - 2026-11-02: git_revision takes ignore (tracked paths that don't count as
 #     uncommitted changes) and cwd (backlog task 4: the tracked regression report).
-# Prompt summary: Implement step 6 of the task 2 plotting-refactor plan: a
-#   freeze that keeps the manifest's comments and never half-updates a record.
-# Human review:   Pending review
+#   - 2026-11-25: Citation cleanup (backlog task 9): dropped the Prompt summary
+#     and Human review lines; one Usage entry per PR, oldest first; a blank line
+#     after each block in freeze; no behaviour change.
 # ==============================================================================
 """Freeze a results record (``results/<record>/``) in place.
 
@@ -102,12 +101,14 @@ def freeze(manifest_path: str | Path, runs_root: str | Path = RUNS, overwrite: b
                 dirs = run_dirs(arm.runs.path)
                 if not dirs:
                     raise ValueError(f"figure {fig.name!r}, arm {arm.label!r}: {arm.runs.raw!r} matches no run directories")
+
                 for d in dirs:
                     for name, required in RUN_FILES:
                         if (d / name).is_file():
                             add(d / name)
                         elif required:
                             raise ValueError(f"{d} has no {name} (is the run finished?)")
+
                 if arm.table is None:  # the table evaluate.py wrote for these runs, by its naming convention
                     table = table_path_for(dirs)
                     if table.is_file():
@@ -117,14 +118,18 @@ def freeze(manifest_path: str | Path, runs_root: str | Path = RUNS, overwrite: b
                     else:
                         note(f"warning: arm {arm.label!r} has no evaluation table {table} "
                              "(run scripts/evaluate.py on its runs, then freeze again with --overwrite)")
+
             if arm.table is not None and not arm.table.frozen:
                 add_file(arm.table, twin=True)
+
         for point in fig.points:
             if not point.table.frozen:
                 add_file(point.table)
+
         for ref in (fig.csv, fig.config):
             if ref is not None and not ref.frozen:
                 add_file(ref)
+
     for t in manifest.tables:
         if t.source is not None and not t.source.frozen:
             add_file(t.source, twin=True)
@@ -134,10 +139,12 @@ def freeze(manifest_path: str | Path, runs_root: str | Path = RUNS, overwrite: b
     if existing and not overwrite:
         raise ValueError(f"{len(existing)} destination file(s) already exist (e.g. {existing[0]}); "
                          "pass --overwrite to replace them")
+
     text = manifest.path.read_text(encoding="utf-8")
     for raw, new in result.mapping.items():
         if not any(f"{q}{raw}{q}" in text for q in ('"', "'")):
             raise ValueError(f"can't find the path string {raw!r} in {manifest.path} as a plain quoted string")
+
         for q in ('"', "'"):
             text = text.replace(f"{q}{raw}{q}", f"{q}{new}{q}")
 
@@ -146,18 +153,22 @@ def freeze(manifest_path: str | Path, runs_root: str | Path = RUNS, overwrite: b
         dest.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dest)
         result.copied.append(dest)
+
     if result.mapping:
         revision = revision or git_revision()
         lines = [f"# --- frozen {datetime.date.today().isoformat()} by scripts/freeze.py at commit {revision} ---",
                  *(f"#   {raw} -> {new}" for raw, new in result.mapping.items())]
         manifest.path.write_text(text.rstrip("\n") + "\n\n" + "\n".join(lines) + "\n", encoding="utf-8")
+
     figures = root / "figures"
     if figures.exists():
         clear_outputs(figures)
+
     made, notes = render_manifest(load_manifest(manifest.path), figures)
     result.made = made
     for n in notes:
         note(n)
+
     return result
 
 

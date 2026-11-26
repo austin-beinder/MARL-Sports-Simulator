@@ -6,9 +6,8 @@
 # Usage:
 #   - 2026-10-11: Created this file: a thin command-line wrapper around
 #     marl.rl.report.main.
-# Prompt summary: Implement Phase 3 step 10 of the issue #7 plan (baselines,
-#   evaluation, calibration).
-# Human review:   Pending review
+#   - 2026-11-25: Citation cleanup (backlog task 9): dropped the Prompt summary
+#     and Human review lines; no behaviour change.
 # ==============================================================================
 """Evaluate trained runs + baselines on the fixed evaluation episodes (design #23). Run from the repo root with the venv active:
 

@@ -4,10 +4,6 @@
 # Date:    2026-10-11
 # Author:  JC Stinson III (LifeHackerIII)
 # Usage:
-#   - 2026-10-18: Envs come from run.env via make_env; runs on different
-#     envs count as different tasks. (Austin Beinder)
-#   - 2026-10-31: Fixed the baseline rows passing SharedConfig to make_env,
-#     which crashed evaluate_runs. (Austin Beinder)
 #   - 2026-10-11: Generated this entire file: the final evaluation table
 #     (trained runs, stochastic + deterministic; the untrained initial
 #     policy; scripted baselines), all on the fixed evaluation episodes, with
@@ -16,11 +12,16 @@
 #   - 2026-10-14: Added the race metrics (pickup rate, closing speed,
 #     alignment) to every row, the per-run pbrs_coef and env_steps columns, and
 #     a --checkpoint option (e.g. a matched-budget control for the PBRS pilot).
+#   - 2026-10-18: Envs come from run.env via make_env; runs on different
+#     envs count as different tasks. (Austin Beinder)
+#   - 2026-10-31: Fixed the baseline rows passing SharedConfig to make_env,
+#     which crashed evaluate_runs. (Austin Beinder)
 #   - 2026-11-01: The CLI expands glob arguments itself (PowerShell passes
 #     them literally) (task 2, step 5).
-# Prompt summary: Implement Phase 3 step 10 of the issue #7 plan (baselines,
-#   evaluation, calibration).
-# Human review:   Pending review
+#   - 2026-11-25: Citation cleanup (backlog task 9): dropped the Prompt summary
+#     and Human review lines; Usage entries in date order; folded the
+#     function-level citations into this header; its PowerShell glob note kept
+#     as a plain comment; no behaviour change.
 # ==============================================================================
 """The evaluation table for the report (design #23).
 
@@ -162,8 +163,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--out", type=Path, help="table CSV (default: <first run's parent>/eval_<first run name>.csv, "
                                              "plus _<checkpoint name> for a non-final checkpoint)")
     args = ap.parse_args(argv)
-    # AI CITATION: Claude Code (Claude Opus 5.5) | 2026-11-01 | JC Stinson III (LifeHackerIII)
-    # Usage: Expand globs here: PowerShell, unlike bash, passes `runs/x_seed*` through literally.
+    # Expand globs here: PowerShell, unlike bash, passes `runs/x_seed*` through literally.
     runs: list[Path] = []
     for arg in args.runs:
         if glob.has_magic(arg):

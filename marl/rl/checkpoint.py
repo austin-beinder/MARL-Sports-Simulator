@@ -8,20 +8,19 @@
 #     critic + optimizer states + the resolved config (design #21, #23).
 #   - 2026-11-01: load_actor reads the saved config with saved_config_from_dict,
 #     so checkpoints from before run.env existed rebuild on the mock (task 3).
-#   - 2026-11-07: warm_start, which also works across team sizes (e.g. 1v1 ->
-#     2v1) by growing the first layers' input columns. (Austin Beinder)
-#   - 2026-11-07: warm_start keeps the critic only when the task and reward are
-#     the same (e.g. not goto_target -> keep-away). (Austin Beinder)
-#   - 2026-11-09: Teams may also shrink (e.g. 1v1 -> 3v0 for pass practice):
-#     the removed players' input columns are dropped. (Austin Beinder)
-#   - 2026-11-12: rl.new_player_init = "random" starts new players' columns
-#     at the fresh network's init instead of zero. (Austin Beinder)
-#   - 2026-11-13: warm_start also adds (or drops) per-slot features, e.g. the
-#     rl.passer_obs flags, like new players' columns. (Austin Beinder)
-#   - 2026-11-13: ... and the rl.call_enabled flags; a new call head keeps its
-#     fresh init. (Austin Beinder)
-#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters; no
-#     behaviour change. (Austin Beinder)
+#   - 2026-11-07: warm_start, which works across team sizes: it grows the first
+#     layers' input columns (e.g. 1v1 -> 2v1) or drops the removed players'
+#     columns when a team shrinks (e.g. 1v1 -> 3v0 for pass practice), and adds
+#     or drops per-slot features (the rl.passer_obs and rl.call_enabled flags)
+#     like new players' columns; a new call head keeps its fresh init. It keeps
+#     the critic only when the task and reward are the same (e.g. not
+#     goto_target -> keep-away). rl.new_player_init = "random" starts new
+#     players' columns at the fresh network's init instead of zero. Pylint
+#     cleanup: wrapped lines over 100 characters; no behaviour change.
+#     (Austin Beinder)
+#   - 2026-11-25: Citation cleanup (backlog task 9): one Usage entry per PR,
+#     oldest first; folded the function-level citations into this header; no
+#     behaviour change.
 # ==============================================================================
 """Checkpoints (#23): actor + critic weights, optimizer states, progress counters
 and the resolved config, so a checkpoint is self-describing (``load_actor`` can
@@ -190,10 +189,6 @@ def _grow(weight: torch.Tensor, kept: np.ndarray, columns: np.ndarray, new_input
 ### END AI GENERATED
 
 
-# AI CITATION: Claude Code (Claude Opus 5.5) | 2026-10-11 | JC Stinson III (LifeHackerIII)
-# Usage: Generated with this file (see the file-level citation).
-# Modified: 2026-11-01 - The config loads via saved_config_from_dict, so a
-#   checkpoint with no run.env rebuilds on the mock (backlog task 3).
 def load_actor(path: str | Path) -> tuple[Config, Actor, Featurizer]:
     """Rebuild the trained actor (and its featurizer) from a checkpoint, for evaluation."""
     ckpt = load_checkpoint(path)

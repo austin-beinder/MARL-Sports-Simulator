@@ -7,10 +7,15 @@
 #   - 2026-11-01: Generated this entire file: tests for the results-loading
 #     layer (arm glob resolution, per-arm schedule check, table lookup,
 #     eval-episode mismatch warnings) for backlog task 2, step 1.
-# Prompt summary: Implement step 1 of the task 2 plotting-refactor plan
-#   (marl/results.py), tests first.
-# Human review:   Pending review
+#   - 2026-11-25: Citation cleanup (backlog task 9): dropped the Prompt summary
+#     and Human review lines; added the module docstring; no behaviour change.
 # ==============================================================================
+"""Tests for the results-loading layer (marl/results.py).
+
+Resolving an arm's run-directory glob, the per-arm schedule check, table lookup, smoothing and
+mean/std, and the warnings for mismatched evaluation episodes.
+"""
+
 import csv
 import json
 from pathlib import Path

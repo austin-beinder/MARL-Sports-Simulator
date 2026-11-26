@@ -4,19 +4,19 @@
 # Date:    2026-11-08
 # Author:  Austin Beinder
 # Usage:
-#   - 2026-11-08: Created this file: a 3v1 passing curriculum. A goto_target
-#     warm-up, then a passing drill (frozen blues) against a red that gets
-#     faster stage by stage, then normal 3v1 keep-away.
-#   - 2026-11-08: The hold reward now grows with each catch (header comment).
-#   - 2026-11-09: Three pass_practice stages (catch_close, catch_mid,
-#     catch_far) after free_ball: one kick to a frozen teammate, no red, the
-#     teammates further away each stage.
-#   - 2026-11-09: catch_moving after catch_far: the same pass practice with the
-#     blues free to move (pass_practice_moving).
-#   - 2026-11-10: catch_moving_long after catch_moving: the same, but a pass
-#     has to go 1 m and longer catches pay a bit more.
-#   - 2026-11-11: The moving stages run the full 15 s with as many passes as
-#     the blues make; each catch pays when it happens (pass_catch).
+#   - 2026-11-08: Created this file: a 3v1 passing curriculum (a goto_target
+#     warm-up, a passing drill with frozen blues against a red that gets faster
+#     stage by stage, then normal 3v1 keep-away); the hold reward grows with
+#     each catch (header comment). Then three pass_practice stages after
+#     free_ball (catch_close, catch_mid, catch_far: one kick to a frozen
+#     teammate, no red, the teammates further away each stage), catch_moving
+#     after catch_far (the same with the blues free to move,
+#     pass_practice_moving), and catch_moving_long after catch_moving (a pass
+#     has to go 1 m, and longer catches pay a bit more). The moving stages run
+#     the full 15 s with as many passes as the blues make; each catch pays when
+#     it happens (pass_catch).
+#   - 2026-11-25: Citation cleanup (backlog task 9): one Usage entry per PR,
+#     oldest first; no behaviour change. (JC Stinson III)
 # ==============================================================================
 # Monkey in the middle, 3v1. The goal is blues that keep the ball away from red by passing round
 # it, not by running. (See the docstring in runner.py for how stages and gates work.)

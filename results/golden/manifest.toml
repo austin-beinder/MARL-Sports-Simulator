@@ -9,8 +9,8 @@
 #     and 4 table sections of the original marl/plots.py (backlog task 2,
 #     step 8). The data was frozen into data/ by scripts/freeze.py from runs
 #     that already existed; no new data was generated.
-# Prompt summary: Freeze the midterm mock-env results as golden record v1.
-# Human review:   Pending review
+#   - 2026-11-25: Citation cleanup (backlog task 9): dropped the Prompt summary
+#     and Human review lines; no behaviour change.
 # ==============================================================================
 # Render:  python scripts/plot.py                 (-> runs/plots/golden/)
 # Freeze:  python scripts/freeze.py golden        (copies any ../../runs/... inputs into data/)

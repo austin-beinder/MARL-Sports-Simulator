@@ -8,55 +8,43 @@
 #     separate train/shuffle/eval streams, collect -> GAE -> PPO update,
 #     per-iteration and evaluation CSV logs, checkpoints, safe output
 #     directories) and the command-line entry point with --set overrides
-#     (walk-through steps 0-6; design #19, #23; decision E).
-#   - 2026-10-11: Network init now goes through seeded_networks (shared with
-#     the evaluation script); the behavior is unchanged.
-#   - 2026-10-18: The env comes from run.env (make_env), and evaluation goes
-#     through make_evaluator, which runs it in its own process for PyBullet.
-#     (Austin Beinder)
-#   - 2026-10-18: Added --render (PyBullet GUI on the training env) and
-#     --debug (the sim's collision prints). (Austin Beinder)
-#   - 2026-10-18: --overwrite empties checkpoints/ instead of deleting it
-#     (OneDrive makes folders read-only). (Austin Beinder)
-#   - 2026-10-11: Progress lines now flush immediately, so they appear even when
-#     output is redirected to a file (e.g. seeds run in the background).
-#   - 2026-10-31: A progress line prints for every iteration; removed the
-#     throttle to ~50 lines per run (backlog task 1, the student's choice).
+#     (walk-through steps 0-6; design #19, #23; decision E). Network init goes
+#     through seeded_networks (shared with the evaluation script; the behavior
+#     is unchanged), and progress lines flush immediately, so they appear even
+#     when output is redirected to a file (e.g. seeds run in the background).
 #   - 2026-10-14: Added the reward_shaping_mean_unscaled column to train.csv
 #     (PBRS ablation; the student approved a separate shaping column).
+#   - 2026-10-18: The env comes from run.env (make_env), and evaluation goes
+#     through make_evaluator, which runs it in its own process for PyBullet.
+#     Added --render (PyBullet GUI on the training env) and --debug (the sim's
+#     collision prints). --overwrite empties checkpoints/ instead of deleting it
+#     (OneDrive makes folders read-only). (Austin Beinder)
 #   - 2026-10-31: Evaluation runs in-process for PyBullet too (each env has
 #     its own simulation now), and the training env is closed at the end.
 #     (Austin Beinder)
+#   - 2026-10-31: A progress line prints for every iteration; removed the
+#     throttle to ~50 lines per run (backlog task 1, the student's choice).
 #   - 2026-11-01: PyBullet is the default env; run dirs always carry the env
 #     (<config>_<env>_seed<N>), and the --env/--render help and errors say so
 #     (backlog task 3).
-#   - 2026-11-07: Logs kicks_per_step to train.csv. (Austin Beinder)
-#   - 2026-11-07: Two hooks for curriculum/runner.py: init_from (warm start
-#     from a checkpoint; also --init-from) and curriculum (sets each rollout's
-#     start options, adds its columns to train.csv, can end the run early).
+#   - 2026-11-07: Two hooks for curriculum/runner.py: init_from (warm start from
+#     a checkpoint; also --init-from) and curriculum (sets each rollout's start
+#     options, adds its columns to train.csv, can end the run early). init_from
+#     goes through checkpoint.warm_start, so it also works when the team sizes
+#     grow (e.g. a 2v1 stage after 1v1). Logs kicks_per_step to train.csv. The
+#     printed training line shows the curriculum gate when there is one; the
+#     training and eval lines show passes per episode, the share of kicks caught
+#     (pass_rate), the share of passes straight back (return_share) and how well
+#     the blues called for the ball (rl.call_enabled). The warm-start log line
+#     says when the critic starts fresh (a different task or reward), whether
+#     new inputs start at zero or random (rl.new_player_init), and whether the
+#     passer flags were added. The PPO updater gets the call coef, and the
+#     buffer the call head's own advantage when call_accuracy is on. Pylint
+#     cleanup: wrapped lines over 100 characters, and the nan checks use
+#     math.isnan instead of comparing a value with itself; no behaviour change.
 #     (Austin Beinder)
-#   - 2026-11-07: The printed training line shows the curriculum gate when
-#     there is one. (Austin Beinder)
-#   - 2026-11-07: init_from goes through checkpoint.warm_start, so it also
-#     works when the team sizes grow (e.g. a 2v1 stage after 1v1). (Austin Beinder)
-#   - 2026-11-07: The warm-start log line says when the critic starts fresh
-#     (a different task or reward). (Austin Beinder)
-#   - 2026-11-09: The training and eval lines show passes per episode.
-#     (Austin Beinder)
-#   - 2026-11-11: ... and the share of kicks caught (pass_rate).
-#     (Austin Beinder)
-#   - 2026-11-12: The warm-start line says whether new inputs start at zero
-#     or random (rl.new_player_init). (Austin Beinder)
-#   - 2026-11-13: The progress lines show the share of passes straight back
-#     (return_share), and the warm-start line whether the passer flags were
-#     added. (Austin Beinder)
-#   - 2026-11-13: ... and how well the blues called for the ball
-#     (rl.call_enabled). (Austin Beinder)
-#   - 2026-11-14: The PPO updater gets the call coef, and the buffer the call
-#     head's own advantage when call_accuracy is on. (Austin Beinder)
-#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters, and the
-#     nan checks use math.isnan instead of comparing a value with itself; no
-#     behaviour change. (Austin Beinder)
+#   - 2026-11-25: Citation cleanup (backlog task 9): one Usage entry per PR,
+#     oldest first; no behaviour change.
 # ==============================================================================
 """Training loop (walk-through steps 0-6) and its command-line entry point.
 

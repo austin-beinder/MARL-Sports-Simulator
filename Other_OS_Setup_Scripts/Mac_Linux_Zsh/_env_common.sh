@@ -6,9 +6,8 @@
 # Usage:
 #   - 2026-09-26: Generated this entire file: shared macOS/Linux steps (find
 #     system Python, create venv, activate it, install requirements.in).
-# Prompt summary: Create all-in-one setup scripts that create/activate the
-#   project venv and install requirements.in if missing.
-# Human review:   Pending review
+#   - 2026-11-25: Citation cleanup (backlog task 9): dropped the Prompt summary
+#     and Human review lines; no behaviour change.
 # ==============================================================================
 # Sourced (not executed) by _DevEnvSetup.sh and _SetupAndRunDemo.sh.
 # Works in bash and zsh. Defines _marl_env_setup <project_root>.

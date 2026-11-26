@@ -4,29 +4,25 @@
 # Date:    2026-10-10
 # Author:  JC Stinson III (LifeHackerIII)
 # Usage:
-#   - 2026-10-18: Moved action validation into module-level parse_actions()
-#     so the PyBullet adapter (pybullet_env.py) shares it. (Austin Beinder)
-#   - 2026-11-07: parse_actions also returns the kick vectors (the PyBullet
-#     adapter now kicks). The mock stays movement-only. (Austin Beinder)
-#   - 2026-11-08: Blue's speed without the ball is free_speed_factor x
-#     max_speed. (Austin Beinder)
-#   - 2026-11-08: Refuses the passing_drill scenario (it needs kicks).
-#     (Austin Beinder)
-#   - 2026-11-09: Refuses pass_practice and pass_practice_moving too. (Austin Beinder)
-#   - 2026-11-13: s["ball"]["passer"] (ICD §5), always None: the mock can't
-#     kick, so nobody ever passes. (Austin Beinder)
-#   - 2026-11-13: The optional "call" action, echoed as each blue's "calling"
-#     in s (parse_calls). (Austin Beinder)
-#   - 2026-11-14: The claim_ball scenario: a loose ball, no red, terminated
-#     when a blue picks it up. (Austin Beinder)
-#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters and set
-#     _calls in __init__ (attribute-defined-outside-init); no behaviour
-#     change. (Austin Beinder)
 #   - 2026-10-10: Generated this entire file: a kinematic 2D mock env that
 #     implements docs/ICD.md v0.2 (action repeat, per-tick termination, walls,
 #     possession radius, carry slowdown, pursuit red, goto_target scenario,
 #     strict action validation), following design #8, #16, #19, #22 and
 #     Phase 3 decision H.
+#   - 2026-10-18: Moved action validation into module-level parse_actions()
+#     so the PyBullet adapter (pybullet_env.py) shares it. (Austin Beinder)
+#   - 2026-11-07: parse_actions also returns the kick vectors (the PyBullet
+#     adapter now kicks); the mock stays movement-only and refuses the
+#     passing_drill, pass_practice and pass_practice_moving scenarios (they need
+#     kicks). Blue's speed without the ball is free_speed_factor x max_speed.
+#     s["ball"]["passer"] (ICD §5) is always None: the mock can't kick, so
+#     nobody ever passes. The optional "call" action, echoed as each blue's
+#     "calling" in s (parse_calls). The claim_ball scenario: a loose ball, no
+#     red, terminated when a blue picks it up. Pylint cleanup: wrapped lines
+#     over 100 characters and set _calls in __init__
+#     (attribute-defined-outside-init); no behaviour change. (Austin Beinder)
+#   - 2026-11-25: Citation cleanup (backlog task 9): one Usage entry per PR,
+#     oldest first; no behaviour change.
 # ==============================================================================
 """Kinematic 2D mock of the keep-away env, implementing ``docs/ICD.md`` (v0.2).
 

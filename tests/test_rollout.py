@@ -5,19 +5,26 @@
 # Author:  JC Stinson III (LifeHackerIII)
 # Usage:
 #   - 2026-10-11: Generated this entire file: rollout collector tests that
-#     replay a recorded env log and check every stored row (values,
-#     next_value = V(true s_{t+1}) at episode ends, rewards, flags, episode
-#     records), episodes spanning rollouts, value-cache refresh after an
-#     update, determinism, goto_target and N=2/M=2.
-#   - 2026-10-11: Added a check of the episode mean_reward against the replay.
+#     replay a recorded env log and check every stored row (values, next_value =
+#     V(true s_{t+1}) at episode ends, rewards, flags, episode records),
+#     episodes spanning rollouts, value-cache refresh after an update,
+#     determinism, goto_target and N=2/M=2; plus a check of the episode
+#     mean_reward against the replay.
 #   - 2026-10-14: Added a test that the shaping reward is reported separately
 #     and never enters an episode's mean_reward (PBRS ablation).
 #   - 2026-11-25: Unused unpacked values replaced with _ (pylint cleanup,
-#     backlog task 13); no behaviour change.
-# Prompt summary: Implement Phase 3 step 7 of the issue #7 plan (buffer +
-#   GAE, plus the rollout collector that owns the next_value contract).
-# Human review:   Pending review
+#     backlog task 13). Citation cleanup (backlog task 9): dropped the Prompt
+#     summary and Human review lines; one Usage entry per PR, oldest first;
+#     added the module docstring; no behaviour change.
 # ==============================================================================
+"""Tests for the rollout collector (marl/rl/rollout.py).
+
+Replays a recorded env log and checks every stored row (values, next_value = V(true s_{t+1}) at
+episode ends, rewards, flags, episode records); also episodes spanning rollouts, the value-cache
+refresh after an update, determinism, goto_target, 2v2, and the shaping reward kept out of an
+episode's mean_reward.
+"""
+
 import numpy as np
 import pytest
 import torch

@@ -12,51 +12,41 @@
 #     (the student's acquisition-ablation spec), RewardModule.parts (base vs
 #     shaping, for logging), and passed the full Config to the terms (PBRS needs
 #     the learner's gamma).
-#   - 2026-11-08: The passing drill: the passing_drill base term, the
+#   - 2026-11-08: The passing drill: the passing_drill base term (its hold
+#     reward pays the number of passes completed so far, not a flat 1), the
 #     pass_progress and pass_completed shaping terms, and PassMemory, the
-#     per-episode pass bookkeeping they read. (Austin Beinder)
-#   - 2026-11-08: passing_drill's hold reward grows with each catch: it pays
-#     the number of passes completed so far, not a flat 1. (Austin Beinder)
-#   - 2026-11-09: The pass_practice base term (one kick per episode: 1 for a
-#     catch, else up to 0.5 for how close the ball came to a teammate), and
-#     PassMemory's closest approach. (Austin Beinder)
-#   - 2026-11-10: A minimum pass distance (MIN_PASS_DISTANCE, 1 m from the
-#     kick point for a catch; the closest approach skips teammates nearer than
-#     1.5 m), and pass_practice pays
-#     a catch 0.75 to 1 by its length. (Austin Beinder)
-#   - 2026-11-10: Both are options, off by default (rl.reward.min_pass_distance,
-#     rl.reward.pass_length_bonus), so a stage can train on the old reward
-#     first. (Austin Beinder)
-#   - 2026-11-11: The kicker_clearance shaping term: the kicker pays for
-#     staying near its own kick, and more for taking it back. (Austin Beinder)
-#   - 2026-11-11: The pass_catch base term (pass practice to the time limit:
-#     each catch pays when it happens), the receiver_spacing shaping term, and
-#     PassMemory counts kicks. (Austin Beinder)
-#   - 2026-11-11: receiver_spacing is a tent, not a Gaussian: blues bunched
-#     0.6 m apart sat on the Gaussian's flat tail and felt no pull apart.
+#     per-episode pass bookkeeping they read. The pass_practice base term (one
+#     kick per episode: 1 for a catch, else up to 0.5 for how close the ball
+#     came to a teammate) and PassMemory's closest approach. A minimum pass
+#     distance (MIN_PASS_DISTANCE, 1 m from the kick point for a catch; the
+#     closest approach skips teammates nearer than 1.5 m), and pass_practice
+#     pays a catch 0.75 to 1 by its length; both are options, off by default
+#     (rl.reward.min_pass_distance, rl.reward.pass_length_bonus), so a stage can
+#     train on the old reward first. With a minimum pass distance d, the
+#     receiver must also have been d from the kick point when the ball was
+#     kicked (the blues ran as a pack, kicked the ball ahead and chased it
+#     down). The kicker_clearance shaping term: the kicker pays for staying near
+#     its own kick, and more for taking it back; it stops once the kicked ball
+#     has stopped loose (the kicker may fetch its own miss). The pass_catch base
+#     term (pass practice to the time limit: each catch pays when it happens),
+#     with rl.reward.return_pass_factor: a pass straight back to the blue who
+#     passed to the kicker (A -> B -> A) pays this fraction; PassMemory counts
+#     kicks and those returns. The receiver_spacing shaping term, a tent, not a
+#     Gaussian (blues bunched 0.6 m apart sat on the Gaussian's flat tail and
+#     felt no pull apart); it leaves out the blue nearest a dead ball, so
+#     fetching it doesn't cost the team its spacing. The call_accuracy shaping
+#     term (rl.call_enabled): a "got it" call pays when the caller gets the
+#     ball, with PassMemory tracking calls and pickups; it is no longer part of
+#     the team reward: the call head gets its own per-blue reward (call_values,
+#     blue_pickup), weighted by the term's coef (RewardModule.call_coef). The
+#     claim_ball scenario's base reward (claim), the call_yield shaping term,
+#     and the dead_ball shaping term (claim's urgency for the catch stages).
+#     Pylint cleanup: wrapped lines over 100 characters and fixed the new
+#     warnings (a module-level disable of unused-argument and
+#     redefined-outer-name for the shared term signature); no behaviour change.
 #     (Austin Beinder)
-#   - 2026-11-11: With a minimum pass distance d, the receiver must also have
-#     been d from the kick point when the ball was kicked (the blues ran as a
-#     pack, kicked the ball ahead and chased it down). (Austin Beinder)
-#   - 2026-11-13: rl.reward.return_pass_factor: pass_catch pays a pass straight
-#     back to the blue who passed to the kicker (A -> B -> A) this fraction;
-#     PassMemory counts those returns. (Austin Beinder)
-#   - 2026-11-13: kicker_clearance stops once the kicked ball has stopped
-#     loose (the kicker may fetch its own miss). (Austin Beinder)
-#   - 2026-11-13: The call_accuracy shaping term (rl.call_enabled): a "got it"
-#     call pays when the caller gets the ball. PassMemory tracks calls and
-#     pickups. (Austin Beinder)
-#   - 2026-11-14: call_accuracy is no longer part of the team reward: the call
-#     head gets its own per-blue reward (call_values, blue_pickup), weighted by
-#     the term's coef (RewardModule.call_coef). The claim_ball scenario's base
-#     reward (claim) and the call_yield shaping term. (Austin Beinder)
-#   - 2026-11-14: The dead_ball shaping term (claim's urgency for the catch
-#     stages), and receiver_spacing leaves out the blue nearest a dead ball,
-#     so fetching it doesn't cost the team its spacing. (Austin Beinder)
-#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters and fixed
-#     the new warnings (a module-level disable of unused-argument and
-#     redefined-outer-name for the shared term signature); no behaviour
-#     change. (Austin Beinder)
+#   - 2026-11-25: Citation cleanup (backlog task 9): one Usage entry per PR,
+#     oldest first; no behaviour change.
 # ==============================================================================
 """RL-side reward module (design #14, #15). The env never computes rewards.
 

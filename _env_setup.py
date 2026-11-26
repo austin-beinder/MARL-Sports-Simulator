@@ -5,14 +5,13 @@
 # Author:  JC Stinson III (LifeHackerIII)
 # Usage:
 #   - 2026-09-26: Generated this entire file: venv creation, requirements.in
-#     dependency check/install, "environment ready" notification (console +
-#     Tk popup), and the out-of-the-box demo launcher placeholder.
-#   - 2026-09-26: Updated wrapper names/locations in the docstring and comments
-#     for the new PowerShell scripts and Other_OS_Setup_Scripts folder.
-# Prompt summary: Create all-in-one setup scripts that create/activate the
-#   project venv, install requirements.in if missing, then notify the user or
-#   run a demo; do as much as possible in native Python.
-# Human review:   Pending review
+#     dependency check/install, "environment ready" notification (console + Tk
+#     popup), and the out-of-the-box demo launcher placeholder. Updated the
+#     wrapper names/locations in the docstring and comments for the new
+#     PowerShell scripts and the Other_OS_Setup_Scripts folder.
+#   - 2026-11-25: Citation cleanup (backlog task 9): dropped the Prompt summary
+#     and Human review lines; one Usage entry per PR, oldest first; no behaviour
+#     change.
 # ==============================================================================
 """Shared Python logic for the project's environment scripts.
 

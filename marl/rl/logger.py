@@ -6,9 +6,8 @@
 # Usage:
 #   - 2026-10-11: Generated this entire file: a minimal CSV logger with fixed
 #     columns and a flush after every row (Phase 3 decision E).
-# Prompt summary: Implement Phase 3 step 8 of the issue #7 plan (PPO update +
-#   training loop).
-# Human review:   Pending review
+#   - 2026-11-25: Citation cleanup (backlog task 9): dropped the Prompt summary
+#     and Human review lines; no behaviour change.
 # ==============================================================================
 """Minimal CSV logger (decision E): one row per call, fixed columns, flushed
 immediately so a crash keeps the data and a run can be watched while it trains.

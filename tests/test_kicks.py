@@ -7,9 +7,18 @@
 #   - 2026-11-07: Generated this entire file: tests for kicking on the RL side
 #     and in the PyBullet adapter (config gating, the kick heads and their
 #     masks, the action adapter, a kicking rollout, and training end to end).
-#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters and fixed
-#     the new warnings; no behaviour change. (Austin Beinder)
+#     Pylint cleanup: wrapped lines over 100 characters and fixed the new
+#     warnings; no behaviour change.
+#   - 2026-11-25: Citation cleanup (backlog task 9): one Usage entry per PR,
+#     oldest first; added the module docstring; no behaviour change.
+#     (JC Stinson III)
 # ==============================================================================
+"""Tests for kicking, on the RL side and in the PyBullet adapter.
+
+Config gating (kicks need PyBullet), the kick heads and their masks, the action adapter, a
+kicking rollout, and training end to end on PyBullet.
+"""
+
 import csv
 import math
 

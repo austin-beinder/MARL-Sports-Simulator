@@ -4,31 +4,25 @@
 # Date:    2026-11-01
 # Author:  JC Stinson III (LifeHackerIII)
 # Usage:
-#   - 2026-11-01: Generated this file: the regression suite (TOML) schema
-#     and its strict loader, with the reserved seed schema, case/run naming
-#     and the per-run --set overrides (backlog task 4, step 1).
-#   - 2026-11-01: Added the comparison: CSV (cell/row/column, timing columns
-#     ignored, optional tolerance), config.json and weight-fingerprint diffs,
-#     the per-case status roll-up, stale record entries and the report text
-#     (task 4, step 2).
-#   - 2026-11-01: Added the weight fingerprint, the environment stamp and
-#     freeze_silver (the --update writer: timing columns stripped, stamp.json
-#     with an append-only history) (task 4, step 3).
-#   - 2026-11-01: Added the runner (parallel train.py/evaluate.py
-#     subprocesses, fingerprints, failure capture), --only/--no-run case
-#     selection, the uncovered-config note, exit codes and the CLI main
-#     (task 4, step 4).
-#   - 2026-11-02: Under --update, the NEW/STALE hints say what the freeze
-#     does instead of suggesting --update (the student's polish request).
-#   - 2026-11-02: Full, exact runs also write the tracked results/silver/
-#     report.md (headed with the run's date and commit, and the --update
-#     reason) as review evidence; failed-job log paths are relative; a freeze
-#     that can't complete exits 2 (the student's design).
-# Prompt summary: Implement steps 1-5 of the task 4 regression-harness plan: a
-#   tracked suite file listing the regression cases (config x env), the
-#   comparison of new runs against the frozen record, freezing it, and the
-#   one-command runner.
-# Human review:   Pending review
+#   - 2026-11-01: Generated this file: the regression harness (backlog task 4).
+#     The suite (TOML) schema and its strict loader, with the reserved seed
+#     schema, case/run naming and the per-run --set overrides (step 1); the
+#     comparison: CSV (cell/row/column, timing columns ignored, optional
+#     tolerance), config.json and weight-fingerprint diffs, the per-case status
+#     roll-up, stale record entries and the report text (step 2); the weight
+#     fingerprint, the environment stamp and freeze_silver (the --update writer:
+#     timing columns stripped, stamp.json with an append-only history) (step 3);
+#     the runner (parallel train.py/evaluate.py subprocesses, fingerprints,
+#     failure capture), --only/--no-run case selection, the uncovered-config
+#     note, exit codes and the CLI main (step 4). Under --update, the NEW/STALE
+#     hints say what the freeze does instead of suggesting --update (the
+#     student's polish request). Full, exact runs also write the tracked
+#     results/silver/report.md (headed with the run's date and commit, and the
+#     --update reason) as review evidence; failed-job log paths are relative; a
+#     freeze that can't complete exits 2 (the student's design).
+#   - 2026-11-25: Citation cleanup (backlog task 9): dropped the Prompt summary
+#     and Human review lines; one Usage entry per PR, oldest first; a blank line
+#     after each block in _suite and main; no behaviour change.
 # ==============================================================================
 """The regression harness: the silver record (``results/silver/``).
 
@@ -136,36 +130,46 @@ def _suite(data: dict[str, Any], path: Path, repo_root: Path) -> Suite:
     seeds = data["seeds"]
     if not isinstance(seeds, list) or not seeds:
         raise ValueError("seeds must be a non-empty list, e.g. [90, 91]")
+
     if not all(_is_int(s) for s in seeds):
         raise ValueError(f"seeds must be whole numbers, got {seeds!r}")
+
     if len(set(seeds)) != len(seeds):
         raise ValueError(f"seeds has a duplicate: {seeds!r}")
+
     outside = [s for s in seeds if s not in SEED_RANGE]
     if outside:
         raise ValueError(f"seeds must lie in the testing range {SEED_RANGE.start}-{SEED_RANGE.stop - 1} "
                          f"(0-9 are for-score), got {outside}")
+
     eval_seed = data["eval_seed"]
     if not _is_int(eval_seed) or eval_seed < 0:
         raise ValueError(f"eval_seed must be a whole number >= 0, got {eval_seed!r}")
+
     for_score = config_from_dict({}).run.eval_seed
     if eval_seed == for_score:
         raise ValueError(f"eval_seed {eval_seed} is the for-score evaluation seed; reserve a different one")
+
     budget = _budget(data["budget"])
     raw_cases = data.get("case", [])
     if not isinstance(raw_cases, list) or not raw_cases:
         raise ValueError("the suite needs at least one case ([[case]])")
+
     cases = [c for i, raw in enumerate(raw_cases) for c in _cases(raw, repo_root, f"case[{i}]")]
     seen: set[str] = set()
     for c in cases:
         if c.name in seen:
             raise ValueError(f"duplicate case {c.name!r} (its runs would share folders)")
+
         seen.add(c.name)
+
     suite = Suite(_str(data, "name", "suite"), path, tuple(seeds), eval_seed, budget, tuple(cases))
     for c in cases:  # the budget must suit every config (e.g. at least one PPO iteration)
         try:
             suite.case_config(c, seeds[0])
         except ValueError as e:
             raise ValueError(f"case {c.name!r}: {e}") from e
+
     return suite
 
 
@@ -643,16 +647,22 @@ def main(argv: Sequence[str] | None = None, *, repo_root: Path = REPO, runner: R
     args = ap.parse_args(argv)
     if args.update and not args.reason:
         ap.error("--update needs --reason \"...\" (why the results changed; it's kept in stamp.json)")
+
     if args.reason and not args.update:
         ap.error("--reason only goes with --update")
+
     if args.update and (args.only or args.no_run):
         ap.error("--update freezes the whole suite from a fresh run; drop --only/--no-run")
+
     if args.update and (args.rtol or args.atol):
         ap.error("--rtol/--atol only apply to comparisons; --update freezes exact outputs")
+
     if args.parallel_runs < 1:
         ap.error("--parallel-runs must be >= 1")
+
     if args.rtol < 0 or args.atol < 0:
         ap.error("--rtol/--atol must be >= 0")
+
     runs_dir = args.runs_dir or repo_root / "runs" / "regression"
     try:
         suite = load_suite(args.suite or repo_root / "results" / "silver" / "suite.toml", repo_root)
@@ -660,18 +670,22 @@ def main(argv: Sequence[str] | None = None, *, repo_root: Path = REPO, runner: R
     except (OSError, ValueError) as e:
         print(f"[regress] error: {e}", file=sys.stderr)
         return 2
+
     uncovered = uncovered_configs(suite, repo_root)
     if uncovered:
         print(f"[regress] note: configs not in the suite: {uncovered} (add them to {suite.path.name} to cover them)")
+
     if args.no_run:
         missing = [f for c in cases for f in case_files(c, suite.seeds) if not (runs_dir / f).is_file()]
         if missing:
             print(f"[regress] error: --no-run, but {runs_dir} lacks {len(missing)} file(s), e.g. {missing[0]}; "
                   "run without --no-run first", file=sys.stderr)
             return 2
+
         failures: dict[str, str] = {}
     else:
         failures = run_suite(suite, cases, runs_dir, args.parallel_runs, runner)
+
     record = suite.path.parent
     data = record / "data"
     tol = Tolerance(args.rtol, args.atol)
@@ -701,12 +715,15 @@ def main(argv: Sequence[str] | None = None, *, repo_root: Path = REPO, runner: R
         if failures:
             print("[regress] not freezing: a job failed (see above)", file=sys.stderr)
             return 2
+
         try:
             written = freeze_silver(suite, runs_dir, reason=args.reason, today=today, commit=revision)
         except ValueError as e:
             print(f"[regress] error: {e}", file=sys.stderr)
             return 2
+
         print(f"[regress] froze {len(written)} files into {data}")
+
     # Only a full, exact, freshly trained run is the verdict on the code (--no-run re-checks old outputs).
     if not (args.only or args.no_run) and tol.exact:
         tracked.write_text(report, encoding="utf-8")
@@ -714,6 +731,7 @@ def main(argv: Sequence[str] | None = None, *, repo_root: Path = REPO, runner: R
               "together with your change")
     else:
         print(f"[regress] {shown}/{REPORT} not updated (only full, exact runs write it)")
+
     return 0 if args.update else exit_code(results, stale)
 
 

@@ -4,22 +4,22 @@
 # Date:    2026-10-10
 # Author:  JC Stinson III (LifeHackerIII)
 # Usage:
-#   - 2026-10-18: Added the PyBullet adapter to ENV_FACTORIES and skip
-#     configs a factory doesn't support. (Austin Beinder)
 #   - 2026-10-10: Generated this entire file: the ICD §11 conformance suite,
 #     parametrized over env factories so the real env can be plugged in.
 #   - 2026-10-14: Added the returned-states-are-snapshots test (the PBRS reward
 #     reads Phi(s) after step(), so an env must not mutate a returned state).
+#   - 2026-10-18: Added the PyBullet adapter to ENV_FACTORIES and skip
+#     configs a factory doesn't support. (Austin Beinder)
 #   - 2026-10-31: Ran the step-counter, snapshot and determinism tests at 1v1
 #     as well as 2v2, and added a keep-away truncation test. (Austin Beinder)
-#   - 2026-11-07: The PyBullet env kicks now: the kick test also checks the
-#     kick event and the release (the mock still skips it). (Austin Beinder)
-#   - 2026-11-13: s["ball"] has "passer" (None at reset). (Austin Beinder)
-#   - 2026-11-13: Each blue has "calling" (False at reset), echoing its
-#     optional "call" action. (Austin Beinder)
-#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters and
-#     disabled redefined-outer-name for the pytest fixture; no behaviour
+#   - 2026-11-07: The PyBullet env kicks now: the kick test also checks the kick
+#     event and the release (the mock still skips it). s["ball"] has "passer"
+#     (None at reset), and each blue has "calling" (False at reset), echoing its
+#     optional "call" action. Pylint cleanup: wrapped lines over 100 characters
+#     and disabled redefined-outer-name for the pytest fixture; no behaviour
 #     change. (Austin Beinder)
+#   - 2026-11-25: Citation cleanup (backlog task 9): one Usage entry per PR,
+#     oldest first; no behaviour change.
 # ==============================================================================
 """ICD (docs/ICD.md v0.2) conformance tests.
 

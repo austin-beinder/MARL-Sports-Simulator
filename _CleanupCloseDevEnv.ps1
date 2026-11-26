@@ -6,9 +6,8 @@
 # Usage:
 #   - 2026-09-26: Generated this entire file: deactivates the project venv in
 #     the current PowerShell session.
-# Prompt summary: Add a PowerShell version of _CleanupCloseDevEnv that (for
-#   now) deactivates the project's python venv.
-# Human review:   Pending review
+#   - 2026-11-25: Citation cleanup (backlog task 9): dropped the Prompt summary
+#     and Human review lines; no behaviour change.
 # ==============================================================================
 # Usage:  .\_CleanupCloseDevEnv.ps1
 # TODO: add further cleanup steps here as the project grows.

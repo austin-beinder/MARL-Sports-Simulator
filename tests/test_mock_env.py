@@ -8,10 +8,16 @@
 #     (speed cap, carry slowdown, walls, acquisition, mid-block termination,
 #     red pursuit, no auto-reset), beyond the generic ICD conformance suite.
 #   - 2026-11-25: Unused unpacked values replaced with _ (pylint cleanup,
-#     backlog task 13); no behaviour change.
-# Prompt summary: Implement Phase 3 step 3 of the issue #7 plan (mock env).
-# Human review:   Pending review
+#     backlog task 13). Citation cleanup (backlog task 9): dropped the Prompt
+#     summary and Human review lines; added the module docstring; no behaviour
+#     change.
 # ==============================================================================
+"""Tests for the mock env's own dynamics (marl/envs/mock_env.py).
+
+What the generic ICD conformance suite doesn't pin: the speed cap, the carry slowdown, walls,
+ball acquisition, termination mid-block, red's pursuit, and no auto-reset.
+"""
+
 import numpy as np
 import pytest
 

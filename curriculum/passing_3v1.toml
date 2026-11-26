@@ -4,59 +4,49 @@
 # Date:    2026-11-08
 # Author:  Austin Beinder
 # Usage:
-#   - 2026-11-08: Created this file: a 3v1 passing curriculum. A goto_target
-#     warm-up, then a passing drill (frozen blues) against a red that gets
-#     faster stage by stage, then normal 3v1 keep-away.
-#   - 2026-11-08: The hold reward now grows with each catch (header comment).
-#   - 2026-11-09: Three pass_practice stages (catch_close, catch_mid,
-#     catch_far) after free_ball: one kick to a frozen teammate, no red, the
-#     teammates further away each stage.
-#   - 2026-11-09: catch_moving after catch_far: the same pass practice with the
-#     blues free to move (pass_practice_moving).
-#   - 2026-11-10: catch_moving_long after catch_moving: the same, but a pass
-#     has to go 1 m and longer catches pay a bit more.
-#   - 2026-11-10: Comments rewritten for the student's reworked stages (no
-#     drill or frozen catch stages; catch_moving_long / _longer / _longest
-#     with a 1, 2 and 3 m minimum pass); the second "catch_moving_longer"
-#     renamed catch_moving_longest (stage names must be unique).
-#   - 2026-11-11: kicker_clearance shaping in the four catch stages; the
-#     student's second go_to_target stage renamed go_to_target_again (stage
-#     names must be unique).
-#   - 2026-11-11: keepaway_from_catch after catch_moving_longest: red joins
-#     the catch layout, then the starts spread out (catch_start_mix).
-#   - 2026-11-11: The catch stages run the full 15 s with as many passes as the
-#     blues make: each catch pays when it happens (pass_catch), the
-#     receiver_spacing term pays for blues 3 m apart (4 m in the 3 m stage),
-#     and the gate is on passes / kicks.
-#   - 2026-11-11: catch_moving needs a 2 m pass (with no minimum the blues
-#     huddled 0.5 m apart and tapped the ball back and forth); the 1 m stage
-#     (catch_moving_long) is gone.
-#   - 2026-11-11: receiver_spacing is a tent and its coef 0.03 (the blues
-#     stayed bunched 0.6 m apart under the old 0.01 Gaussian).
-#   - 2026-11-11: The receiver must stand 2 m (3 m) from the kick point when
-#     the ball is kicked: the blues ran as a pack, kicking the ball ahead and
-#     letting a packmate chase it down.
-#   - 2026-11-12: ent_coef 0.01 in the catch stages: movement entropy had
+#   - 2026-11-08: Created this file: a 3v1 passing curriculum (a goto_target
+#     warm-up, a passing drill with frozen blues against a red that gets faster
+#     stage by stage, then normal 3v1 keep-away); the drill's hold reward grows
+#     with each catch. Then three pass_practice stages after free_ball
+#     (catch_close, catch_mid, catch_far: one kick to a frozen teammate, no red,
+#     the teammates further away each stage), catch_moving after catch_far (the
+#     same with the blues free to move, pass_practice_moving) and
+#     catch_moving_long (a pass has to go 1 m; longer catches pay a bit more).
+#     Comments rewritten for the student's reworked stages (no drill or frozen
+#     catch stages; catch_moving_long / _longer / _longest with a 1, 2 and 3 m
+#     minimum pass); stage names must be unique, so the second
+#     "catch_moving_longer" became catch_moving_longest and the student's second
+#     go_to_target stage go_to_target_again. kicker_clearance shaping in the
+#     four catch stages. keepaway_from_catch after catch_moving_longest: red
+#     joins the catch layout, then the starts spread out (catch_start_mix). The
+#     catch stages run the full 15 s with as many passes as the blues make: each
+#     catch pays when it happens (pass_catch), the receiver_spacing term pays
+#     for blues 3 m apart (4 m in the 3 m stage), and the gate is on passes /
+#     kicks. catch_moving needs a 2 m pass (with no minimum the blues huddled
+#     0.5 m apart and tapped the ball back and forth), so the 1 m stage
+#     (catch_moving_long) is gone. receiver_spacing is a tent and its coef 0.03
+#     (the blues stayed bunched 0.6 m apart under the old 0.01 Gaussian). The
+#     receiver must stand 2 m (3 m) from the kick point when the ball is kicked:
+#     the blues ran as a pack, kicking the ball ahead and letting a packmate
+#     chase it down. ent_coef 0.01 in the catch stages: movement entropy had
 #     collapsed in free_ball, and the blues stayed bunched 0.5 m apart.
-#   - 2026-11-12: rl.new_player_init = "random": warm starts that add players
-#     (go_to_target 1v0 -> catch 3v0, catch -> 3v1) let the network see them
-#     from the start.
-#   - 2026-11-12: catch_moving runs up to 1M steps (its catch rate was still
-#     climbing at the old 300k cap).
-#   - 2026-11-13: catch_moving runs up to 2M steps, catch_moving_longer and
-#     catch_moving_longest up to 500k each (all three were still improving
-#     at their caps).
-#   - 2026-11-13: rl.passer_obs and, in the catch stages, return_pass_factor
-#     = 0.5: a pass straight back pays half, so the blues rotate the ball.
-#   - 2026-11-13: rl.call_enabled (a "got it" call) and, in the catch
-#     stages, the call_accuracy shaping term (coef 0.2).
-#   - 2026-11-14: The claim_ball stage after go_to_target: 3 blues, a loose
-#     ball, the episode ends when one gets it; each call is paid to its own
-#     blue (call_accuracy, now coef 1 everywhere) and call_yield charges blues
-#     who crowd a ball a teammate called.
-#   - 2026-11-14: The catch stages charge for a dead ball (dead_ball, coef
-#     0.003) and add call_yield (coef 0.01): the blues hovered ~1.5 m off a
-#     stopped ball, half of every episode.
+#     rl.new_player_init = "random": warm starts that add players (go_to_target
+#     1v0 -> catch 3v0, catch -> 3v1) let the network see them from the start.
+#     catch_moving runs up to 2M steps (first 1M: its catch rate was still
+#     climbing at the old 300k cap), catch_moving_longer and
+#     catch_moving_longest up to 500k each (all three were still improving at
+#     their caps). rl.passer_obs and, in the catch stages, return_pass_factor =
+#     0.5: a pass straight back pays half, so the blues rotate the ball.
+#     rl.call_enabled (a "got it" call) and, in the catch stages, the
+#     call_accuracy shaping term. The claim_ball stage after go_to_target: 3
+#     blues, a loose ball, the episode ends when one gets it; each call is paid
+#     to its own blue (call_accuracy, coef 0.2 at first, now 1 everywhere) and
+#     call_yield charges blues who crowd a ball a teammate called. The catch
+#     stages charge for a dead ball (dead_ball, coef 0.003) and add call_yield
+#     (coef 0.01): the blues hovered ~1.5 m off a stopped ball, half of every
+#     episode.
+#   - 2026-11-25: Citation cleanup (backlog task 9): one Usage entry per PR,
+#     oldest first; no behaviour change. (JC Stinson III)
 # ==============================================================================
 # Monkey in the middle, 3v1: blues that keep the ball away from red by passing round it, not by
 # running. (See the docstring in runner.py for how stages and gates work.) Kicking is on in every

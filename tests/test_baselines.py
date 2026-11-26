@@ -10,10 +10,16 @@
 #     errors).
 #   - 2026-11-24: Added a check that every scenario can build the baselines
 #     baselines_for() lists (claim_ball used to get the goto_target oracle).
-# Prompt summary: Implement Phase 3 step 10 of the issue #7 plan (baselines,
-#   evaluation, calibration).
-# Human review:   Pending review
+#     Citation cleanup (backlog task 9): dropped the Prompt summary and Human
+#     review lines; added the module docstring; no behaviour change.
 # ==============================================================================
+"""Tests for the scripted baseline policies (marl/baselines.py).
+
+Random, still, flee and oracle must give valid ICD actions over whole episodes; flee is checked
+in hand-built states and must outlast still and random; the oracle must reach the target. Also
+seeding, errors, and that every scenario can build its baselines. Runs on the mock env.
+"""
+
 import dataclasses
 
 import numpy as np

@@ -10,9 +10,8 @@
 #     the mock, and run dirs name their env (backlog task 3).
 #   - 2026-11-03: goto_target runs on PyBullet since Austin's #26; dropped the
 #     "mock only" note (backlog task 4, after the stack rebase).
-# Prompt summary: Implement Phase 3 step 8 of the issue #7 plan (PPO update +
-#   training loop).
-# Human review:   Pending review
+#   - 2026-11-25: Citation cleanup (backlog task 9): dropped the Prompt summary
+#     and Human review lines; no behaviour change.
 # ==============================================================================
 """Train PPO/MAPPO on the PyBullet env (default) or the mock. Run from the repo root with the venv active:
 

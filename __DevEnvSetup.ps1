@@ -6,9 +6,8 @@
 # Usage:
 #   - 2026-09-26: Generated this entire file: PowerShell entry point that sets
 #     up the venv, activates it in the current terminal, then notifies the user.
-# Prompt summary: Add PowerShell versions of the setup scripts so the venv is
-#   activated directly in VS Code's (PowerShell) terminal.
-# Human review:   Pending review
+#   - 2026-11-25: Citation cleanup (backlog task 9): dropped the Prompt summary
+#     and Human review lines; no behaviour change.
 # ==============================================================================
 # Usage (VS Code terminal / PowerShell; the venv stays active afterwards):
 #     .\__DevEnvSetup.ps1 [-NoPopup]

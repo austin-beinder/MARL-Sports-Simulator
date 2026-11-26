@@ -4,18 +4,16 @@
 # Date:    2026-10-11
 # Author:  JC Stinson III (LifeHackerIII)
 # Usage:
+#   - 2026-10-11: Generated this entire file: the red-speed calibration sweep
+#     (scripted baselines on dedicated calibration seeds), the band-center
+#     selection rule, and its command-line entry point (design #22, ICD §10).
 #   - 2026-10-18: Envs come from run.env via make_env, with an --env flag.
 #     (Austin Beinder)
 #   - 2026-11-01: PyBullet is the default env, and the table name always
 #     carries the env (calibration_<config>_<env>.csv) (backlog task 3).
-#   - 2026-10-11: Generated this entire file: the red-speed calibration sweep
-#     (scripted baselines on dedicated calibration seeds), the band-center
-#     selection rule, and its command-line entry point (design #22, ICD §10).
-#   - 2026-11-25: Dropped the unused numpy import (pylint cleanup, backlog
-#     task 13).
-# Prompt summary: Implement Phase 3 step 10 of the issue #7 plan (baselines,
-#   evaluation, calibration).
-# Human review:   Pending review
+#   - 2026-11-25: Dropped the unused numpy import (pylint cleanup, backlog task
+#     13). Citation cleanup (backlog task 9): dropped the Prompt summary and
+#     Human review lines; Usage entries in date order; no behaviour change.
 # ==============================================================================
 """Task calibration (design #22, ICD §10).
 

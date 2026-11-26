@@ -7,11 +7,12 @@
 #   - 2026-11-14: Generated this entire file: tests for the call head's own
 #     per-blue reward (call_values, the buffer's call advantages, the PPO
 #     update's separate call surrogate), the claim_ball scenario (spawn, both
-#     envs, config, the claim reward) and the call_yield shaping term.
-#   - 2026-11-14: The dead_ball shaping term, receiver_spacing leaving out the
-#     blue nearest a dead ball, and the catch stages' new terms.
-#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters and fixed
-#     the new warnings; no behaviour change. (Austin Beinder)
+#     envs, config, the claim reward), the call_yield and dead_ball shaping
+#     terms, receiver_spacing leaving out the blue nearest a dead ball, and the
+#     catch stages' new terms. Pylint cleanup: wrapped lines over 100 characters
+#     and fixed the new warnings; no behaviour change.
+#   - 2026-11-25: Citation cleanup (backlog task 9): one Usage entry per PR,
+#     oldest first; no behaviour change. (JC Stinson III)
 # ==============================================================================
 """The "got it" call's own reward, and the claim_ball scenario that practises it (2026-11-14)."""
 

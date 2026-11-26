@@ -12,36 +12,41 @@
 #   - 2026-10-14: Added the PBRS ablation figures (survival-only vs + PBRS
 #     learning curves; the coefficient-pilot sweep of closing speed, races won
 #     and possession survival), their table views, race columns in the
-#     keep-away table, and a validated second series color (slot 2).
-#   - 2026-11-01: Moved the CSV/curve/table helpers (read_csv, eval_curves,
-#     train_curves, read_table, table_path_for, mean_std, smooth) unchanged
-#     to marl/results.py and re-imported them here (task 2, step 1).
-#   - 2026-11-01: Reworked the figures into manifest-driven kinds (curves,
-#     final, diagnostics, goto, sweep, calibration) that take 1-9 arms, with
-#     tab10 colors that follow the arm label; figure builders now return the
-#     figure and a render layer loads, saves (PNG only) and writes the table
-#     view; replaced the hard-coded command line with --manifest (task 2,
-#     step 3).
-#   - 2026-11-01: Command line for ad-hoc --arm plots (default kinds per
-#     scenario), the --overwrite guard (record renders to their default folder
-#     exempt), and warnings for mismatched eval episodes and unfrozen record
-#     inputs (task 2, step 4).
-#   - 2026-11-01: Demo fixes: close line-end labels stack in rows, early
-#     ends are labeled to their right, single-seed arms show no "± 0" and
-#     legends say "1 seed" (task 2, step 7).
-#   - 2026-11-01: Demo fix: the guard exemption for record renders now needs
-#     a .rendered_from marker naming the same manifest, so a record render
-#     never clears ad-hoc output that shares its folder name (task 2, step 7).
-#   - 2026-11-13: Curriculum run figures (--curriculum RUN_DIR): every stage
-#     of a curriculum run on one step axis, and a close-up of its
-#     pass_practice_moving stages. (Austin Beinder)
-#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters; no
-#     behaviour change. (Austin Beinder)
+#     keep-away table, and a validated second series color (slot 2); direct
+#     labels for line ends (_end_labels: two close ends split above/below, a
+#     lone end avoids the reference lines).
+#   - 2026-11-01: Plotting refactor (backlog task 2): moved the CSV/curve/table
+#     helpers (read_csv, eval_curves, train_curves, read_table, table_path_for,
+#     mean_std, smooth) unchanged to marl/results.py and re-imported them here
+#     (step 1). Reworked the figures into manifest-driven kinds (curves, final,
+#     diagnostics, goto, sweep, calibration) that take 1-9 arms, with tab10
+#     colors that follow the arm label; figure builders now return the figure
+#     and a render layer loads, saves (PNG only) and writes the table view;
+#     replaced the hard-coded command line with --manifest (step 3). Command
+#     line for ad-hoc --arm plots (default kinds per scenario), the --overwrite
+#     guard (record renders to their default folder exempt), and warnings for
+#     mismatched eval episodes and unfrozen record inputs (step 4). Demo fixes
+#     (step 7): close line-end labels stack in rows (3+ no longer overlap); ends
+#     in the left half of the axes are labeled to their right, stacking upward
+#     clear of the reference-line labels there (arms with different budgets end
+#     early, and their labels ran over the y axis and each other); single-seed
+#     arms show no "± 0" and legends say "1 seed"; the
+#     guard exemption for record renders now needs a .rendered_from marker
+#     naming the same manifest, so a record render never clears ad-hoc output
+#     that shares its folder name.
+#   - 2026-11-13: Curriculum run figures (--curriculum RUN_DIR): every stage of
+#     a curriculum run on one step axis, and a close-up of its
+#     pass_practice_moving stages. Pylint cleanup: wrapped lines over 100
+#     characters; no behaviour change. (Austin Beinder)
 #   - 2026-11-23: Fixed a merge (d3040a1) that had left render_manifest's
 #     body in a stray second main(), so render_manifest returned None and
 #     --curriculum was gone: restored the body, moved --curriculum into the
 #     record/ad-hoc main(), and curriculum figures save a PDF too again, as
 #     scripts/README.md says. (Austin Beinder)
+#   - 2026-11-25: Citation cleanup (backlog task 9): one Usage entry per PR,
+#     oldest first; folded the function-level citations into this header;
+#     _end_labels' details went into the #25 and #38 entries; no behaviour
+#     change.
 # ==============================================================================
 """Report figures. Reads only CSVs that training, ``scripts/evaluate.py`` and
 ``scripts/calibrate.py`` already wrote, so making figures never re-runs anything.
@@ -250,12 +255,6 @@ def _end_label(ax, x: float, y: float, text: str, refs: Sequence[float], series:
     )
 
 
-# AI CITATION: Claude Code (Claude Opus 5.5) | 2026-10-14 | JC Stinson III (LifeHackerIII)
-# Usage: Wrote the function (two close ends split above/below; a lone end avoids references).
-# Modified: 2026-11-01 - Close ends now stack in rows (3+ no longer overlap), and ends in the
-#   left half of the axes are labeled to their right, stacking upward clear of the
-#   reference-line labels there (found in the task 2 demo: arms with different budgets end
-#   early, and their labels ran over the y axis and each other).
 def _end_labels(ax, ends: Sequence[tuple[float, float, str]], refs: Sequence[float]) -> None:
     """Direct-label several line ends at once. Each half of the axes is handled apart
     (labels on opposite halves can't collide). Ends closer than 8% of the y-range form a

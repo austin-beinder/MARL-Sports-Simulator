@@ -10,15 +10,22 @@
 #     and the --render / --debug flags.
 #   - 2026-10-31: Train end to end on PyBullet at 2v2 and goto_target too, and
 #     use a physics_dt mismatch for the worker setup error (2v2 now works).
-#   - 2026-10-31: PyBullet evaluates in-process too; added tests that several
-#     PyBullet envs run side by side in one process.
+#     PyBullet evaluates in-process too; added tests that several PyBullet envs
+#     run side by side in one process.
 #   - 2026-11-01: PyBullet is the default env and run dirs always name their
 #     env: updated the default, out-dir and --render tests (backlog task 3;
 #     Claude Code (Claude Opus 5.5), prompted by JC Stinson III).
-# Prompt summary: Add an env selector to train/report/calibrate and run
-#   evaluation in its own process for the shared pybullet simulation.
-# Human review:   Pending review
+#   - 2026-11-25: Citation cleanup (backlog task 9): dropped the Prompt summary
+#     and Human review lines; one Usage entry per PR, oldest first; added the
+#     module docstring; no behaviour change. (JC Stinson III)
 # ==============================================================================
+"""Tests for picking the env (run.env, marl.envs.make_env) and the evaluators.
+
+The subprocess evaluator must match the in-process one exactly; training runs end to end on
+PyBullet (2v2 and goto_target too); several PyBullet envs run side by side in one process; and
+the --render / --debug flags.
+"""
+
 ### AI GENERATED
 import numpy as np
 import pytest

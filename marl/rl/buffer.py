@@ -9,10 +9,11 @@
 #     computation via compute_gae, and shuffled minibatches over the
 #     flattened T*N samples.
 #   - 2026-11-14: The call head's own per-blue advantage: each step's blue
-#     pickup and call log-prob, compute_call_advantages, and the call fields
-#     of a Minibatch. (Austin Beinder)
-#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters; no
+#     pickup and call log-prob, compute_call_advantages, and the call fields of
+#     a Minibatch. Pylint cleanup: wrapped lines over 100 characters; no
 #     behaviour change. (Austin Beinder)
+#   - 2026-11-25: Citation cleanup (backlog task 9): one Usage entry per PR,
+#     oldest first; no behaviour change.
 # ==============================================================================
 """Rollout buffer (design #20).
 

@@ -7,9 +7,8 @@
 #   - 2026-10-11: Generated this entire file: GAE tests (hand-computed boundary
 #     cases, an independent reference implementation, demonstrations of the
 #     merged-done and values[t+1] traps, lambda limits, input validation).
-# Prompt summary: Implement Phase 3 step 7 of the issue #7 plan (buffer +
-#   GAE) with hand-built boundary tests.
-# Human review:   Pending review
+#   - 2026-11-25: Citation cleanup (backlog task 9): dropped the Prompt summary
+#     and Human review lines; no behaviour change.
 # ==============================================================================
 """GAE tests. Hand-built cases use gamma = lambda = 0.5 (gamma*lambda = 0.25).
 

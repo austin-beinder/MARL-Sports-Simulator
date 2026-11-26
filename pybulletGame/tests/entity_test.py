@@ -1,3 +1,5 @@
+"""Entity tests: construction, sync, collisions, applied motion, observables."""  # AI GENERATED
+
 import os ### AI GENERATED
 import sys ### AI GENERATED
 import unittest ### AI GENERATED

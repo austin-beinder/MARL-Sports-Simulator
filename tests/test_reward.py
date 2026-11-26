@@ -10,9 +10,17 @@
 #   - 2026-10-14: Added the pbrs_ball_acquisition tests: the potential, every
 #     boundary case (pickup, red capture, effective terminal vs truncation,
 #     possession), the base/shaping split, and telescoping over mock episodes.
-# Prompt summary: Implement Phase 3 step 5 of the issue #7 plan (reward module).
-# Human review:   Pending review
+#   - 2026-11-25: Citation cleanup (backlog task 9): dropped the Prompt summary
+#     and Human review lines; added the module docstring; no behaviour change.
 # ==============================================================================
+"""Tests for the reward module (marl/rl/reward.py).
+
+The term registry, the (1 - gamma) scaling (a survival return is 1 - gamma^L), goto_target
+reading s_next, deferred and unknown terms, the effective_terminal truth table, and the
+pbrs_ball_acquisition potential at every boundary case, including its telescoping over mock
+episodes.
+"""
+
 import dataclasses
 
 import pytest
