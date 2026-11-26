@@ -1,5 +1,7 @@
 """
 This test file was AI generated, see the ### AI GENERATED markers.
+AI edit 2026-11-25 (Claude Code (Claude Opus 5.5), JC Stinson III): pylint cleanup (an unused
+variable given a _ prefix); no behaviour change.
 """
 
 ### AI GENERATED
@@ -102,7 +104,7 @@ class TestFieldConstruction(unittest.TestCase):
         self.assertEqual(len(p.getCollisionShapeData(field.lines_id, -1)), 0)
 
     def test_entities_on_the_floor_touch_nothing(self):
-        field = Field()
+        _field = Field()
         player = Player(initial_position=np.array([2.0, 2.0, 0.0]))
 
         step([player])

@@ -15,24 +15,26 @@ AI edit 2026-11-15 (Claude Code, Austin Beinder): pylint cleanup (wrapped lines 
 characters); no behaviour change.
 """
 
+### AI GENERATED (2026-11-25, JC Stinson III: pylint import order; unused List dropped)
+import os
+import random
+import time
+from typing import Dict
 import numpy as np
 import pybullet as p
-from typing import Dict, List
-import time
 from entity import Entity
 from teams import Team
-import random
-import os
+### END AI GENERATED
 
 class Ball(Entity):
 
     _registry: Dict[int, "Entity"] = {}
 
     def __init__(self,
-                 radius=0.15, 
-                 height=0.1, 
+                 radius=0.15,
+                 height=0.1,
                  mass=1.0,
-                 initial_position=np.array([0.0, 0.0, 0.0]),
+                 initial_position=None,  # AI GENERATED (2026-11-25: None = the origin, see Entity)
                  maxJointVelocity=3.0,
                  # AI GENERATED (how quickly a loose ball slows down, see below)
                  linear_damping=1.25,
@@ -132,7 +134,7 @@ class Ball(Entity):
             other_entity = Entity._registry.get((self.client, other_body_id))  # AI GENERATED (keyed by client too)
             if other_entity is not None:
                 self.collided_entities.append(other_entity)
-                if not (other_entity in previous_collided_entities):
+                if other_entity not in previous_collided_entities:  # AI GENERATED (lint: no parens after not)
                     self.on_new_collision(other_entity)
 
     def on_new_collision(self, collided_entity) -> bool:
@@ -155,7 +157,7 @@ class Ball(Entity):
             return changed_possession
         ### END AI GENERATED
 
-        if self.possession_player == None or self.possession == Team.NONE:
+        if self.possession_player is None or self.possession == Team.NONE:  # AI GENERATED (lint: is None, not == None)
             self._player_takes_possession(collided_entity)
             changed_possession = True
         # if self.possession_player.body_id == collided_entity.body_id:
@@ -168,7 +170,7 @@ class Ball(Entity):
             if self.allow_teammate_handoff:  # 2026-10-31: the handoff can be switched off
                 self._player_takes_possession(collided_entity)
             ### END AI GENERATED
-        elif self.possession != Team.NONE and self.possession != collided_entity.team:
+        elif self.possession not in (Team.NONE, collided_entity.team):  # AI GENERATED (lint: one "not in" test)
             # We must have collided with a player of an opposing team
 
             ### AI GENERATED
@@ -278,7 +280,7 @@ class Ball(Entity):
             bx, by, _ = p.getBasePositionAndOrientation(self.body_id, physicsClientId=self.client)[0]
             p.resetBasePositionAndOrientation(self.body_id, [bx, by, 0], [0, 0, 0, 1], physicsClientId=self.client)
         ### END AI GENERATED
-        
+
         if self.possession_player:
             self.possession_player.ball = None
         self.possession_player = None
@@ -368,5 +370,3 @@ if __name__ == "__main__":
         player4.sync_from_pybullet()
         player5.sync_from_pybullet()
         time.sleep(1./240.)
-
-

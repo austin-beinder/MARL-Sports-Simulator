@@ -1,10 +1,12 @@
 """
 Example code provided from: https://medium.com/@chand.shelvin/pybullet-getting-started-a068a0e3d492
 
+AI edit 2026-11-25 (Claude Code (Claude Opus 5.5), JC Stinson III): pylint cleanup
+(4-space indent, import order, final newline); no behaviour change.
 """
 
-import pybullet as p
 import time
+import pybullet as p
 import pybullet_data
 
 physicsClient = p.connect(p.GUI) # p.DIRECT for non-graphical version
@@ -17,7 +19,7 @@ cubeStartOrientation = p.getQuaternionFromEuler([0,0,0])
 boxId = p.loadURDF("r2d2.urdf",cubeStartPos, cubeStartOrientation)
 
 for i in range (10000):
-   p.stepSimulation()
-   time.sleep(1./240.)
+    p.stepSimulation()
+    time.sleep(1./240.)
 cubePos, cubeOrn = p.getBasePositionAndOrientation(boxId)
 print(cubePos,cubeOrn)

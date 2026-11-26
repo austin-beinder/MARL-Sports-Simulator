@@ -24,6 +24,8 @@
 #   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters and
 #     dropped an unused capsys fixture argument; no behaviour change.
 #     (Austin Beinder)
+#   - 2026-11-25: Unused unpacked values replaced with _ (pylint cleanup,
+#     backlog task 13); no behaviour change.
 # ==============================================================================
 import csv
 import json
@@ -232,7 +234,7 @@ def manifest_with(tmp_path, body):
 
 def test_every_figure_and_the_table_view_are_written(workspace):
     out = workspace / "figures"
-    made, notes = render_manifest(load_manifest(workspace / "manifest.toml"), out)
+    _, notes = render_manifest(load_manifest(workspace / "manifest.toml"), out)
     assert notes == []
     for name in FIGURES:
         assert (out / f"{name}.png").stat().st_size > 1000, name

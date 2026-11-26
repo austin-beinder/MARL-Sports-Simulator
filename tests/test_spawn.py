@@ -14,6 +14,8 @@
 #     practice layout, plus red. (Austin Beinder)
 #   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters; no
 #     behaviour change. (Austin Beinder)
+#   - 2026-11-25: Unused unpacked values replaced with _ (pylint cleanup,
+#     backlog task 13); no behaviour change.
 # ==============================================================================
 import subprocess
 import sys
@@ -89,7 +91,7 @@ def test_start_mix_extremes(mix, expected):
 
 def test_goto_target():
     for seed in range(100):
-        s, opt, sp = spawn(seed, {"scenario": "goto_target", "n_red": 0})
+        _, opt, sp = spawn(seed, {"scenario": "goto_target", "n_red": 0})
         assert sp.start_type == START_TARGET and sp.red_pos == () and sp.holder is None
         assert np.linalg.norm(np.subtract(sp.blue_pos[0], sp.ball_pos)) >= opt["min_clearance"]
 

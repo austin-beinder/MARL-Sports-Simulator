@@ -11,6 +11,8 @@
 #   - 2026-10-11: Generated this entire file: the red-speed calibration sweep
 #     (scripted baselines on dedicated calibration seeds), the band-center
 #     selection rule, and its command-line entry point (design #22, ICD §10).
+#   - 2026-11-25: Dropped the unused numpy import (pylint cleanup, backlog
+#     task 13).
 # Prompt summary: Implement Phase 3 step 10 of the issue #7 plan (baselines,
 #   evaluation, calibration).
 # Human review:   Pending review
@@ -36,8 +38,6 @@ import csv
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
-
-import numpy as np
 
 from marl.baselines import make_baseline
 from marl.common.config import Config, load_config, with_overrides
