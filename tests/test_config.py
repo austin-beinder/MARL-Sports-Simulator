@@ -11,15 +11,22 @@
 #     differs from the survival-only control config only in the reward.
 #   - 2026-11-01: Added a test that saved configs without run.env load as the
 #     mock while new configs default to PyBullet (backlog task 3).
-#   - 2026-11-07: The reset options now include max_ball_dist. (Austin Beinder)
-#   - 2026-11-08: free_speed_factor must be in (0, 1]. (Austin Beinder)
-#   - 2026-11-08: The passing_drill scenario and the drill_radius reset
-#     option. (Austin Beinder)
-#   - 2026-11-09: The pass_distance reset option. (Austin Beinder)
-#   - 2026-11-11: The catch_start_mix reset option. (Austin Beinder)
-#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters; no
-#     behaviour change. (Austin Beinder)
+#   - 2026-11-07: The reset options now include max_ball_dist, drill_radius,
+#     pass_distance and catch_start_mix; free_speed_factor must be in (0, 1];
+#     the passing_drill scenario. Pylint cleanup: wrapped lines over 100
+#     characters; no behaviour change. (Austin Beinder)
+#   - 2026-11-23: The deferred kick_enabled case runs on the mock: kicking
+#     is built on PyBullet, now the default env. (Austin Beinder)
+#   - 2026-11-25: Citation cleanup (backlog task 9): one Usage entry per PR,
+#     oldest first; folded the function-level citations into this header; added
+#     the module docstring; no behaviour change.
 # ==============================================================================
+"""Tests for config loading and validation (marl/common/config.py).
+
+Strict TOML loading, the derived discount factor, the reward and shaping-term options, the reset
+options, the scenarios, and saved configs from before run.env existed (they load as the mock).
+"""
+
 import dataclasses
 from pathlib import Path
 
@@ -241,7 +248,8 @@ def test_invalid_values_raise(data, match):
         {"rl": {"horizon_mode": "finite"}},
         {"rl": {"obs_ordering": "index"}},
         {"rl": {"obs_mode": "radius"}},
-        {"rl": {"kick_enabled": True}},
+        # AI GENERATED (2026-11-23): kicking is built on PyBullet (the default env) only
+        {"rl": {"kick_enabled": True}, "run": {"env": "mock"}},  # AI GENERATED
         {"rl": {"reward": {"shaping": [{"name": "pbrs_red_distance", "enabled": True, "coef": 0.1}]}}},
     ],
 )
@@ -256,8 +264,6 @@ def test_overrides_are_validated_too():
         with_overrides(cfg, {"shared": {"n_red": 0}})
 
 
-# AI CITATION: Claude Code (Claude Opus 5.5) | 2026-11-01 | JC Stinson III (LifeHackerIII)
-# Usage: Wrote this test (backlog task 3: legacy saved runs keep loading as the mock).
 def test_saved_config_without_run_env_is_a_mock_run():
     # A run saved before run.env existed (2026-10-18), e.g. runs/Old_mock_env/*/config.json.
     legacy = config_to_dict(config_from_dict({"run": {"seed": 3}}))

@@ -1,6 +1,9 @@
 """
 AI edits 2026-10-31 (Claude Code, Austin Beinder): physics_client on every pybullet call, and
 Entity._registry keyed by (client, body id) with clear_registry(). See the AI GENERATED markers.
+AI edit 2026-11-25 (Claude Code (Claude Opus 5.5), JC Stinson III): pylint cleanup (import order,
+whitespace, parens); initial_position and rgbaColor default to None and are built per call, so
+two entities never share one default array or list. No behaviour change.
 
 Create skeleton code for player
 i. Implementable
@@ -44,10 +47,10 @@ Acceptance Criteria:
 - Short demo
 """
 
+import time
+from typing import Dict, List
 import numpy as np
 import pybullet as p
-from typing import Dict, List
-import time
 from teams import Team
 
 class Entity:
@@ -75,10 +78,17 @@ class Entity:
                  radius=0.3,
                  height=0.1,
                  mass=1.0,
-                 initial_position=np.array([0.0, 0.0, 0.0]),
-                 rgbaColor=[0, 0, 0, 1],
+                 initial_position=None,  # AI GENERATED (None = the origin, a fresh array per entity)
+                 rgbaColor=None,  # AI GENERATED (None = black)
                  maxJointVelocity=3.0,
                  physics_client=0):  # AI GENERATED (which pybullet simulation; 0 = the default connection)
+
+        ### AI GENERATED (2026-11-25: mutable defaults built per call)
+        if initial_position is None:
+            initial_position = np.array([0.0, 0.0, 0.0])
+        if rgbaColor is None:
+            rgbaColor = [0, 0, 0, 1]
+        ### END AI GENERATED
 
         self.client = physics_client  # AI GENERATED (passed to every pybullet call as physicsClientId)
         self.position = initial_position
@@ -155,7 +165,7 @@ class Entity:
             other_entity = Entity._registry.get((self.client, other_body_id))
             if other_entity is not None:
                 self.collided_entities.append(other_entity)
-                if not (other_entity in previous_collided_entities):
+                if other_entity not in previous_collided_entities:  # AI GENERATED (lint: no parens after not)
                     self.on_new_collision(other_entity)
 
     ### END AI GENERATED
@@ -249,15 +259,15 @@ if __name__ == "__main__":
     #   hockey pucks
     p.connect(p.GUI)
     entity = Entity(
-        initial_position=np.array([0.0, 0.0, 0.0]), 
+        initial_position=np.array([0.0, 0.0, 0.0]),
         rgbaColor=[1, 0, 0, 1]
     )
     entity2 = Entity(
-        initial_position=np.array([0.8, 0.0, 0.0]), 
+        initial_position=np.array([0.8, 0.0, 0.0]),
         rgbaColor=[0, 0, 1, 1]
     )
     entity3 = Entity(
-        initial_position=np.array([0.0, 0.8, 0.0]), 
+        initial_position=np.array([0.0, 0.8, 0.0]),
         rgbaColor=[1, 1, 1, 1]
     )
 
@@ -267,4 +277,3 @@ if __name__ == "__main__":
         entity2.sync_from_pybullet()
         entity3.sync_from_pybullet()
         time.sleep(1./240.)
-

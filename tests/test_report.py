@@ -6,20 +6,28 @@
 # Usage:
 #   - 2026-10-11: Generated this entire file: evaluation-table tests (the table
 #     reproduces the training run's own iteration-0 and final evaluations
-#     exactly, aggregation across seeds, refusing mixed tasks, the CLI).
-#   - 2026-10-11: Added a goto_target reproduction test: keep-away lengths are
-#     too coarse to tell two untrained inits apart (a mutation check showed it).
+#     exactly, aggregation across seeds, refusing mixed tasks, the CLI). Added a
+#     goto_target reproduction test: keep-away lengths are too coarse to tell
+#     two untrained inits apart (a mutation check showed it).
 #   - 2026-10-14: Added tests for the race metrics and arm columns, pbrs_coef,
 #     and the --checkpoint option (it never overwrites the final table).
 #   - 2026-11-01: Added tests for glob expansion in the CLI (task 2, step 5).
-#   - 2026-11-01: Pinned run.env = "mock" in tiny_run: PyBullet is the default
-#     now, and these test the evaluation table, not the physics (task 3).
-#   - 2026-11-01: Added a test that a run saved before run.env existed is
-#     still evaluated on the mock (task 3).
-# Prompt summary: Implement Phase 3 step 10 of the issue #7 plan (baselines,
-#   evaluation, calibration).
-# Human review:   Pending review
+#   - 2026-11-01: Pinned run.env = "mock" in tiny_run (PyBullet is the default
+#     now, and these test the evaluation table, not the physics), and added a
+#     test that a run saved before run.env existed is still evaluated on the
+#     mock (task 3).
+#   - 2026-11-25: Citation cleanup (backlog task 9): dropped the Prompt summary
+#     and Human review lines; one Usage entry per PR, oldest first; folded the
+#     function-level citations into this header; added the module docstring; no
+#     behaviour change.
 # ==============================================================================
+"""Tests for the final evaluation table (marl/rl/report.py).
+
+The table must reproduce a training run's own iteration-0 and final evaluations exactly; also
+aggregation across seeds, refusing mixed tasks, the race-metric and PBRS columns, the
+--checkpoint option, glob expansion in the CLI, and old runs still evaluating on the mock.
+"""
+
 import csv
 import math
 
@@ -73,8 +81,6 @@ def test_table_reproduces_the_training_runs_own_evaluations(tmp_path):
     assert [r["policy"] for r in table][:3] == ["ppo", "ppo_deterministic", "untrained"]
 
 
-# AI CITATION: Claude Code (Claude Opus 5.5) | 2026-11-01 | JC Stinson III (LifeHackerIII)
-# Usage: Wrote this test (backlog task 3: legacy runs keep evaluating on the mock).
 def test_run_saved_before_run_env_existed_is_evaluated_on_the_mock(tmp_path):
     # Like runs/Old_mock_env: checkpoints whose config has no run.env. With PyBullet as the
     # default they must still rebuild on the mock, or the table wouldn't match the logged evals.

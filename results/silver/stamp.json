@@ -1,8 +1,8 @@
 {
   "suite": "silver",
-  "frozen": "2026-11-03",
-  "commit": "1e945de + uncommitted changes",
-  "reason": "add goto_target on PyBullet (runs there since Austin's #26)",
+  "frozen": "2026-11-24",
+  "commit": "ce9bc62",
+  "reason": "#36 red_gain 2.0 -> 240 and #41's PyBullet contact-possession changes (PyBullet keepaway); #41's new config keys and CSV columns (all cases); add claim_ball and pass_practice_moving (#41's passing curriculum)",
   "environment": {
     "python": "3.14.7",
     "numpy": "2.5.3",
@@ -27,7 +27,10 @@
     "keepaway_1v1_pbrs_mock",
     "keepaway_1v1_pbrs_pybullet",
     "goto_target_mock",
-    "goto_target_pybullet"
+    "goto_target_pybullet",
+    "claim_ball_mock",
+    "claim_ball_pybullet",
+    "pass_practice_moving_pybullet"
   ],
   "updates": [
     {
@@ -39,6 +42,11 @@
       "date": "2026-11-03",
       "commit": "1e945de + uncommitted changes",
       "reason": "add goto_target on PyBullet (runs there since Austin's #26)"
+    },
+    {
+      "date": "2026-11-24",
+      "commit": "ce9bc62",
+      "reason": "#36 red_gain 2.0 -> 240 and #41's PyBullet contact-possession changes (PyBullet keepaway); #41's new config keys and CSV columns (all cases); add claim_ball and pass_practice_moving (#41's passing curriculum)"
     }
   ]
 }

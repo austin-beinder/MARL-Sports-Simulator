@@ -7,16 +7,22 @@
 #   - 2026-10-11: Generated this entire file: tests for strict state parsing,
 #     the flattening spec (#11) and the obs builder (#13), including
 #     hand-computed vectors, distance ordering, N=2/M=2 shapes, permutation
-#     equivariance and N=1 information equivalence.
-#   - 2026-10-11: Updated the expected red velocity for the max_speed scaling
-#     amendment to #11.
-#   - 2026-11-13: The rl.passer_obs flags and the optional s["ball"]["passer"].
+#     equivariance and N=1 information equivalence; the expected red velocity
+#     follows the max_speed scaling amendment to #11.
+#   - 2026-11-13: The rl.passer_obs flags and the optional s["ball"]["passer"],
+#     and the call flags after them, from each blue's optional "calling". Pylint
+#     cleanup: wrapped lines over 100 characters; no behaviour change.
 #     (Austin Beinder)
-#   - 2026-11-13: The call flags after them, from each blue's optional
-#     "calling". (Austin Beinder)
-#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters; no
-#     behaviour change. (Austin Beinder)
+#   - 2026-11-25: Citation cleanup (backlog task 9): one Usage entry per PR,
+#     oldest first; added the module docstring; no behaviour change.
 # ==============================================================================
+"""Tests for the global state and the per-agent observations.
+
+Strict parsing of s (marl/rl/state.py), the critic's flattening spec (#11) and the obs builder
+(#13, marl/rl/obs.py): hand-computed vectors, distance ordering, 2v2 shapes, permutation
+equivariance, N=1 information equivalence, and the passer and call flags.
+"""
+
 import copy
 
 import numpy as np

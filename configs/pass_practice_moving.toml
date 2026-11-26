@@ -1,0 +1,51 @@
+# ==============================================================================
+# AI CITATION
+# Tool:    Claude Code (Claude Opus 5.5)
+# Date:    2026-11-24
+# Author:  JC Stinson III (LifeHackerIII)
+# Usage:
+#   - 2026-11-24: Created this file: the catch_moving_longer stage of
+#     curriculum/passing_3v1.toml as a standalone config, so the regression
+#     suite (results/silver/suite.toml) covers kicking, passing and calls.
+# ==============================================================================
+# Moving pass practice: 3 blues, no red, one starts with the ball, all free to
+# move, for the full 15 s. Each catch pays on the step it happens (base
+# "pass_catch"), if the ball went at least 2 m; longer catches pay a bit more
+# (pass_length_bonus) and a pass straight back pays half (return_pass_factor).
+# Shaping: kicker_clearance (don't chase your own kick), receiver_spacing (stand
+# 3 m apart), call_accuracy (the call head's own reward), dead_ball (a stopped
+# loose ball costs a little) and call_yield (leave a called ball alone).
+# Settings follow curriculum/passing_3v1.toml's catch_moving_longer stage, which
+# turns on every passing option. PyBullet only: it kicks. Omitted keys take the
+# defaults in marl/common/config.py.
+
+[shared]
+scenario = "pass_practice_moving"
+n_blue = 3
+n_red = 0
+
+[shared.start]
+pass_distance = 3.9           # m from the holder (+-15%)
+
+[rl]
+kick_enabled = true
+passer_obs = true
+call_enabled = true
+
+[rl.ppo]
+ent_coef = 0.01               # 10x the default, as in the curriculum's catch stages
+
+[rl.reward]
+base = "pass_catch"
+shaping = [{ name = "kicker_clearance", enabled = true, coef = 0.025 },
+           { name = "receiver_spacing", enabled = true, coef = 0.03 },
+           { name = "call_accuracy", enabled = true, coef = 1.0 },
+           { name = "dead_ball", enabled = true, coef = 0.003 },
+           { name = "call_yield", enabled = true, coef = 0.01 }]
+min_pass_distance = 2.0       # m from the kick point
+return_pass_factor = 0.5
+pass_length_bonus = true
+
+[run]
+env = "pybullet"
+total_steps = 2_000_000       # the curriculum stage's cap

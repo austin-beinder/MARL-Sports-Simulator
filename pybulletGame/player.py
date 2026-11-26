@@ -8,15 +8,17 @@ AI edit 2026-11-14 (Claude Code, Austin Beinder): show_calling, a brighter blue 
 calls "got it" (watch only).
 AI edit 2026-11-15 (Claude Code, Austin Beinder): pylint cleanup (wrapped lines over 100
 characters); no behaviour change.
+AI edit 2026-11-25 (Claude Code (Claude Opus 5.5), JC Stinson III): pylint cleanup (import order,
+unused List and Ball imports, whitespace, parens); initial_position defaults to None (Entity
+builds a fresh array), so two players never share one default array. No behaviour change.
 """
 
+import time
+from typing import Dict
 import numpy as np
 import pybullet as p
-from typing import Dict, List
-import time
 from entity import Entity
 from teams import Team
-from ball import Ball
 
 class Player(Entity):
 
@@ -24,10 +26,10 @@ class Player(Entity):
 
     def __init__(self,
                  team: Team = Team.RED,
-                 radius=0.3, 
-                 height=0.1, 
+                 radius=0.3,
+                 height=0.1,
                  mass=1.0,
-                 initial_position=np.array([0.0, 0.0, 0.0]),
+                 initial_position=None,  # AI GENERATED (None = the origin, see Entity)
                  maxJointVelocity=3.0,
                  physics_client=0):  # AI GENERATED (which pybullet simulation, see Entity)
 
@@ -90,7 +92,7 @@ class Player(Entity):
             other_entity = Entity._registry.get((self.client, other_body_id))  # AI GENERATED (keyed by client too)
             if other_entity is not None:
                 self.collided_entities.append(other_entity)
-                if not (other_entity in previous_collided_entities):
+                if other_entity not in previous_collided_entities:  # AI GENERATED (lint: no parens after not)
                     self.on_new_collision(other_entity)
 
     def on_new_collision(self, collided_entity):
@@ -159,4 +161,3 @@ if __name__ == "__main__":
         player2.sync_from_pybullet()
         player3.sync_from_pybullet()
         time.sleep(1./240.)
-

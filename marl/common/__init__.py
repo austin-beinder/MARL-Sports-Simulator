@@ -5,7 +5,7 @@
 # Author:  JC Stinson III (LifeHackerIII)
 # Usage:
 #   - 2026-10-10: Created this package marker (torch-free modules the env owner may import).
-# Prompt summary: Implement Phase 3 of the issue #7 plan (RL layer + mock env).
-# Human review:   Pending review
+#   - 2026-11-25: Citation cleanup (backlog task 9): dropped the Prompt summary
+#     and Human review lines; no behaviour change.
 # ==============================================================================
 """Torch-free modules shared with the env side: config schema, spawn sampler."""

@@ -5,7 +5,7 @@
 # Author:  JC Stinson III (LifeHackerIII)
 # Usage:
 #   - 2026-10-10: Created this package marker for the MARL RL layer + mock env.
-# Prompt summary: Implement Phase 3 of the issue #7 plan (RL layer + mock env).
-# Human review:   Pending review
+#   - 2026-11-25: Citation cleanup (backlog task 9): dropped the Prompt summary
+#     and Human review lines; no behaviour change.
 # ==============================================================================
 """MARL sports simulator: RL layer (issue #7), mock env and shared helpers."""

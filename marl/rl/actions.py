@@ -8,11 +8,11 @@
 #     Beta samples to the ICD §6 action dict, and the commanded-speed metric
 #     (design #18, #21, #23; KL-1 fix location).
 #   - 2026-11-07: Kick actions: to_env_actions takes the trigger and kick
-#     samples, and actions_from_samples maps a whole sample dict. (Austin Beinder)
-#   - 2026-11-13: The call head's sample becomes the optional "call" key.
-#     (Austin Beinder)
-#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters; no
-#     behaviour change. (Austin Beinder)
+#     samples, and actions_from_samples maps a whole sample dict; the call
+#     head's sample becomes the optional "call" key. Pylint cleanup: wrapped
+#     lines over 100 characters; no behaviour change. (Austin Beinder)
+#   - 2026-11-25: Citation cleanup (backlog task 9): one Usage entry per PR,
+#     oldest first; no behaviour change.
 # ==============================================================================
 """Action adapter: clamped Beta samples -> the ICD §6 action dict (plain Python).
 

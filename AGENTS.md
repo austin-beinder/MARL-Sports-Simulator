@@ -4,20 +4,29 @@ Tool:    Claude Code (Claude Opus 5.5)
 Date:    2026-10-25
 Author:  Austin Beinder
 Usage:
-  2026-10-25: Rewrote this file for the repo as it stands after PRs #22 and #23
+  - 2026-10-25: Rewrote this file for the repo as it stands after PRs #22 and #23
     (marl/ RL layer, pybulletGame/ rename, PyBullet adapter). The issue #10
     version described a YAML/runner infrastructure that was never merged.
-  2026-10-31: PyBulletEnv now runs N blue vs M red and goto_target; updated
-    the limits, the expected test skips and the dynamics test file.
-  2026-10-31: Replaced the one-simulation-per-process constraint: every env
-    has its own pybullet connection.
-  2026-11-15: The AI CITATION format drops the   2026-11-01: (Claude Code (Claude Opus 5.5), prompted by JC Stinson III)
-    PyBullet is now the default run.env; updated the Configuration notes, the
-    run-name convention and the command examples (backlog task 3).
-  2026-11-03: (Claude Code (Claude Opus 5.5), prompted by JC Stinson III)
-    Added scripts/regress.py and the regression-record rule (backlog task 4).
-Prompt summary and Human review
-    lines. (Austin Beinder)
+  - 2026-10-31: PyBulletEnv now runs N blue vs M red and goto_target; updated
+    the limits, the expected test skips and the dynamics test file. Replaced
+    the one-simulation-per-process constraint: every env has its own pybullet
+    connection.
+  - 2026-11-01: PyBullet is now the default run.env; updated the Configuration
+    notes, the run-name convention and the command examples (backlog task 3).
+    (JC Stinson III)
+  - 2026-11-03: Added scripts/regress.py and the regression-record rule
+    (backlog task 4). (JC Stinson III)
+  - 2026-11-15: The AI CITATION format drops the Prompt summary and Human
+    review lines. (Austin Beinder)
+  - 2026-11-24: Wrote the team's citation and docstring rules into Code
+    conventions; repaired this header (a merge had spliced the 2026-11-15
+    entry into the 2026-11-01 one). Regression rules for agents (run it before
+    handing work over, never --update alone, new behaviour needs a suite case);
+    red_gain 20 -> 240 in Architecture; regress.py takes ~3 min. With the
+    citation sweep done, dropped the note on older files' leftover lines.
+    Layout: the reporting modules, every script, the configs and results/.
+    Python 3.13+ (the team runs 3.13 and 3.14); how to run pylint.
+    (JC Stinson III)
 -->
 
 # AGENTS.md
@@ -41,10 +50,11 @@ built in the PyBullet env only (`rl.kick_enabled = true`, which needs
 | `marl/common/` | Config schema + TOML loading (`config.py`), spawn sampling (`spawn.py`). Torch-free. |
 | `marl/envs/` | `make_env` selector, `MockEnv` (pure-numpy ICD env), `PyBulletEnv` (ICD adapter around `KeepAwayEnv`) |
 | `marl/rl/` | PPO: networks, rollout, buffer, GAE, rewards, observations, training loop, evaluation, checkpoints, CSV logging |
-| `marl/` (top level) | `baselines.py` (random/still/flee/oracle), `calibrate.py`, `plots.py`, `watch.py` |
+| `marl/` (top level) | `baselines.py` (random/still/flee/oracle), `calibrate.py`, `watch.py`; reporting: `results.py` (reads runs), `plots.py` (figures), `manifest.py` + `record.py` (results records), `regression.py` (the silver regression harness) |
 | `curriculum/` | Curriculum training: `runner.py` (everything) and curriculum TOMLs such as `keepaway_1v1.toml` |
-| `scripts/` | Thin CLI wrappers: `train.py`, `evaluate.py`, `watch.py`, `calibrate.py`, `plot.py` |
-| `configs/` | Experiment configs: `keepaway_1v1.toml`, `goto_target.toml` |
+| `scripts/` | Thin CLI wrappers: `train.py`, `evaluate.py`, `watch.py`, `calibrate.py`, `plot.py`, `freeze.py` (freeze a results record), `regress.py` (regression check), `plot_episode_length.py` (see `scripts/README.md`) |
+| `configs/` | Experiment configs: `keepaway_1v1.toml` (+ `_pbrs`), `goto_target.toml`, `claim_ball.toml`, `pass_practice_moving.toml` |
+| `results/` | Frozen, committed results records: `golden/` (the midterm mock results; `tests/test_golden.py`) and `silver/` (the regression record) |
 | `docs/ICD.md` | Env ↔ RL interface control document (DRAFT v0.2) |
 | `tests/` | pytest suite for `marl/`, including ICD conformance tests run against both envs |
 | `examples/` | Early PyBullet prototypes, not used by the project code |
@@ -90,8 +100,9 @@ configs/*.toml -> marl.common.config.Config
   before blue got the ball still steals (`on_new_collision` only fires on a
   contact's first tick). Each contact gets one roll (`Ball.contested`); the
   ball changes hands at most once per tick. Red's
-  P-controller (`KeepAwayConfig.red_gain = 20`) only slows within 9 cm of the
-  ball, so in practice it chases at full speed, like the mock's red.
+  P-controller (`KeepAwayConfig.red_gain = 240`) only slows within
+  `red_max_speed / red_gain` = 7.5 mm of the ball, so in practice it chases at
+  full speed, like the mock's red.
 - `MockEnv` implements the same ICD in numpy. It's fast, so most tests and quick
   experiments use it (tests set `run.env = "mock"` explicitly, since the default
   is PyBullet). The ICD conformance tests run against both envs.
@@ -331,7 +342,7 @@ python scripts/watch.py runs/keepaway_1v1_pybullet_seed0           # newest chec
 python scripts/watch.py --baseline flee
 python scripts/calibrate.py --config configs/keepaway_1v1.toml     # -> runs/calibration_keepaway_1v1_pybullet.csv
 python scripts/plot.py
-python scripts/regress.py                                          # regression check vs results/silver (~1 min)
+python scripts/regress.py                                          # regression check vs results/silver (~3 min)
 python scripts/plot.py --curriculum runs/curriculum_passing_3v1_pybullet_seed0  # a curriculum run's progress (scripts/README.md)
 python pybulletGame/keep_away_env.py                               # play blue with the on-screen joystick
 ```
@@ -361,6 +372,22 @@ python -m unittest discover -s pybulletGame/tests -p "*_test.py" -t pybulletGame
   all `IDENTICAL`; commit the rewritten `results/silver/report.md` with it. For an
   intended change, `--update --reason "..."` and commit `results/silver/`. See the
   README's "Regression tests (silver record)".
+  - **Agents run it before handing work over:** before a push, a PR, or calling a
+    task done, if the branch changes code or configs (`marl/`, `pybulletGame/`,
+    `curriculum/`, `configs/`, `scripts/`). Docs-only changes skip it. Commit the
+    report with the work.
+  - **Never `--update` on your own.** Report the deltas and say which change you
+    think caused them; the human decides and writes the reason. If a change meant
+    to be result-neutral isn't all `IDENTICAL`, stop and find out why first.
+  - **New behaviour needs a case.** A new scenario, reward base, shaping term,
+    action head or observation option must be switched on by some case in
+    `suite.toml`. If none does, propose one, usually a small config in `configs/`
+    copied from the curriculum stage that uses it. Then check two things:
+    - the case reaches the new code in the suite's 3 PPO iterations. Look at its
+      `train.csv`: `claim_ball` needed `max_ball_dist = 1` before any blue got to
+      the ball;
+    - a re-run after the `--update` comes back `IDENTICAL` (the case is
+      deterministic).
 - `pytest` covers `tests/` only (`pyproject.toml`). It takes about 2 minutes.
   The 1 skip is expected: the kick-with-possession conformance test on the
   mock, which doesn't kick.
@@ -372,7 +399,8 @@ python -m unittest discover -s pybulletGame/tests -p "*_test.py" -t pybulletGame
 
 ## Environment
 
-- Python 3.13 (the code needs ≥ 3.11 for `tomllib`). The team venv is
+- Python 3.13+ (the team runs 3.13 and 3.14; the code needs ≥ 3.11 for
+  `tomllib`). The team venv is
   `.venv-CSE-5106-Project-Beinder-Stinson-Wang/`, created by
   `__DevEnvSetup.ps1` / `_env_setup.py`. A plain `.venv/` also works.
 - Dependencies: `requirements.in` → `pip-compile` → `requirements.txt`. See
@@ -383,14 +411,62 @@ python -m unittest discover -s pybulletGame/tests -p "*_test.py" -t pybulletGame
 
 ## Code conventions
 
-- **AI attribution is required.** Files generated with an AI tool start with an
-  `AI CITATION` header (Tool, Date, Author, Usage log with dated entries;
-  no Prompt summary or Human review lines); see any file in `marl/` for the format. AI
-  edits inside other files are wrapped in `### AI GENERATED` …
-  `### END AI GENERATED`, or marked with a trailing `# AI GENERATED` on single
-  lines. When you change a file, keep its markers and add a dated Usage entry.
+### AI citations (required)
+
+The course allows AI tools only with a clear account of how they were used.
+Team format (agreed in the review of #37-#40):
+
+- **A file that is mostly AI-written starts with an `AI CITATION` header:**
+  Tool (the tool and model actually used), Date (when the file was created),
+  Author (who prompted the AI), and a Usage log. No `Prompt summary` or
+  `Human review` lines.
+- **Usage: one entry per PR, oldest first, newest at the bottom.** Say briefly
+  what the AI did. If the same PR changes the file again, edit its entry
+  instead of adding another. If you aren't the header's Author, end your
+  entry with your name in parentheses.
+- **No citations or changelogs on functions or classes.** What changed goes in
+  the file's Usage entry.
+- **AI edits inside a human-written file** (one with no header) are wrapped in
+  `### AI GENERATED (<date>: <what>)` … `### END AI GENERATED`, or marked with
+  a trailing `# AI GENERATED` on a single line.
+- When you change a file, keep its header and markers and add your entry. A
+  cleanup may merge one PR's entries into one, as long as it keeps what they
+  say.
+
+**Python: the citation is a `#` block; `"""` is only for docstrings.** Only
+the first string in a file is its docstring (`__doc__`, what `help()` shows),
+so a `"""` citation would push out the real description. The module docstring
+comes right after the header and says what the file is, does and uses.
+Functions, methods and classes get docstrings where they need explaining.
+
+```python
+# ==============================================================================
+# AI CITATION
+# Tool:    Claude Code (Claude Opus 5.5)
+# Date:    2026-11-07
+# Author:  Austin Beinder
+# Usage:
+#   - 2026-11-07: Generated this file: <what it does>.
+#   - 2026-11-20: <what a later PR changed>. (JC Stinson III)
+# ==============================================================================
+"""What this file is, what it does, and what it uses."""
+```
+
+**Other files** use their own comment syntax with the same fields: `<!-- -->`
+in Markdown and HTML (see the top of this file), `#` in TOML, YAML and shell
+scripts. Files that can't hold comments (JSON, CSV) are cited in the commit
+message and PR description instead.
+
+### Style
+
+- In functions longer than about 5 lines, leave a blank line after each block
+  ends (where the indentation steps back out), so the blocks are easy to see.
 - Comments cite design decisions by number (`#21`, `#23`) and ICD sections
   (`ICD §7`). Keep those references when editing nearby code.
+- Lint with pylint, a dev tool (not in `requirements.in`), from the repo root:
+  `python -m pylint $(git ls-files '*.py')`. Its settings, and which checks
+  are turned off and why, are in `pyproject.toml`. No linter checks the
+  blank-line rule above.
 
 ## Known stale spots
 

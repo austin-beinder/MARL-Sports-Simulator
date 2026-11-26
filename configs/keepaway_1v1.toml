@@ -5,10 +5,12 @@
 # Author:  JC Stinson III (LifeHackerIII)
 # Usage:
 #   - 2026-10-10: Created this file: the milestone-1 keep-away config (1v1,
-#     movement only), listing every key with its default for reference.
-#   - 2026-10-11: Set red_max_speed to the calibrated 1.8 (scripts/calibrate.py).
-#   - 2026-11-07: Added ball_damping; max_kick_speed is used now. (Austin Beinder)
-#   - 2026-11-07: ball_damping 0.2 -> 0.4 (kicks max out near 5 m). (Austin Beinder)
+#     movement only), listing every key with its default for reference;
+#     red_max_speed set to the calibrated 1.8 (scripts/calibrate.py).
+#   - 2026-11-07: Added ball_damping, 0.2 and then 0.4 (kicks max out near 5 m);
+#     max_kick_speed is used now. (Austin Beinder)
+#   - 2026-11-25: Citation cleanup (backlog task 9): one Usage entry per PR,
+#     oldest first; no behaviour change.
 # ==============================================================================
 # Milestone 1: keep-away, 1 blue vs 1 scripted red, movement only.
 # Every key below equals the default in marl/common/config.py; it is listed so

@@ -7,10 +7,15 @@
 #   - 2026-10-11: Generated this entire file: action adapter tests (mapping,
 #     plain types, bounds, bad input) and an actor -> adapter -> mock env
 #     integration test at N=2/M=2.
-# Prompt summary: Implement Phase 3 step 6 of the issue #7 plan (actor/critic
-#   + Beta movement head + action adapter).
-# Human review:   Pending review
+#   - 2026-11-25: Citation cleanup (backlog task 9): dropped the Prompt summary
+#     and Human review lines; added the module docstring; no behaviour change.
 # ==============================================================================
+"""Tests for the action adapter (marl/rl/actions.py).
+
+Covers the sample -> ICD action mapping, plain Python types, bounds and bad input, plus an
+actor -> adapter -> mock env run at 2 blue vs 2 red.
+"""
+
 import numpy as np
 import pytest
 import torch

@@ -6,47 +6,39 @@
 # Usage:
 #   - 2026-10-10: Generated this entire file: the config schema (shared ICD §10
 #     keys + RL-only keys), TOML loading, strict unknown-key rejection,
-#     validation at load, and the derived discount factor (design #19, #21).
-#   - 2026-10-11: Set the red_max_speed default to the calibrated 1.8 (step 10).
+#     validation at load, and the derived discount factor (design #19, #21). Set
+#     the red_max_speed default to the calibrated 1.8 (step 10).
 #   - 2026-10-18: Added run.env ("mock" | "pybullet") to pick the env
 #     train/report/calibrate use. (Austin Beinder)
 #   - 2026-11-01: run.env now defaults to "pybullet" (the mock is opt-in), and
 #     saved_config_from_dict loads saved runs from before run.env existed as
 #     mock (backlog task 3).
 #   - 2026-11-07: Kicking: rl.kick_enabled is built (PyBullet only), added
-#     shared.ball_damping, and max_kick_speed is now used. (Austin Beinder)
-#   - 2026-11-07: Added shared.start.max_ball_dist (free ball spawns near a
-#     blue), which the curriculum grows. (Austin Beinder)
-#   - 2026-11-07: ball_damping 0.2 -> 0.4: kicks max out near 5 m instead of
-#     10 m, so kicking the ball away isn't always the best move. (Austin Beinder)
-#   - 2026-11-08: Added shared.free_speed_factor (blue's speed without the
-#     ball), for a curriculum stage where blue is always slower than red.
+#     shared.ball_damping (0.2, then 0.4: kicks max out near 5 m instead of 10
+#     m, so kicking the ball away isn't always the best move), and
+#     max_kick_speed is now used. Added shared.start.max_ball_dist (free ball
+#     spawns near a blue), which the curriculum grows, and
+#     shared.free_speed_factor (blue's speed without the ball), for a curriculum
+#     stage where blue is always slower than red. Scenarios, with their reward
+#     bases: passing_drill (frozen blues pass against a slow red; its pass
+#     shaping terms and the shared.start.drill_radius reset option),
+#     pass_practice (one kick to a frozen teammate, no red; the
+#     shared.start.pass_distance reset option), pass_practice_moving (pass
+#     practice with the blues free to move, PASS_PRACTICE_SCENARIOS; later run
+#     to the time limit with the pass_catch base, paid per catch, plus the
+#     receiver_spacing shaping term and rl.reward.spacing_distance) and
+#     claim_ball (base reward claim, and the call_yield shaping term, which
+#     needs rl.call_enabled). Also rl.reward.min_pass_distance and
+#     rl.reward.pass_length_bonus; the kicker_clearance, call_accuracy and
+#     dead_ball shaping term names; shared.start.catch_start_mix;
+#     rl.new_player_init (zero | random: how a warm start that grows a team sets
+#     the new players' input columns); rl.passer_obs and
+#     rl.reward.return_pass_factor (pass rotation); rl.call_enabled. Pylint
+#     cleanup: wrapped lines over 100 characters; no behaviour change.
 #     (Austin Beinder)
-#   - 2026-11-08: The passing_drill scenario (frozen blues pass against a
-#     slow red), its reward base and pass shaping terms, and the
-#     shared.start.drill_radius reset option. (Austin Beinder)
-#   - 2026-11-09: The pass_practice scenario (one kick to a frozen teammate,
-#     no red), its reward base and the shared.start.pass_distance reset
-#     option. (Austin Beinder)
-#   - 2026-11-09: pass_practice_moving: pass practice with the blues free to
-#     move (PASS_PRACTICE_SCENARIOS). (Austin Beinder)
-#   - 2026-11-10: rl.reward.min_pass_distance and rl.reward.pass_length_bonus.
-#     (Austin Beinder)
-#   - 2026-11-11: The kicker_clearance shaping term name. (Austin Beinder)
-#   - 2026-11-11: shared.start.catch_start_mix. (Austin Beinder)
-#   - 2026-11-11: pass_practice_moving runs to the time limit with the
-#     pass_catch base (paid per catch); the receiver_spacing shaping term and
-#     rl.reward.spacing_distance. (Austin Beinder)
-#   - 2026-11-12: rl.new_player_init (zero | random): how a warm start that
-#     grows a team sets the new players' input columns. (Austin Beinder)
-#   - 2026-11-13: rl.passer_obs and rl.reward.return_pass_factor (pass
-#     rotation). (Austin Beinder)
-#   - 2026-11-13: rl.call_enabled and the call_accuracy shaping term name.
-#   - 2026-11-14: The claim_ball scenario (base reward claim) and the
-#     call_yield shaping term, which needs rl.call_enabled. (Austin Beinder)
-#   - 2026-11-14: The dead_ball shaping term name. (Austin Beinder)
-#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters; no
-#     behaviour change. (Austin Beinder)
+#   - 2026-11-25: Citation cleanup (backlog task 9): one Usage entry per PR,
+#     oldest first; folded the function-level citations into this header; no
+#     behaviour change.
 # ==============================================================================
 """Configuration schema, TOML loading and validation.
 
@@ -303,8 +295,6 @@ def config_from_dict(data: dict[str, Any]) -> Config:
 
 
 ### AI GENERATED
-# AI CITATION: Claude Code (Claude Opus 5.5) | 2026-11-01 | JC Stinson III (LifeHackerIII)
-# Usage: Wrote this function (backlog task 3: legacy runs keep loading as mock).
 def saved_config_from_dict(data: dict[str, Any]) -> Config:
     """Like ``config_from_dict``, for a config saved with a run (a checkpoint's or a
     ``config.json``). One with no ``run.env`` predates that key (2026-10-18), when the mock

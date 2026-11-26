@@ -6,14 +6,21 @@
 # Usage:
 #   - 2026-11-01: Generated this entire file: tests for scripts/plot.py's
 #     command line (ad-hoc --arm plots, default kinds per scenario, the
-#     --overwrite guard and its record-render exemption, the eval-mismatch
-#     and unfrozen-input warnings) for backlog task 2, step 4.
-#   - 2026-11-01: Added a test for the demo-found bug: a record render must
-#     not clear ad-hoc output that shares its folder (task 2, step 7).
-# Prompt summary: Implement step 4 of the task 2 plotting-refactor plan (the
-#   plot command line), tests first.
-# Human review:   Pending review
+#     --overwrite guard and its record-render exemption, the eval-mismatch and
+#     unfrozen-input warnings) for backlog task 2, step 4, and for the
+#     demo-found bug: a record render must not clear ad-hoc output that shares
+#     its folder (step 7).
+#   - 2026-11-25: Citation cleanup (backlog task 9): dropped the Prompt summary
+#     and Human review lines; one Usage entry per PR, oldest first; added the
+#     module docstring; no behaviour change.
 # ==============================================================================
+"""Tests for the plotting command line (scripts/plot.py -> marl.plots.main).
+
+Ad-hoc --arm plots and their default kinds per scenario, the --overwrite guard and its
+record-render exemption, the eval-mismatch and unfrozen-input warnings, and that a record render
+never clears ad-hoc output sharing its folder.
+"""
+
 import json
 
 import pytest

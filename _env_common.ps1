@@ -7,9 +7,8 @@
 #   - 2026-09-26: Generated this entire file: shared PowerShell steps (find
 #     system Python, create venv, activate it in the current session, install
 #     requirements.in).
-# Prompt summary: Add PowerShell versions of the setup scripts so the venv is
-#   activated directly in VS Code's (PowerShell) terminal.
-# Human review:   Pending review
+#   - 2026-11-25: Citation cleanup (backlog task 9): dropped the Prompt summary
+#     and Human review lines; no behaviour change.
 # ==============================================================================
 # Dot-sourced by __DevEnvSetup.ps1 and _SetupAndRunDemo.ps1.
 # Works in Windows PowerShell 5.1 and PowerShell 7+.

@@ -4,14 +4,16 @@
 # Date:    2026-11-07
 # Author:  Austin Beinder
 # Usage:
-#   - 2026-11-07: Created this file: the 1v1 keep-away curriculum (possession
-#     stage, then a free-ball stage that moves the ball further away).
-#   - 2026-11-07: Kicking on for every stage (kick_enabled; PyBullet only).
-#   - 2026-11-07: Added the 2v1 stage; free_ball now ends when its gate passes.
-#   - 2026-11-07: Four stages: a goto_target warm-up first, and free_ball only
-#     goes out to 3 m (threshold 0.35); 8 m was close to unwinnable 1v1.
-#   - 2026-11-08: Added the slow_two_v_one stage (blue slower than red even
-#     without the ball); two_v_one now moves on when its gate passes.
+#   - 2026-11-07: Created this file: the 1v1 keep-away curriculum (a possession
+#     stage, then a free-ball stage that moves the ball further away), with
+#     kicking on in every stage (kick_enabled; PyBullet only). Added the 2v1
+#     stage, with free_ball ending when its gate passes. Four stages: a
+#     goto_target warm-up first, and free_ball only goes out to 3 m (threshold
+#     0.35), since 8 m was close to unwinnable 1v1. Then the slow_two_v_one
+#     stage (blue slower than red even without the ball), with two_v_one moving
+#     on when its gate passes.
+#   - 2026-11-25: Citation cleanup (backlog task 9): one Usage entry per PR,
+#     oldest first; no behaviour change. (JC Stinson III)
 # ==============================================================================
 # Keep-away in stages (see the docstring in runner.py for how stages and gates work). Stage 2
 # (possession) is commented out for now, so a run goes go_to_target -> free_ball -> two_v_one ->

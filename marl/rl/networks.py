@@ -4,26 +4,23 @@
 # Date:    2026-10-11
 # Author:  JC Stinson III (LifeHackerIII)
 # Usage:
-#   - 2026-10-11: Generated this entire file: the shared actor (tanh MLP trunk
-#     + dict of heads; Beta movement head with clamped samples, log-probs from
-#     the stored sample, analytic entropy) and the critic with global/local
-#     inputs (design #1, #4, #5, #9, #10, #18, #21; PPO defaults D).
-#   - 2026-10-11: Added seeded_networks, the one seeded init shared by training
-#     and by the evaluation script's "untrained policy" baseline.
+#   - 2026-10-11: Generated this entire file: the shared actor (tanh MLP trunk +
+#     dict of heads; Beta movement head with clamped samples, log-probs from the
+#     stored sample, analytic entropy) and the critic with global/local inputs
+#     (design #1, #4, #5, #9, #10, #18, #21; PPO defaults D). Added
+#     seeded_networks, the one seeded init shared by training and by the
+#     evaluation script's "untrained policy" baseline.
 #   - 2026-11-07: The kick heads behind kick_enabled: a Bernoulli kick_trigger
 #     and a Beta kick_vec, masked by possession (read from o_i) and by the
-#     trigger. (Austin Beinder)
-#   - 2026-11-08: move_enabled=False (the passing drill, where the blues
-#     can't move) masks the movement head out of the log-prob and entropy.
-#     (Austin Beinder)
-#   - 2026-11-09: The same for pass_practice (config.FROZEN_SCENARIOS).
-#     (Austin Beinder)
-#   - 2026-11-13: The call head behind rl.call_enabled: a Bernoulli, never
-#     masked (teammates always see the call). (Austin Beinder)
-#   - 2026-11-14: Actor.evaluate_split and Actor.head_log_prob, so PPO can
-#     give the call head its own per-blue advantage. (Austin Beinder)
-#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters; no
-#     behaviour change. (Austin Beinder)
+#     trigger. move_enabled=False (the passing drill and pass_practice,
+#     config.FROZEN_SCENARIOS, where the blues can't move) masks the movement
+#     head out of the log-prob and entropy. The call head behind
+#     rl.call_enabled: a Bernoulli, never masked (teammates always see the
+#     call). Actor.evaluate_split and Actor.head_log_prob, so PPO can give the
+#     call head its own per-blue advantage. Pylint cleanup: wrapped lines over
+#     100 characters; no behaviour change. (Austin Beinder)
+#   - 2026-11-25: Citation cleanup (backlog task 9): one Usage entry per PR,
+#     oldest first; no behaviour change.
 # ==============================================================================
 """Actor and critic networks.
 

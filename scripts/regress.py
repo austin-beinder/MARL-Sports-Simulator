@@ -6,9 +6,8 @@
 # Usage:
 #   - 2026-11-01: Created this file: a thin command-line wrapper around
 #     marl.regression.main (backlog task 4, step 4).
-# Prompt summary: Implement step 4 of the task 4 regression-harness plan
-#   (the one-command regression runner).
-# Human review:   Pending review
+#   - 2026-11-25: Citation cleanup (backlog task 9): dropped the Prompt summary
+#     and Human review lines; no behaviour change.
 # ==============================================================================
 """Regression check against the silver record. Run from the repo root with the venv active:
 

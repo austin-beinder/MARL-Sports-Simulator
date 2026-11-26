@@ -7,9 +7,8 @@
 #   - 2026-11-01: Generated this entire file: guards for the tracked golden
 #     record (fully frozen; its table view re-renders exactly from its own
 #     data) for backlog task 2, step 8.
-# Prompt summary: Freeze the midterm mock-env results as golden record v1 and
-#   add a permanent test that it still reproduces.
-# Human review:   Pending review
+#   - 2026-11-25: Citation cleanup (backlog task 9): dropped the Prompt summary
+#     and Human review lines; no behaviour change.
 # ==============================================================================
 """The golden record (results/golden/) is git-tracked, so every checkout can check it.
 

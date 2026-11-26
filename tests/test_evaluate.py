@@ -9,10 +9,18 @@
 #     an exactly known result, fixed summary columns).
 #   - 2026-10-14: Added the race-metric tests (hand-built races with exact
 #     answers, the observer never changes the episodes, scripted flee wins).
-# Prompt summary: Implement Phase 3 step 8 of the issue #7 plan (PPO update +
-#   training loop).
-# Human review:   Pending review
+#   - 2026-11-25: Unused unpacked values replaced with _ (pylint cleanup,
+#     backlog task 13). Citation cleanup (backlog task 9): dropped the Prompt
+#     summary and Human review lines; added the module docstring; no behaviour
+#     change.
 # ==============================================================================
+"""Tests for policy evaluation (marl/rl/evaluate.py).
+
+Fixed evaluation seeds, torch RNG isolation (fork_rng), reproducibility, a scripted policy with an
+exactly known result, the fixed summary columns, and the race metrics on hand-built races with
+exact answers. Runs on the mock env.
+"""
+
 import math
 
 import numpy as np
@@ -73,7 +81,7 @@ def test_evaluation_is_reproducible_and_modes_differ():
 
 
 def test_scripted_stand_still_in_goto_target_has_an_exact_result():
-    cfg, f, actor, rf = make(GOTO)
+    cfg, _, _, rf = make(GOTO)
     env = MockEnv(cfg.shared)
     still = lambda s: {"blue": [{"move": [0.0, 0.0], "kick_trigger": 0, "kick_vec": [0.0, 0.0]}]}
     seeds = eval_env_seeds(cfg.run.eval_seed, 3)

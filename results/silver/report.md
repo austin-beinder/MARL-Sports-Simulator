@@ -1,6 +1,6 @@
 ```
-Regression check: 6 cases x seeds [90, 91] vs results/silver
-Run: 2026-11-03 at commit b8d68a8
+Regression check: 9 cases x seeds [90, 91] vs results/silver
+Run: 2026-11-25 at commit 0989104 + uncommitted changes
 Comparison: exact
 
 IDENTICAL  keepaway_1v1_mock
@@ -9,6 +9,9 @@ IDENTICAL  keepaway_1v1_pbrs_mock
 IDENTICAL  keepaway_1v1_pbrs_pybullet
 IDENTICAL  goto_target_mock
 IDENTICAL  goto_target_pybullet
+IDENTICAL  claim_ball_mock
+IDENTICAL  claim_ball_pybullet
+IDENTICAL  pass_practice_moving_pybullet
 
-Summary: 6 identical
+Summary: 9 identical
 ```

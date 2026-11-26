@@ -5,11 +5,11 @@
 # Author:  Austin Beinder
 # Usage:
 #   - 2026-10-18: Generated this entire file: watch a trained policy (or a
-#     scripted baseline) play keep-away in the PyBullet GUI in real time.
-#   - 2026-10-18: Added --start free|possession to force the start type.
-# Prompt summary: Make a watch script that plays games with the latest trained
-#   model in the PyBullet GUI.
-# Human review:   Pending review
+#     scripted baseline) play keep-away in the PyBullet GUI in real time, with
+#     --start free|possession to force the start type.
+#   - 2026-11-25: Citation cleanup (backlog task 9): dropped the Prompt summary
+#     and Human review lines; one Usage entry per PR, oldest first; no behaviour
+#     change. (JC Stinson III)
 # ==============================================================================
 ### AI GENERATED
 """Watch a policy play keep-away in the PyBullet GUI, in real time.

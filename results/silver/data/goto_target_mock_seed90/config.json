@@ -13,14 +13,20 @@
     "max_speed": 2.0,
     "red_max_speed": 1.8,
     "carry_speed_factor": 0.75,
+    "free_speed_factor": 1.0,
     "max_kick_speed": 6.0,
+    "ball_damping": 0.4,
     "possession_radius": 0.5,
     "player_radius": 0.25,
     "start": {
       "start_mix": 0.5,
       "require_blue_closer": true,
       "min_clearance": 1.0,
-      "min_red_ball_dist": 3.0
+      "min_red_ball_dist": 3.0,
+      "max_ball_dist": 0.0,
+      "drill_radius": 2.0,
+      "pass_distance": 2.0,
+      "catch_start_mix": 0.0
     }
   },
   "rl": {
@@ -31,9 +37,16 @@
     "obs_mode": "full",
     "kick_enabled": false,
     "beta_eps": 1e-06,
+    "new_player_init": "zero",
+    "passer_obs": false,
+    "call_enabled": false,
     "reward": {
       "base": "goto_target",
-      "shaping": []
+      "shaping": [],
+      "min_pass_distance": 0.0,
+      "pass_length_bonus": false,
+      "spacing_distance": 3.0,
+      "return_pass_factor": 1.0
     },
     "ppo": {
       "rollout_steps": 2048,

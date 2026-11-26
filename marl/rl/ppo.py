@@ -11,9 +11,10 @@
 #     following design #10, #20, #23 and PPO defaults D.
 #   - 2026-11-14: call_coef > 0 gives the call head its own clipped surrogate
 #     with its own per-blue advantage (RolloutBuffer.compute_call_advantages);
-#     the team advantage then scores every other head. (Austin Beinder)
-#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters; no
-#     behaviour change. (Austin Beinder)
+#     the team advantage then scores every other head. Pylint cleanup: wrapped
+#     lines over 100 characters; no behaviour change. (Austin Beinder)
+#   - 2026-11-25: Citation cleanup (backlog task 9): one Usage entry per PR,
+#     oldest first; no behaviour change.
 # ==============================================================================
 """The PPO update (walk-through step 4).
 

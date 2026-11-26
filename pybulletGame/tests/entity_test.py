@@ -1,3 +1,5 @@
+"""Entity tests: construction, sync, collisions, applied motion, observables."""  # AI GENERATED
+
 import os ### AI GENERATED
 import sys ### AI GENERATED
 import unittest ### AI GENERATED
@@ -142,7 +144,7 @@ class TestAdd(unittest.TestCase):
     # Test the max velocity stuff
     def test_get_observables(self):
         entity = Entity()
-        entity2 = Entity()
+        _entity2 = Entity()  # AI GENERATED (2026-11-25: _ = unused, pylint cleanup)
 
         # Intentionally larger than max velocity of 3
         entity.apply_velocity(x=10.0, y=10.0)

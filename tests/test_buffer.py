@@ -7,10 +7,15 @@
 #   - 2026-10-11: Generated this entire file: rollout buffer tests (shapes at
 #     N=1 and N=2, input validation, GAE wiring, minibatch coverage and
 #     field alignment via id-coded rows, deterministic shuffles).
-# Prompt summary: Implement Phase 3 step 7 of the issue #7 plan (buffer +
-#   GAE) with hand-built boundary tests.
-# Human review:   Pending review
+#   - 2026-11-25: Citation cleanup (backlog task 9): dropped the Prompt summary
+#     and Human review lines; added the module docstring; no behaviour change.
 # ==============================================================================
+"""Tests for the rollout buffer (marl/rl/buffer.py).
+
+Shapes at N=1 and N=2, input validation, the GAE wiring, and minibatches: every row is covered,
+fields stay aligned (checked with id-coded rows), and shuffles are deterministic.
+"""
+
 import numpy as np
 import pytest
 import torch

@@ -7,9 +7,8 @@
 #   - 2026-10-14: Created this file: the PBRS acquisition-ablation config
 #     (keep-away 1v1 + pbrs_ball_acquisition at coef 4, which the student chose
 #     from the coefficient pilot).
-# Prompt summary: Run the for-score PBRS ablation (issue #7 plan, follow-on
-#   TODO (c)).
-# Human review:   Pending review
+#   - 2026-11-25: Citation cleanup (backlog task 9): dropped the Prompt summary
+#     and Human review lines; no behaviour change.
 # ==============================================================================
 # PBRS acquisition ablation: keepaway_1v1.toml plus one potential-based shaping
 # term. Every other key takes its default in marl/common/config.py, and those

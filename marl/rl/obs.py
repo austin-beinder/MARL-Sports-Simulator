@@ -8,14 +8,14 @@
 #     builder o_i = f(s, i) (self-first, mixed frame, per-type blocks with
 #     possession + visible flags, distance ordering), design #13.
 #   - 2026-11-07: Named the own-possession index (OWN_POSSESSION), which the
-#     actor's kick masks read. (Austin Beinder)
-#   - 2026-11-07: obs_blocks, the layout as blocks, so a warm start can grow
-#     the actor's first layer when the team sizes change. (Austin Beinder)
-#   - 2026-11-13: rl.passer_obs: a "passed the ball to its holder" flag at the
-#     end of the self block and of each teammate slot. (Austin Beinder)
-#   - 2026-11-13: rl.call_enabled: a "calling" flag after it. (Austin Beinder)
-#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters; no
+#     actor's kick masks read. obs_blocks, the layout as blocks, so a warm start
+#     can grow the actor's first layer when the team sizes change.
+#     rl.passer_obs: a "passed the ball to its holder" flag at the end of the
+#     self block and of each teammate slot, and rl.call_enabled: a "calling"
+#     flag after it. Pylint cleanup: wrapped lines over 100 characters; no
 #     behaviour change. (Austin Beinder)
+#   - 2026-11-25: Citation cleanup (backlog task 9): one Usage entry per PR,
+#     oldest first; no behaviour change.
 # ==============================================================================
 """Actor observations o_i = f(s, i), built RL-side (design #13).
 

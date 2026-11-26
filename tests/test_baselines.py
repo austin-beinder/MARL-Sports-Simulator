@@ -8,15 +8,25 @@
 #     actions over whole episodes, flee behavior in hand-built states, flee
 #     outlasting still/random, the oracle landing on the target, seeding,
 #     errors).
-# Prompt summary: Implement Phase 3 step 10 of the issue #7 plan (baselines,
-#   evaluation, calibration).
-# Human review:   Pending review
+#   - 2026-11-24: Added a check that every scenario can build the baselines
+#     baselines_for() lists (claim_ball used to get the goto_target oracle).
+#     Citation cleanup (backlog task 9): dropped the Prompt summary and Human
+#     review lines; added the module docstring; no behaviour change.
 # ==============================================================================
+"""Tests for the scripted baseline policies (marl/baselines.py).
+
+Random, still, flee and oracle must give valid ICD actions over whole episodes; flee is checked
+in hand-built states and must outlast still and random; the oracle must reach the target. Also
+seeding, errors, and that every scenario can build its baselines. Runs on the mock env.
+"""
+
+import dataclasses
+
 import numpy as np
 import pytest
 
 from marl.baselines import FleePolicy, baselines_for, make_baseline
-from marl.common.config import config_from_dict
+from marl.common.config import OPTIONS, config_from_dict
 from marl.envs.mock_env import MockEnv
 from marl.rl.evaluate import eval_env_seeds, run_episodes, summarize
 from marl.rl.reward import RewardModule
@@ -126,3 +136,12 @@ def test_make_baseline_errors_and_scenario_lists():
         make_baseline("oracle", keep)
     assert baselines_for("keepaway") == ("random", "still", "flee")
     assert baselines_for("goto_target") == ("random", "still", "oracle")
+
+
+@pytest.mark.parametrize("scenario", sorted(OPTIONS["scenario"][0]))
+def test_every_scenario_can_build_its_baselines(scenario):
+    # evaluate.py and watch.py build every baseline baselines_for() lists, so a scenario
+    # that falls through to another scenario's baseline (claim_ball got the oracle) crashes them.
+    cfg = dataclasses.replace(config_from_dict({}).shared, scenario=scenario)
+    for name in baselines_for(scenario):
+        assert callable(make_baseline(name, cfg))

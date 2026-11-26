@@ -5,22 +5,21 @@
 # Author:  Austin Beinder
 # Usage:
 #   - 2026-11-07: Generated this entire file: the curriculum runner (TOML
-#     loading, the confidence gate, the per-stage difficulty levels, running
-#     the stages in order with warm starts, the summary CSV and the CLI).
-#   - 2026-11-07: Added --render and --debug (passed to every stage's train()).
-#   - 2026-11-07: Config errors (e.g. kicking on the mock) print as CLI errors.
-#   - 2026-11-07: threshold is optional (no gate: the stage runs to its cap,
-#     e.g. a goto_target warm-up); the stage header names scenario and teams.
-#   - 2026-11-09: pass_practice stages gate on the catch rate instead of
-#     survival; curriculum.csv adds eval_frac_passed. (Austin Beinder)
-#   - 2026-11-09: So do pass_practice_moving stages. (Austin Beinder)
-#   - 2026-11-11: --start-at / --init-from: restart a curriculum from a later
-#     stage, keeping the earlier stages' output and curriculum.csv rows.
-#   - 2026-11-11: Pass practice stages gate on the pass completion rate
-#     (passes / kicks per episode): pass_practice_moving episodes now have
-#     many kicks.
-#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters and fixed
-#     the new warnings; no behaviour change. (Austin Beinder)
+#     loading, the confidence gate, the per-stage difficulty levels, running the
+#     stages in order with warm starts, the summary CSV and the CLI). Added
+#     --render and --debug (passed to every stage's train()); config errors
+#     (e.g. kicking on the mock) print as CLI errors; threshold is optional (no
+#     gate: the stage runs to its cap, e.g. a goto_target warm-up), and the
+#     stage header names scenario and teams. pass_practice and
+#     pass_practice_moving stages gate on the catch rate instead of survival
+#     (curriculum.csv adds eval_frac_passed), later on the pass completion rate
+#     (passes / kicks per episode), since pass_practice_moving episodes now have
+#     many kicks. --start-at / --init-from restart a curriculum from a later
+#     stage, keeping the earlier stages' output and curriculum.csv rows. Pylint
+#     cleanup: wrapped lines over 100 characters and fixed the new warnings; no
+#     behaviour change.
+#   - 2026-11-25: Citation cleanup (backlog task 9): one Usage entry per PR,
+#     oldest first; no behaviour change. (JC Stinson III)
 # ==============================================================================
 """
 Curriculum training: run a list of training stages in order, each one starting from the

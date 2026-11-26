@@ -4,12 +4,14 @@
 # Date:    2026-11-02
 # Author:  JC Stinson III (LifeHackerIII)
 # Usage:
-#   - 2026-11-02: Wrote this suite: the silver record's regression cases
-#     (every config x env that runs today), reserved seeds and budget, from
-#     the student's design decisions (backlog task 4, step 6).
-#   - 2026-11-03: Added goto_target on PyBullet (supported since #26).
-# Prompt summary: Freeze silver v1, the first regression baseline.
-# Human review:   Pending review
+#   - 2026-11-02: Wrote this suite: the silver record's regression cases (every
+#     config x env that runs today), reserved seeds and budget, from the
+#     student's design decisions (backlog task 4, step 6); then goto_target on
+#     PyBullet (supported since #26).
+#   - 2026-11-24: Added claim_ball (both envs) and pass_practice_moving
+#     (PyBullet), from #41's passing curriculum. Citation cleanup (backlog task
+#     9): dropped the Prompt summary and Human review lines; one Usage entry per
+#     PR, oldest first; no behaviour change.
 # ==============================================================================
 # The regression suite (the silver record). Run:   python scripts/regress.py
 # Unchanged code must reproduce results/silver/data/ exactly. After an intended
@@ -39,3 +41,11 @@ envs   = ["mock", "pybullet"]
 [[case]]                      # the RL sanity check
 config = "configs/goto_target.toml"
 envs   = ["mock", "pybullet"] # PyBullet runs goto_target since Austin's #26
+
+[[case]]                      # 3v0 "got it" call practice (#41): call head, call_accuracy, call_yield
+config = "configs/claim_ball.toml"
+envs   = ["mock", "pybullet"]
+
+[[case]]                      # 3v0 moving pass practice (#41): kick + call heads, every passing reward option
+config = "configs/pass_practice_moving.toml"
+envs   = ["pybullet"]         # it kicks: PyBullet only

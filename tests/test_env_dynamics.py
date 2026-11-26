@@ -8,12 +8,14 @@
 #     must share (speed cap, carry slowdown, walls, possession, termination,
 #     teammates, goto_target), run on the mock and on PyBullet through their
 #     set_state_for_testing hooks.
-#   - 2026-11-07: The PyBullet env kicks now, so the kick test accepts a
-#     real kick there and still checks the mock's clean refusal. (Austin Beinder)
-#   - 2026-11-08: free_speed_factor (blue's speed without the ball). (Austin Beinder)
-#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters, an unused
-#     unpacked term/trunc replaced with _, and redefined-outer-name disabled
-#     for the pytest fixture; no behaviour change. (Austin Beinder)
+#   - 2026-11-07: The PyBullet env kicks now, so the kick test accepts a real
+#     kick there and still checks the mock's clean refusal; free_speed_factor
+#     (blue's speed without the ball). Pylint cleanup: wrapped lines over 100
+#     characters, an unused unpacked term/trunc replaced with _, and
+#     redefined-outer-name disabled for the pytest fixture; no behaviour change.
+#   - 2026-11-25: Unused unpacked values replaced with _ (pylint cleanup,
+#     backlog task 13). Citation cleanup (backlog task 9): one Usage entry per
+#     PR, oldest first; no behaviour change. (JC Stinson III)
 # ==============================================================================
 """Game behaviour both envs must share, run on the mock and on PyBullet.
 
@@ -131,15 +133,15 @@ def test_walls_stop_players(make):
 
 # --- Possession and termination (ICD §3, §7, §8) -----------------------------------------
 def test_loose_ball_pickup_event(make):
-    env, cfg = make()
+    env, _ = make()
     env.set_state_for_testing(blue_pos=[[0, 0]], red_pos=[[7, 4]], ball_pos=[0.6, 0], holder=None)
-    s, term, trunc, events = steps(env, act((1.0, 0.0)), 5)
+    s, term, _, events = steps(env, act((1.0, 0.0)), 5)
     assert s["blue"][0]["has_possession"] and not term
     assert events == [{"type": "possession_change", "from": None, "to": ("blue", 0)}]
 
 
 def test_red_reaching_a_loose_ball_terminates(make):
-    env, cfg = make()
+    env, _ = make()
     env.set_state_for_testing(blue_pos=[[-6, 0]], red_pos=[[0.6, 0]], ball_pos=[0, 0], holder=None)
     s, term, trunc, events = steps(env, act((0.0, 0.0)), 20)
     assert term and not trunc and s["red"][0]["has_possession"]
@@ -151,7 +153,7 @@ def test_red_reaching_the_carrier_terminates_mid_block(make):
     env, cfg = make()
     r = cfg.possession_radius
     env.set_state_for_testing(blue_pos=[[0, 0]], red_pos=[[r + 0.02, 0]], holder=("blue", 0))
-    s, term, trunc, info = env.step(act((0.0, 0.0)))
+    s, term, _, info = env.step(act((0.0, 0.0)))
     assert term and s["step"] == 1 and s["red"][0]["has_possession"]
     assert info["events"] == [{"type": "possession_change", "from": ("blue", 0), "to": ("red", 0)}]
     # Stopped on the tick red got the ball, not at the end of the block (red would have pushed on).
@@ -160,9 +162,9 @@ def test_red_reaching_the_carrier_terminates_mid_block(make):
 
 def test_teammate_cannot_take_the_ball_from_the_carrier(make):
     # Only a kick releases the ball (ICD §8): a teammate running into the carrier changes nothing.
-    env, cfg = make({"n_blue": 2, "n_red": 1})
+    env, _ = make({"n_blue": 2, "n_red": 1})
     env.set_state_for_testing(blue_pos=[[0, 0], [0.8, 0]], red_pos=[[7, 4]], holder=("blue", 0))
-    s, term, trunc, events = steps(env, act((0.0, 0.0), (-1.0, 0.0)), 5)
+    s, term, _, events = steps(env, act((0.0, 0.0), (-1.0, 0.0)), 5)
     assert s["blue"][0]["has_possession"] and not s["blue"][1]["has_possession"]
     assert events == [] and not term
 
@@ -174,16 +176,16 @@ def test_red_steals_from_the_second_blue(make):
     env.set_state_for_testing(
         blue_pos=[[-6, -3], [0, 0]], red_pos=[[6, 3], [r + 0.02, 0]], ball_pos=[0, 0], holder=("blue", 1)
     )
-    s, term, trunc, info = env.step(act((0.0, 0.0), (0.0, 0.0)))
+    s, term, _, info = env.step(act((0.0, 0.0), (0.0, 0.0)))
     assert term and s["red"][1]["has_possession"]
     assert info["events"] == [{"type": "possession_change", "from": ("blue", 1), "to": ("red", 1)}]
 
 
 # --- goto_target (ICD §9) ------------------------------------------------------------------
 def test_target_is_immobile_and_untouchable(make):
-    env, cfg = make(GOTO, {"reward": {"base": "goto_target"}})
+    env, _ = make(GOTO, {"reward": {"base": "goto_target"}})
     env.set_state_for_testing(blue_pos=[[0, 0]], red_pos=[], ball_pos=[1.0, 0], holder=None)
-    s, term, trunc, events = steps(env, act((1.0, 0.0)), 15)  # 1.5 m: straight through the target
+    s, term, _, events = steps(env, act((1.0, 0.0)), 15)  # 1.5 m: straight through the target
     assert s["ball"]["pos"] == [1.0, 0.0] and s["ball"]["vel"] == [0.0, 0.0]
     assert s["blue"][0]["pos"][0] > 1.2  # passed through it
     assert not s["blue"][0]["has_possession"] and events == [] and not term
@@ -222,7 +224,7 @@ def test_kick_with_possession_is_applied_or_refused_cleanly(make):
 
 
 def test_unknown_reset_option_and_bad_seed(make):
-    env, cfg = make()
+    env, _ = make()
     with pytest.raises(ValueError):
         env.reset(seed=0, options={"start_mixx": 0.5})
     with pytest.raises(ValueError):

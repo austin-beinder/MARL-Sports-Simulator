@@ -2,6 +2,8 @@
 This test file was AI generated, see the ### AI GENERATED markers.
 AI edit 2026-11-15 (Claude Code, Austin Beinder): pylint cleanup (wrapped lines over 100
 characters, unused unpacked values on the kick tests' lines replaced with _); no behaviour change.
+AI edit 2026-11-25 (Claude Code (Claude Opus 5.5), JC Stinson III): pylint cleanup (unused
+values replaced with _ or a _ prefix, final newline); no behaviour change.
 """
 
 ### AI GENERATED
@@ -331,7 +333,7 @@ class TestRules(KeepAwayEnvTestCase):
 
     def test_red_wins_after_holding_the_ball_for_0_3_seconds(self):
         self.give_ball_to(self.env.red)
-        observation, reward, terminated, truncated, info = self.step_until_done()
+        _, reward, terminated, truncated, info = self.step_until_done()
 
         self.assertTrue(terminated)
         self.assertFalse(truncated)
@@ -340,7 +342,7 @@ class TestRules(KeepAwayEnvTestCase):
         self.assertAlmostEqual(info["game_time"], 0.3)  # the game stops on the exact physics step
 
     def test_red_wins_if_blue_does_nothing(self):
-        observation, reward, terminated, truncated, info = self.step_until_done()
+        _, _, _, _, info = self.step_until_done()
 
         self.assertEqual(info["winner"], Team.RED)
 
@@ -426,7 +428,7 @@ class TestRulesWithShortGames(KeepAwayEnvTestCase):
 
     def test_blue_wins_after_holding_the_ball(self):
         self.give_ball_to(self.env.blue)
-        observation, reward, terminated, truncated, info = self.step_until_done()
+        _, reward, terminated, _, info = self.step_until_done()
 
         self.assertTrue(terminated)
         self.assertEqual(info["winner"], Team.BLUE)
@@ -435,7 +437,7 @@ class TestRulesWithShortGames(KeepAwayEnvTestCase):
         self.assertAlmostEqual(info["blue_total_possession_time"], 0.5)
 
     def test_game_is_truncated_when_time_runs_out(self):
-        observation, reward, terminated, truncated, info = self.step_until_done(action=(-3.0, 0.0))  # avoid the ball
+        _, reward, terminated, truncated, info = self.step_until_done(action=(-3.0, 0.0))  # avoid the ball
 
         self.assertFalse(terminated)
         self.assertTrue(truncated)
@@ -499,7 +501,7 @@ class TestTargetGame(KeepAwayEnvTestCase):
         self.assertIsNone(observation["red"])
 
     def test_only_time_ends_the_game(self):
-        observation, reward, terminated, truncated, info = self.step_until_done()
+        _, _, terminated, truncated, _ = self.step_until_done()
 
         self.assertFalse(terminated)
         self.assertTrue(truncated)

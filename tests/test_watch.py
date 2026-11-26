@@ -7,10 +7,16 @@
 #   - 2026-10-18: Generated this entire file: tests of the watch script
 #     (newest-checkpoint selection, episode playback and pacing, argument
 #     checks, --start). The GUI itself isn't opened here.
-# Prompt summary: Make a watch script that plays games with the latest trained
-#   model in the PyBullet GUI.
-# Human review:   Pending review
+#   - 2026-11-25: Citation cleanup (backlog task 9): dropped the Prompt summary
+#     and Human review lines; added the module docstring; no behaviour change.
+#     (JC Stinson III)
 # ==============================================================================
+"""Tests for the watch script (marl/watch.py, scripts/watch.py).
+
+Picking the newest checkpoint, episode playback and pacing, argument checks, and --start. The
+GUI itself is never opened.
+"""
+
 ### AI GENERATED
 from types import SimpleNamespace
 

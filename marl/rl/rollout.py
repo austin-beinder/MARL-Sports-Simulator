@@ -5,34 +5,28 @@
 # Author:  JC Stinson III (LifeHackerIII)
 # Usage:
 #   - 2026-10-11: Generated this entire file: the featurizer (s -> actor obs +
-#     critic inputs), start-type inference, and the rollout collector that
-#     fills the buffer, including next_value = V(true s_{t+1}) computed before
-#     any reset and episode records (walk-through step 2; design #12, #17,
-#     #20, #23).
-#   - 2026-10-11: Added mean_reward (unscaled reward per step) to episode
-#     records, needed for goto_target, where every episode has the same length.
+#     critic inputs), start-type inference, and the rollout collector that fills
+#     the buffer, including next_value = V(true s_{t+1}) computed before any
+#     reset and episode records (walk-through step 2; design #12, #17, #20,
+#     #23). Added mean_reward (unscaled reward per step) to episode records,
+#     needed for goto_target, where every episode has the same length.
 #   - 2026-10-14: The rollout now reports the mean shaping reward per step
 #     (RolloutStats.mean_shaping), and an episode's mean_reward counts the base
 #     (task) reward only, so shaping never leaks into it (PBRS ablation).
 #   - 2026-11-07: Actions come from all of the actor's heads (kick heads too),
-#     and the rollout counts kicks per step. (Austin Beinder)
-#   - 2026-11-07: set_reset_options, so a curriculum can change the start
-#     distribution between rollouts. (Austin Beinder)
-#   - 2026-11-08: Each episode gets its own reward memory (the passing
-#     drill's pass bookkeeping). (Austin Beinder)
-#   - 2026-11-09: EpisodeRecord.passes, the passes completed in the episode.
-#     (Austin Beinder)
-#   - 2026-11-11: EpisodeRecord.kicks, the blue kicks in the episode.
-#     (Austin Beinder)
-#   - 2026-11-13: The featurizer's rl.passer_obs flags; EpisodeRecord.returns,
-#     the passes straight back to the blue who passed to the kicker. (Austin Beinder)
-#   - 2026-11-13: The call flags (rl.call_enabled); EpisodeRecord.pickups and
-#     called / miscalled, for the call accuracy. (Austin Beinder)
-#   - 2026-11-14: Each buffer row also gets the step's blue pickup and the call
-#     head's log-prob, for the call head's own advantage. (Austin Beinder)
-#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters and set
-#     _reward_memory in __init__ (attribute-defined-outside-init); no
-#     behaviour change. (Austin Beinder)
+#     and the rollout counts kicks per step. set_reset_options, so a curriculum
+#     can change the start distribution between rollouts. Each episode gets its
+#     own reward memory (the passing drill's pass bookkeeping).
+#     EpisodeRecord.passes (the passes completed in the episode), .kicks (the
+#     blue kicks), .returns (the passes straight back to the blue who passed to
+#     the kicker), .pickups and called / miscalled (for the call accuracy). The
+#     featurizer's rl.passer_obs and call (rl.call_enabled) flags. Each buffer
+#     row also gets the step's blue pickup and the call head's log-prob, for the
+#     call head's own advantage. Pylint cleanup: wrapped lines over 100
+#     characters and set _reward_memory in __init__
+#     (attribute-defined-outside-init); no behaviour change. (Austin Beinder)
+#   - 2026-11-25: Citation cleanup (backlog task 9): one Usage entry per PR,
+#     oldest first; no behaviour change.
 # ==============================================================================
 """Rollout collection: step the env with the current policy and fill the buffer.
 

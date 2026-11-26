@@ -5,17 +5,26 @@
 # Author:  JC Stinson III (LifeHackerIII)
 # Usage:
 #   - 2026-10-11: Generated this entire file: rollout collector tests that
-#     replay a recorded env log and check every stored row (values,
-#     next_value = V(true s_{t+1}) at episode ends, rewards, flags, episode
-#     records), episodes spanning rollouts, value-cache refresh after an
-#     update, determinism, goto_target and N=2/M=2.
-#   - 2026-10-11: Added a check of the episode mean_reward against the replay.
+#     replay a recorded env log and check every stored row (values, next_value =
+#     V(true s_{t+1}) at episode ends, rewards, flags, episode records),
+#     episodes spanning rollouts, value-cache refresh after an update,
+#     determinism, goto_target and N=2/M=2; plus a check of the episode
+#     mean_reward against the replay.
 #   - 2026-10-14: Added a test that the shaping reward is reported separately
 #     and never enters an episode's mean_reward (PBRS ablation).
-# Prompt summary: Implement Phase 3 step 7 of the issue #7 plan (buffer +
-#   GAE, plus the rollout collector that owns the next_value contract).
-# Human review:   Pending review
+#   - 2026-11-25: Unused unpacked values replaced with _ (pylint cleanup,
+#     backlog task 13). Citation cleanup (backlog task 9): dropped the Prompt
+#     summary and Human review lines; one Usage entry per PR, oldest first;
+#     added the module docstring; no behaviour change.
 # ==============================================================================
+"""Tests for the rollout collector (marl/rl/rollout.py).
+
+Replays a recorded env log and checks every stored row (values, next_value = V(true s_{t+1}) at
+episode ends, rewards, flags, episode records); also episodes spanning rollouts, the value-cache
+refresh after an update, determinism, goto_target, 2v2, and the shaping reward kept out of an
+episode's mean_reward.
+"""
+
 import numpy as np
 import pytest
 import torch
@@ -110,7 +119,7 @@ def test_every_stored_row_matches_a_replay_of_the_env_log():
 
 
 def test_episode_spans_rollouts_and_a_rollout_cut_is_not_a_truncation():
-    cfg, env, col, buf, critic = setup(T=10)
+    _, env, col, buf, _ = setup(T=10)
     stats = col.collect(buf)
     # Precondition: the first rollout ended mid-episode (red needs > 10 steps here).
     assert not (buf.terminated[-1] or buf.truncated[-1])
@@ -123,7 +132,7 @@ def test_episode_spans_rollouts_and_a_rollout_cut_is_not_a_truncation():
 
 
 def test_value_cache_is_refreshed_after_the_critic_changes():
-    cfg, env, col, buf, critic = setup(T=10)
+    _, _, col, buf, critic = setup(T=10)
     col.collect(buf)
     assert not (buf.terminated[-1] or buf.truncated[-1])  # the next rollout reuses this state
     with torch.no_grad():
@@ -138,7 +147,7 @@ def test_same_seeds_same_rollout():
     # Sampling uses torch's GLOBAL RNG, so each run must seed and finish before the next
     # starts (interleaving two collectors would share one random stream).
     def run(seed):
-        cfg, env, col, buf, critic = setup(T=120, seed=seed)
+        _, _, col, buf, _ = setup(T=120, seed=seed)
         col.collect(buf)
         return buf
 
@@ -150,7 +159,7 @@ def test_same_seeds_same_rollout():
 
 
 def test_goto_target_rollout():
-    cfg, env, col, buf, critic = setup({**GOTO, "shared": {**GOTO["shared"], "max_episode_steps": 20}}, T=64)
+    _, env, col, buf, _ = setup({**GOTO, "shared": {**GOTO["shared"], "max_episode_steps": 20}}, T=64)
     stats = col.collect(buf)
     assert not buf.terminated.any() and not buf.effective_terminal.any()
     assert [e.truncated for e in stats.episodes] == [True, True, True]
@@ -164,7 +173,7 @@ def test_goto_target_rollout():
 
 
 def test_n2_m2_rollout_shapes_and_shared_critic_input():
-    cfg, env, col, buf, critic = setup({"shared": {"n_blue": 2, "n_red": 2}}, T=40)
+    cfg, _, col, buf, _ = setup({"shared": {"n_blue": 2, "n_red": 2}}, T=40)
     col.collect(buf)
     assert buf.obs.shape == (40, 2, 29) and buf.critic_in.shape == (40, 2, 24)
     assert np.array_equal(buf.critic_in[:, 0], buf.critic_in[:, 1])  # global: same s for both agents
@@ -177,19 +186,19 @@ def test_n2_m2_rollout_shapes_and_shared_critic_input():
 def test_shaping_is_reported_separately_and_kept_out_of_mean_reward():
     free_ball = {"start": {"start_mix": 0.0}, "max_episode_steps": 60}
     shaping = [{"name": "pbrs_ball_acquisition", "enabled": True, "coef": 2.0}]
-    cfg, env, col, buf, critic = setup({"shared": free_ball, "rl": {"reward": {"shaping": shaping}}}, T=300)
+    _, _, col, buf, _ = setup({"shared": free_ball, "rl": {"reward": {"shaping": shaping}}}, T=300)
     stats = col.collect(buf)
     # The survival base is 1 per step, so everything above 1 in the stored rewards is shaping.
     assert stats.mean_shaping == pytest.approx(float(buf.rewards.mean()) / col.reward_fn.scale - 1.0, abs=1e-6)
     assert stats.mean_shaping != 0.0
     assert stats.episodes and all(e.mean_reward == 1.0 for e in stats.episodes)  # the task reward only
 
-    cfg, env, col, buf, critic = setup({"shared": free_ball}, T=60)
+    _, _, col, buf, _ = setup({"shared": free_ball}, T=60)
     assert col.collect(buf).mean_shaping == 0.0  # exactly 0 without shaping terms
 
 
 def test_start_types_are_inferred_from_the_reset_state():
-    cfg, env, col, buf, critic = setup({"shared": {"max_episode_steps": 15}}, T=300)
+    _, _, col, buf, _ = setup({"shared": {"max_episode_steps": 15}}, T=300)
     stats = col.collect(buf)
     assert {e.start_type for e in stats.episodes} == {START_POSSESSION, START_FREE_BALL}
     s = {"blue": [{"has_possession": True}]}

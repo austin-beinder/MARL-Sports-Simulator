@@ -8,9 +8,8 @@
 #     plots and records (backlog task 2, step 1). The CSV/curve/table helpers
 #     were moved here unchanged from marl/plots.py (written 2026-10-11); Arm,
 #     run_dirs and eval_mismatch are new.
-# Prompt summary: Implement step 1 of the task 2 plotting-refactor plan: a
-#   loading layer where an "arm" is a label plus a glob of run directories.
-# Human review:   Pending review
+#   - 2026-11-25: Citation cleanup (backlog task 9): dropped the Prompt summary
+#     and Human review lines; no behaviour change.
 # ==============================================================================
 """Loading finished runs for figures and records. Reads only what training and
 ``scripts/evaluate.py`` wrote (``train.csv``, ``eval.csv``, ``config.json``,

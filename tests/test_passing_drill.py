@@ -6,12 +6,21 @@
 # Usage:
 #   - 2026-11-08: Generated this entire file: tests for the passing drill (the
 #     spawn, frozen blues in the PyBullet env, the masked movement head, the
-#     pass memory and reward terms, and training end to end).
-#   - 2026-11-08: Every drill episode starts with a blue holding the ball.
-#   - 2026-11-08: The hold reward grows by 1 with each catch.
-#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters and fixed
-#     the new warnings; no behaviour change. (Austin Beinder)
+#     pass memory and reward terms, and training end to end); every drill
+#     episode starts with a blue holding the ball, and the hold reward grows by
+#     1 with each catch. Pylint cleanup: wrapped lines over 100 characters and
+#     fixed the new warnings; no behaviour change.
+#   - 2026-11-25: Citation cleanup (backlog task 9): one Usage entry per PR,
+#     oldest first; added the module docstring; no behaviour change.
+#     (JC Stinson III)
 # ==============================================================================
+"""Tests for the passing drill scenario (passing_drill).
+
+The spawn (blues on a circle around red, one holding the ball), frozen blues in the PyBullet env,
+the masked movement head, the pass memory and reward terms (the hold reward grows with each
+catch), and training end to end.
+"""
+
 import math
 
 import numpy as np

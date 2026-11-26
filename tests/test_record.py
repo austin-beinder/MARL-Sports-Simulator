@@ -7,15 +7,22 @@
 #   - 2026-11-01: Generated this entire file: tests for freezing a record in
 #     place (manifest-driven copy mirrored under data/, only the unfrozen path
 #     strings rewritten, provenance, validation before any write, the
-#     --overwrite guard) for backlog task 2, step 6.
+#     --overwrite guard) for backlog task 2, step 6, and for the demo-found
+#     provenance bug (untracked files must not count as uncommitted changes)
+#     (step 7).
 #   - 2026-11-02: Added a test for git_revision's ignore/cwd options (the
 #     tracked regression report, backlog task 4).
-#   - 2026-11-01: Added a test for the demo-found provenance bug (untracked
-#     files must not count as uncommitted changes) (task 2, step 7).
-# Prompt summary: Implement step 6 of the task 2 plotting-refactor plan
-#   (marl/record.py + scripts/freeze.py), tests first.
-# Human review:   Pending review
+#   - 2026-11-25: Citation cleanup (backlog task 9): dropped the Prompt summary
+#     and Human review lines; one Usage entry per PR, oldest first; added the
+#     module docstring; no behaviour change.
 # ==============================================================================
+"""Tests for freezing a results record (marl/record.py, scripts/freeze.py).
+
+The manifest-driven copy into data/ (mirrored as under runs/), rewriting only the unfrozen path
+strings, the provenance stamp (git_revision ignores untracked files), validation before any
+write, and the --overwrite guard.
+"""
+
 import json
 import shutil
 import subprocess

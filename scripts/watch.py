@@ -6,9 +6,8 @@
 # Usage:
 #   - 2026-10-18: Created this file: a thin command-line wrapper around
 #     marl.watch.main.
-# Prompt summary: Make a watch script that plays games with the latest trained
-#   model in the PyBullet GUI.
-# Human review:   Pending review
+#   - 2026-11-25: Citation cleanup (backlog task 9): dropped the Prompt summary
+#     and Human review lines; no behaviour change. (JC Stinson III)
 # ==============================================================================
 ### AI GENERATED
 """Watch a trained policy play keep-away in the PyBullet GUI. Run from the repo root with the venv active:

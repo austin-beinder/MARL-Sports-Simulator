@@ -6,9 +6,8 @@
 # Usage:
 #   - 2026-09-26: Generated this entire file: PowerShell entry point that sets
 #     up and activates the venv, then runs the out-of-the-box demo.
-# Prompt summary: Add PowerShell versions of the setup scripts so the venv is
-#   activated directly in VS Code's (PowerShell) terminal.
-# Human review:   Pending review
+#   - 2026-11-25: Citation cleanup (backlog task 9): dropped the Prompt summary
+#     and Human review lines; no behaviour change.
 # ==============================================================================
 # Usage:  .\_SetupAndRunDemo.ps1 [extra demo args...]
 # The demo script and its default flags are set in _env_setup.py

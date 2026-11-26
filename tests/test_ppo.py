@@ -9,10 +9,16 @@
 #     ratio guard on real and corrupted rollouts, direction tests for the
 #     policy loss / entropy bonus / value loss, separate optimizers,
 #     determinism, explained variance).
-# Prompt summary: Implement Phase 3 step 8 of the issue #7 plan (PPO update +
-#   training loop).
-# Human review:   Pending review
+#   - 2026-11-25: Citation cleanup (backlog task 9): dropped the Prompt summary
+#     and Human review lines; added the module docstring; no behaviour change.
 # ==============================================================================
+"""Tests for the PPO update (marl/rl/ppo.py).
+
+The clipped objective and its gradients against hand-computed values, advantage normalization,
+the ratio guard on real and corrupted rollouts, the direction of the policy loss, entropy bonus
+and value loss, separate optimizers, determinism, and explained variance.
+"""
+
 import numpy as np
 import pytest
 import torch

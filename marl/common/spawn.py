@@ -7,19 +7,17 @@
 #   - 2026-10-10: Generated this entire file: the seeded, pure spawn sampler
 #     (start type draw + rejection sampling under the design #17 / ICD §8-§9
 #     constraints).
-#   - 2026-11-07: The max_ball_dist reset option: a free ball spawns within
-#     that distance of a blue player (0 = anywhere). The curriculum grows it.
-#     (Austin Beinder)
-#   - 2026-11-08: The passing_drill spawn: blues on a circle around red, one
-#     of them holding the ball, and the drill_radius option. (Austin Beinder)
-#   - 2026-11-09: The pass_practice spawn (teammates pass_distance from the
-#     holder, no red) and the pass_distance option. (Austin Beinder)
-#   - 2026-11-09: pass_practice_moving uses the same spawn. (Austin Beinder)
-#   - 2026-11-11: The catch_start_mix option: a share of keepaway resets use
-#     the pass practice layout, plus red. (Austin Beinder)
-#   - 2026-11-14: claim_ball: always a loose ball. (Austin Beinder)
-#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters; no
+#   - 2026-11-07: The max_ball_dist reset option: a free ball spawns within that
+#     distance of a blue player (0 = anywhere); the curriculum grows it. The
+#     passing_drill spawn (blues on a circle around red, one of them holding the
+#     ball) and the drill_radius option; the pass_practice spawn (teammates
+#     pass_distance from the holder, no red), also used by pass_practice_moving,
+#     and the pass_distance option; the catch_start_mix option (a share of
+#     keepaway resets use the pass practice layout, plus red); claim_ball always
+#     has a loose ball. Pylint cleanup: wrapped lines over 100 characters; no
 #     behaviour change. (Austin Beinder)
+#   - 2026-11-25: Citation cleanup (backlog task 9): one Usage entry per PR,
+#     oldest first; no behaviour change.
 # ==============================================================================
 """Reference spawn sampler (design #17, ICD §8-§9).
 

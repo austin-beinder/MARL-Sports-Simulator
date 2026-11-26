@@ -1,0 +1,43 @@
+# ==============================================================================
+# AI CITATION
+# Tool:    Claude Code (Claude Opus 5.5)
+# Date:    2026-11-24
+# Author:  JC Stinson III (LifeHackerIII)
+# Usage:
+#   - 2026-11-24: Created this file: the claim_ball stage of
+#     curriculum/passing_3v1.toml as a standalone config, so the regression
+#     suite (results/silver/suite.toml) covers the "got it" call.
+# ==============================================================================
+# Call practice: 3 blues, no red, a loose ball anywhere. The episode ends when a
+# blue picks it up (or after 15 s); every step before that costs 1 (base "claim").
+#   - call_accuracy: each blue's call is paid to its own call head (+1 if the next
+#     pickup within 0.5 s is its own, -0.5 if a teammate's, a small cost to call).
+#   - call_yield: a blue that isn't calling pays for crowding a ball a teammate
+#     called, and more for taking it.
+# Settings follow curriculum/passing_3v1.toml's claim_ball stage, with two changes:
+#   - kicking is off (the episode ends at the first pickup, so a kick never
+#     happens), which lets this config run on both envs;
+#   - the ball starts within 1 m of a blue (max_ball_dist). With the ball anywhere,
+#     an untrained team never reached it in the regression suite's 3 iterations,
+#     so the pickup half of call_accuracy and call_yield never ran.
+# Omitted keys take the defaults in marl/common/config.py.
+
+[shared]
+scenario = "claim_ball"
+n_blue = 3
+n_red = 0
+
+[shared.start]
+max_ball_dist = 1.0           # m from a blue (0 = anywhere, the curriculum stage's task)
+
+[rl]
+passer_obs = true             # as in every passing_3v1 stage (always "no passer" here)
+call_enabled = true
+
+[rl.reward]
+base = "claim"
+shaping = [{ name = "call_accuracy", enabled = true, coef = 1.0 },
+           { name = "call_yield", enabled = true, coef = 0.2 }]
+
+[run]
+total_steps = 500_000         # the curriculum stage's budget

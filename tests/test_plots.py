@@ -13,18 +13,25 @@
 #   - 2026-11-01: Rewrote the figure/CLI tests for manifest-driven rendering
 #     (task 2, step 3): every kind renders from a manifest, PNG only with no
 #     version stamp, missing tables skip their figures, 9 arms and mixed
-#     schedules share a figure, label-stable colors, no baselines means no
-#     gray lines, sweep points. The synthetic-run helpers and the mark tests
-#     are kept.
-#   - 2026-11-01: Added tests for the demo fixes (stacked close labels, early
-#     ends labeled to the right, single-seed labels and legends).
-#   - 2026-11-13: Curriculum run figures on a synthetic curriculum run (a
-#     stale stage is left out; no catch figure without pass practice
-#     stages). (Austin Beinder)
-#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters and
-#     dropped an unused capsys fixture argument; no behaviour change.
-#     (Austin Beinder)
+#     schedules share a figure, label-stable colors, no baselines means no gray
+#     lines, sweep points; the synthetic-run helpers and the mark tests are
+#     kept. Added tests for the demo fixes (stacked close labels, early ends
+#     labeled to the right, single-seed labels and legends).
+#   - 2026-11-13: Curriculum run figures on a synthetic curriculum run (a stale
+#     stage is left out; no catch figure without pass practice stages). Pylint
+#     cleanup: wrapped lines over 100 characters and dropped an unused capsys
+#     fixture argument; no behaviour change. (Austin Beinder)
+#   - 2026-11-25: Unused unpacked values replaced with _ (pylint cleanup,
+#     backlog task 13). Citation cleanup (backlog task 9): one Usage entry per
+#     PR, oldest first; added the module docstring; no behaviour change.
 # ==============================================================================
+"""Tests for the figures (marl/plots.py), on synthetic run directories.
+
+Every figure kind renders from a manifest (PNG only, with its table view), missing tables skip
+their figures, up to 9 arms and mixed schedules share a figure, colors follow the arm label, the
+PBRS and curriculum figures, line-end labels, and the helper math.
+"""
+
 import csv
 import json
 import math
@@ -232,7 +239,7 @@ def manifest_with(tmp_path, body):
 
 def test_every_figure_and_the_table_view_are_written(workspace):
     out = workspace / "figures"
-    made, notes = render_manifest(load_manifest(workspace / "manifest.toml"), out)
+    _, notes = render_manifest(load_manifest(workspace / "manifest.toml"), out)
     assert notes == []
     for name in FIGURES:
         assert (out / f"{name}.png").stat().st_size > 1000, name

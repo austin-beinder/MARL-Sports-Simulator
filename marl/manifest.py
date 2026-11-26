@@ -4,15 +4,15 @@
 # Date:    2026-11-01
 # Author:  JC Stinson III (LifeHackerIII)
 # Usage:
-#   - 2026-11-01: Generated this entire file: the record manifest (TOML)
-#     schema, its strict loader, and path resolution relative to the
-#     manifest's folder with frozen/unfrozen classification (backlog task 2,
-#     step 2).
-#   - 2026-11-01: Added ad_hoc_manifest: command-line arms validated by the
-#     same rules as a manifest file (task 2, step 4).
-# Prompt summary: Implement step 2 of the task 2 plotting-refactor plan: a
-#   strictly validated TOML manifest listing each figure and its arms.
-# Human review:   Pending review
+#   - 2026-11-01: Generated this entire file: the record manifest (TOML) schema,
+#     its strict loader, and path resolution relative to the manifest's folder
+#     with frozen/unfrozen classification (backlog task 2, step 2);
+#     ad_hoc_manifest, command-line arms validated by the same rules as a
+#     manifest file (step 4).
+#   - 2026-11-25: Citation cleanup (backlog task 9): dropped the Prompt summary
+#     and Human review lines; one Usage entry per PR, oldest first; a blank line
+#     after each block in _figure; the MAX_ARMS comment in plain words;
+#     ad_hoc_manifest's dict one entry per line; no behaviour change.
 # ==============================================================================
 """The manifest of a results record (``results/<record>/manifest.toml``).
 
@@ -40,7 +40,10 @@ from typing import Any
 
 from marl.results import Arm
 
-MAX_ARMS = 9  # tab10 without its gray (gray is reserved for the scripted baselines)
+# The most arms one figure can hold. Each arm gets its own color from matplotlib's 10-color
+# "tab10" palette, minus its gray: gray lines are kept for the scripted baselines, so a gray
+# arm would read as one. That leaves 9 colors (marl.plots.PALETTE), so at most 9 arms.
+MAX_ARMS = 9
 COLUMN_PRESETS = ("keepaway", "sweep", "goto")
 ARM_KINDS = ("curves", "final", "diagnostics", "goto")
 # kind -> (required keys, optional keys), besides "kind", "name" and "title"
@@ -146,11 +149,19 @@ def ad_hoc_manifest(name: str, arms: list[tuple[str, str]], kinds: list[str], ba
     ``<name>_<kind>``, validated by exactly the rules a manifest file gets. Paths are
     relative to the current folder; backslashes are accepted here and normalized."""
     figure_extra = {k: v for k, v in (("baselines", baselines), ("title", title)) if v is not None}
-    data = {"name": name, "figure": [
-        {"kind": kind, "name": f"{name}_{kind}", "arm": [{"label": lb, "runs": g.replace("\\", "/")} for lb, g in arms],
-         **{k: v for k, v in figure_extra.items() if k == "title" or "baselines" in KIND_KEYS[kind][1]}}
-        for kind in kinds
-    ]}
+    data = {
+        "name": name,
+        "figure": [
+            {
+                "kind": kind,
+                "name": f"{name}_{kind}",
+                "arm": [{"label": lb, "runs": g.replace("\\", "/")} for lb, g in arms],
+                # title always; baselines only for the kinds that take it
+                **{k: v for k, v in figure_extra.items() if k == "title" or "baselines" in KIND_KEYS[kind][1]},
+            }
+            for kind in kinds
+        ],
+    }
     return _manifest(data, Path(os.path.abspath("(ad hoc)")))
 
 
@@ -172,39 +183,50 @@ def _manifest(data: dict[str, Any], path: Path) -> Manifest:
 def _figure(data: Any, root: Path, where: str) -> FigureSpec:
     if not isinstance(data, dict):
         raise ValueError(f"{where}: expected a table, got {type(data).__name__}")
+
     kind = data.get("kind")
     if kind not in KIND_KEYS:
         raise ValueError(f"{where}: kind {kind!r} unknown; choose from {sorted(KIND_KEYS)}")
+
     required, optional = KIND_KEYS[kind]
     _keys(data, where, {"kind", "name"} | required, {"title"} | optional)
     name = _str(data, "name", where)
     if not _NAME.fullmatch(name):
         raise ValueError(f"{where}: name {name!r} must use only letters, digits, '_', '.' or '-' (it's a file name)")
+
     where = f"figure {name!r}"
     arms = tuple(_arm(a, root, f"{where}.arm[{i}]") for i, a in enumerate(_list(data, "arm", where)))
     points = tuple(_point(p, root, f"{where}.point[{i}]") for i, p in enumerate(_list(data, "point", where)))
     if kind in ARM_KINDS:
         if not arms:
             raise ValueError(f"{where}: a {kind} figure needs at least one arm ([[figure.arm]])")
+
         if len(arms) > MAX_ARMS:
             raise ValueError(f"{where}: {len(arms)} arms; a figure holds at most {MAX_ARMS} (split it into two figures)")
+
         labels = [a.label for a in arms]
         for label in labels:
             if labels.count(label) > 1:
                 raise ValueError(f"{where}: duplicate arm label {label!r}")
+
     if kind == "sweep" and not points:
         raise ValueError(f"{where}: a sweep figure needs at least one point ([[figure.point]])")
+
     baselines = _opt_str(data, "baselines", where)
     if baselines is not None and baselines not in [a.label for a in arms]:
         raise ValueError(f"{where}: baselines {baselines!r} names no arm of this figure")
+
     ylim = data.get("ylim")
     if ylim is not None:
         if not (isinstance(ylim, list) and len(ylim) == 2 and all(_is_num(v) for v in ylim)):
             raise ValueError(f"{where}: ylim must be a list of two numbers, e.g. [50, 175]")
+
         ylim = (float(ylim[0]), float(ylim[1]))
+
     window = data.get("window")
     if window is not None and not (isinstance(window, int) and not isinstance(window, bool) and window >= 1):
         raise ValueError(f"{where}: window must be a whole number >= 1")
+
     return FigureSpec(
         kind=kind, name=name, title=_opt_str(data, "title", where), arms=arms, baselines=baselines, ylim=ylim,
         window=window, points=points, x_label=_opt_str(data, "x_label", where),

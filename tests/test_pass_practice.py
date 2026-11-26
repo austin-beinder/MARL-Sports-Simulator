@@ -6,33 +6,37 @@
 # Usage:
 #   - 2026-11-09: Generated this entire file: tests for pass practice (the
 #     spawn, the config, the env ending each episode once its kick plays out,
-#     the reward, the catch gate and training end to end).
-#   - 2026-11-09: A miss ends once the ball can't reach a teammate (not when it
-#     stops: a slow ball crawls for seconds).
-#   - 2026-11-09: pass_practice_moving: blues free to move, a teammate can
-#     run onto a short pass, and a hopeless kick still ends early.
-#   - 2026-11-10: The minimum pass distance (a tap to a teammate next to the
-#     kicker is no pass and no near miss) and catches paid by their length.
-#   - 2026-11-10: Both are options now (rl.reward.min_pass_distance,
-#     rl.reward.pass_length_bonus), off by default.
-#   - 2026-11-11: kicker_clearance: the kicker pays for staying near its own
-#     kick and more for taking it back; chasing costs more than standing back.
-#   - 2026-11-11: pass_practice_moving runs to the time limit and pays each
-#     catch when it happens (pass_catch); receiver_spacing; the gate scores
-#     passes / kicks.
-#   - 2026-11-11: receiver_spacing is a tent: every metre apart pays the same.
-#   - 2026-11-11: With a minimum pass distance the receiver must have stood that
-#     far from the kick point at the kick (no chasing down a ball kicked ahead).
-#   - 2026-11-13: The env's passer, and rl.reward.return_pass_factor for a
-#     pass straight back. (Austin Beinder)
-#   - 2026-11-13: A stopped kick no longer charges the kicker; the
-#     call_accuracy term. (Austin Beinder)
-#   - 2026-11-14: call_accuracy no longer adds to the team reward (the call
-#     head has its own, tests/test_calls.py): these tests read the term itself.
-#     (Austin Beinder)
-#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters and fixed
-#     the new warnings; no behaviour change. (Austin Beinder)
+#     the reward, the catch gate and training end to end). A miss ends once the
+#     ball can't reach a teammate (not when it stops: a slow ball crawls for
+#     seconds). pass_practice_moving: blues free to move, a teammate can run
+#     onto a short pass, and a hopeless kick still ends early; later it runs to
+#     the time limit and pays each catch when it happens (pass_catch), with
+#     receiver_spacing (a tent: every metre apart pays the same) and the gate
+#     scoring passes / kicks. The minimum pass distance (a tap to a teammate
+#     next to the kicker is no pass and no near miss; the receiver must have
+#     stood that far from the kick point at the kick, so no chasing down a ball
+#     kicked ahead) and catches paid by their length, both options, off by
+#     default (rl.reward.min_pass_distance, rl.reward.pass_length_bonus).
+#     kicker_clearance: the kicker pays for staying near its own kick and more
+#     for taking it back (chasing costs more than standing back); a stopped kick
+#     no longer charges the kicker. The env's passer, and
+#     rl.reward.return_pass_factor for a pass straight back. The call_accuracy
+#     term; it no longer adds to the team reward (the call head has its own,
+#     tests/test_calls.py), so these tests read the term itself. Pylint cleanup:
+#     wrapped lines over 100 characters and fixed the new warnings; no behaviour
+#     change.
+#   - 2026-11-25: Citation cleanup (backlog task 9): one Usage entry per PR,
+#     oldest first; added the module docstring; no behaviour change.
+#     (JC Stinson III)
 # ==============================================================================
+"""Tests for the pass practice scenarios (pass_practice, pass_practice_moving).
+
+The spawn, the config, the PyBullet env ending each episode once its kick plays out (or running
+to the time limit when the blues can move), the pass rewards and shaping terms (minimum pass
+distance, length bonus, kicker_clearance, receiver_spacing, return passes, call_accuracy), the
+catch gate, and training end to end.
+"""
+
 import math
 import types  # AI GENERATED (2026-11-13)
 

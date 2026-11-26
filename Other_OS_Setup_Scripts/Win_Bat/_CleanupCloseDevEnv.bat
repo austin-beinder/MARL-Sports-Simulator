@@ -6,10 +6,10 @@ rem Date:    2026-09-26
 rem Author:  JC Stinson III (LifeHackerIII)
 rem Usage:
 rem   - 2026-09-26: Generated this entire file: deactivates the project venv.
-rem   - 2026-09-26: Moved to Other_OS_Setup_Scripts\Win_Bat.
-rem Prompt summary: Create _CleanupCloseDevEnv that (for now) deactivates the
-rem   project's python venv.
-rem Human review:   Pending review
+rem     Moved to Other_OS_Setup_Scripts\Win_Bat.
+rem   - 2026-11-25: Citation cleanup (backlog task 9): dropped the Prompt
+rem     summary and Human review lines; one Usage entry per PR, oldest first; no
+rem     behaviour change.
 rem ==============================================================================
 rem Usage (from the same cmd.exe session that ran _DevEnvSetup.bat):
 rem     Other_OS_Setup_Scripts\Win_Bat\_CleanupCloseDevEnv.bat

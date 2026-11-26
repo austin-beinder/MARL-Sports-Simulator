@@ -6,17 +6,17 @@
 # Usage:
 #   - 2026-10-11: Generated this entire file: strict parsing of the ICD global
 #     state s and the explicit flattening spec for the critic's global input
-#     (design #11).
-#   - 2026-10-11: Changed the flattener to scale ALL velocities (incl. red) by
+#     (design #11). Changed the flattener to scale ALL velocities (incl. red) by
 #     max_speed, a student-approved amendment to #11.
 #   - 2026-11-07: state_blocks, the flattening spec as blocks, so a warm start
-#     can grow the critic's first layer when the team sizes change. (Austin Beinder)
-#   - 2026-11-13: s["ball"]["passer"] (optional): who passed the ball to its
-#     holder, and with rl.passer_obs a per-blue "passed it" flag. (Austin Beinder)
-#   - 2026-11-13: Each blue's optional "calling" (its latest call), and with
-#     rl.call_enabled a per-blue call flag. (Austin Beinder)
-#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters; no
-#     behaviour change. (Austin Beinder)
+#     can grow the critic's first layer when the team sizes change.
+#     s["ball"]["passer"] (optional): who passed the ball to its holder, and
+#     with rl.passer_obs a per-blue "passed it" flag; each blue's optional
+#     "calling" (its latest call), and with rl.call_enabled a per-blue call
+#     flag. Pylint cleanup: wrapped lines over 100 characters; no behaviour
+#     change. (Austin Beinder)
+#   - 2026-11-25: Citation cleanup (backlog task 9): one Usage entry per PR,
+#     oldest first; no behaviour change.
 # ==============================================================================
 """Strict parsing of the global state ``s`` (ICD §5) and the flattening spec (#11).
 

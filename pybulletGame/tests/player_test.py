@@ -1,5 +1,7 @@
 """
 Many cited parts entity_test.py were AI generated. This test file was largely copy pasted from entity_test.py.
+AI edit 2026-11-25 (Claude Code (Claude Opus 5.5), JC Stinson III): pylint cleanup (unused
+values replaced with _ or a _ prefix, final newline); no behaviour change.
 """
 
 import os
@@ -143,7 +145,7 @@ class TestAdd(unittest.TestCase):
     # Test the max velocity stuff
     def test_get_observables(self):
         player = Player()
-        player2 = Player()
+        _player2 = Player()
 
         # Intentionally larger than max velocity of 3
         player.apply_velocity(x=10.0, y=10.0)

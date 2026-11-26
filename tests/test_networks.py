@@ -9,10 +9,16 @@
 #     consistency, analytic entropy (incl. a demonstration of why the
 #     sample-based estimate fails), finite gradients at extremes, detached
 #     rollout outputs, critic inputs at N=2/M=2, and the warm-start layout.
-# Prompt summary: Implement Phase 3 step 6 of the issue #7 plan (actor/critic
-#   + Beta movement head + action adapter).
-# Human review:   Pending review
+#   - 2026-11-25: Citation cleanup (backlog task 9): dropped the Prompt summary
+#     and Human review lines; added the module docstring; no behaviour change.
 # ==============================================================================
+"""Tests for the actor and critic networks (marl/rl/networks.py).
+
+Init, the Beta movement head (clamping, rollout-vs-update log-prob consistency, analytic entropy,
+including why a sample-based estimate fails, finite gradients at the extremes), detached rollout
+outputs, critic inputs at 2v2, and the warm-start input layout.
+"""
+
 import math
 
 import numpy as np

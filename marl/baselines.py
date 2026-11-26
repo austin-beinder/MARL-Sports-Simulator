@@ -8,10 +8,13 @@
 #     (random, stand-still, a lookahead flee heuristic) and the goto_target
 #     oracle, all usable through the shared evaluation protocol (design #22,
 #     #23).
-#   - 2026-11-08: passing_drill offers only random and still. (Austin Beinder)
-#   - 2026-11-09: So do pass_practice and pass_practice_moving. (Austin Beinder)
-#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters; no
-#     behaviour change. (Austin Beinder)
+#   - 2026-11-08: passing_drill, pass_practice and pass_practice_moving offer
+#     only random and still. Pylint cleanup: wrapped lines over 100 characters;
+#     no behaviour change. (Austin Beinder)
+#   - 2026-11-24: claim_ball offers random and still too; it fell through to the
+#     goto_target oracle, so evaluate.py crashed on claim_ball runs. Citation
+#     cleanup (backlog task 9): one Usage entry per PR, oldest first; no
+#     behaviour change.
 # ==============================================================================
 """Scripted baseline policies (design #23) and the goto_target oracle.
 
@@ -51,8 +54,8 @@ BASELINES = ("random", "still", "flee", "oracle")
 
 def baselines_for(scenario: str) -> tuple[str, ...]:
     ### AI GENERATED (2026-11-08: passing_drill's blues can't move, so flee means nothing there)
-    # 2026-11-09: pass practice too
-    if scenario in ("passing_drill", "pass_practice", "pass_practice_moving"):
+    # 2026-11-09: pass practice too. 2026-11-24: claim_ball too (it fell through to the oracle).
+    if scenario in ("passing_drill", "pass_practice", "pass_practice_moving", "claim_ball"):
         return ("random", "still")
     ### END AI GENERATED
     return ("random", "still", "flee") if scenario == "keepaway" else ("random", "still", "oracle")

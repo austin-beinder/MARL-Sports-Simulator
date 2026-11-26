@@ -6,10 +6,10 @@
 # Author:  JC Stinson III (LifeHackerIII)
 # Usage:
 #   - 2026-09-26: Generated this entire file: deactivates the project venv.
-#   - 2026-09-26: Moved to Other_OS_Setup_Scripts/Mac_Linux_Zsh.
-# Prompt summary: Create _CleanupCloseDevEnv that (for now) deactivates the
-#   project's python venv.
-# Human review:   Pending review
+#     Moved to Other_OS_Setup_Scripts/Mac_Linux_Zsh.
+#   - 2026-11-25: Citation cleanup (backlog task 9): dropped the Prompt summary
+#     and Human review lines; one Usage entry per PR, oldest first; no behaviour
+#     change.
 # ==============================================================================
 # Usage:  source Other_OS_Setup_Scripts/Mac_Linux_Zsh/_CleanupCloseDevEnv.sh
 # Must be sourced: an executed script runs in a child shell and cannot change

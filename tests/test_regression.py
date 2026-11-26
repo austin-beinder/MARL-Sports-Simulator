@@ -4,28 +4,32 @@
 # Date:    2026-11-01
 # Author:  JC Stinson III (LifeHackerIII)
 # Usage:
-#   - 2026-11-01: Generated this entire file: tests for the regression
-#     harness's suite loader (strict validation, the reserved seed schema,
-#     case and run naming, the per-run --set overrides) for backlog task 4,
-#     step 1.
-#   - 2026-11-01: Added the comparison tests: CSV cell/row/column diffs with
-#     timing columns ignored, tolerances, config.json and fingerprint diffs,
-#     the per-case roll-up, stale runs and the report text (task 4, step 2).
-#   - 2026-11-01: Added the freeze tests: the weight fingerprint, the
-#     environment stamp, and --update's record writer (timing columns
-#     stripped, stamp history, stale entries removed) (task 4, step 3).
-#   - 2026-11-01: Added the runner and CLI tests: case selection, uncovered
-#     configs, the job commands (fake runner), failures, --no-run/--only/
-#     --rtol/--update rules, exit codes, and one end-to-end run through the
-#     real train.py/evaluate.py subprocesses (task 4, step 4).
-#   - 2026-11-02: Added a test for the report's hints under --update.
-#   - 2026-11-02: Added tests for the tracked report (results/silver/report.md):
-#     written by full exact runs only, with the run's date and commit, the
-#     --update reason, and relative log paths.
-# Prompt summary: Implement steps 1-5 of the task 4 regression-harness plan
-#   (marl/regression.py), tests first.
-# Human review:   Pending review
+#   - 2026-11-01: Generated this entire file: tests for the regression harness
+#     (backlog task 4). The suite loader (strict validation, the reserved seed
+#     schema, case and run naming, the per-run --set overrides) (step 1); the
+#     comparison: CSV cell/row/column diffs with timing columns ignored,
+#     tolerances, config.json and fingerprint diffs, the per-case roll-up, stale
+#     runs and the report text (step 2); the freeze: the weight fingerprint, the
+#     environment stamp, and --update's record writer (timing columns stripped,
+#     stamp history, stale entries removed) (step 3); the runner and CLI: case
+#     selection, uncovered configs, the job commands (fake runner), failures,
+#     --no-run/--only/--rtol/--update rules, exit codes, and one end-to-end run
+#     through the real train.py/evaluate.py subprocesses (step 4). Then the
+#     report's hints under --update, and the tracked report
+#     (results/silver/report.md): written by full exact runs only, with the
+#     run's date and commit, the --update reason, and relative log paths.
+#   - 2026-11-25: Citation cleanup (backlog task 9): dropped the Prompt summary
+#     and Human review lines; one Usage entry per PR, oldest first; added the
+#     module docstring; no behaviour change.
 # ==============================================================================
+"""Tests for the regression harness (marl/regression.py, scripts/regress.py).
+
+The suite loader (strict validation, the reserved seed schema, case and run naming), the
+comparison (CSV, config.json and weight-fingerprint diffs, tolerances, the per-case roll-up),
+--update's record writer, the runner and CLI rules, the tracked report.md, and one end-to-end
+run through the real train.py / evaluate.py subprocesses.
+"""
+
 import json
 import re
 from pathlib import Path

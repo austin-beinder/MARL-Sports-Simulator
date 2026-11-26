@@ -5,37 +5,37 @@
 # Author:  Austin Beinder
 # Usage:
 #   - 2026-11-07: Generated this entire file: tests for the curriculum (the
-#     max_ball_dist spawn option, train()'s init_from and curriculum hooks,
-#     the confidence gate, stage levels, curriculum loading, and a whole
-#     two-stage curriculum on the mock env).
-#   - 2026-11-07: Tests for the gate in the printed line and --render.
-#   - 2026-11-07: The shipped curriculum kicks, so it refuses the mock.
-#   - 2026-11-07: Warm starts across team sizes (1v1 -> 2v1) and the 2v1 stage.
-#   - 2026-11-07: The goto_target warm-up: no-gate stages, and the critic
-#     starting fresh when the reward changes.
-#   - 2026-11-08: The shipped curriculum without possession, plus the
-#     slow_two_v_one stage.
-#   - 2026-11-08: The passing_3v1 curriculum loads. (Austin Beinder)
-#   - 2026-11-09: Teams may shrink in a warm start; the passing curriculum
-#     test follows its current stages, catch stages included. (Austin Beinder)
-#   - 2026-11-10: The passing curriculum's reworked stages (catch_moving, then
-#     1, 2 and 3 m minimum passes).
-#   - 2026-11-11: Restarting from a later stage (--start-at, --init-from);
-#     the passing curriculum's kicker_clearance and go_to_target_again.
-#   - 2026-11-11: ... and keepaway_from_catch (catch_start_mix levels).
-#   - 2026-11-12: The catch stages raise ent_coef to 0.01; free_ball and
-#     go_to_target_again are commented out of the passing curriculum.
-#   - 2026-11-12: rl.new_player_init = "random" in warm starts that grow a
-#     team.
-#   - 2026-11-13: A warm start adds the rl.passer_obs flag columns.
-#   - 2026-11-13: ... and the call head and flags; the passing curriculum
-#     calls in every stage and pays call_accuracy in the catch stages.
-#   - 2026-11-14: The passing curriculum's claim_ball stage (3 blues claim a
-#     loose ball; call_accuracy and call_yield) after go_to_target. (Austin Beinder)
-#   - 2026-11-14: The catch stages' dead_ball and call_yield terms. (Austin Beinder)
-#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters and fixed
-#     the new warnings; no behaviour change. (Austin Beinder)
+#     max_ball_dist spawn option, train()'s init_from and curriculum hooks, the
+#     confidence gate, stage levels, curriculum loading, and a whole two-stage
+#     curriculum on the mock env). Then: the gate in the printed line and
+#     --render; the shipped curriculum kicks, so it refuses the mock; warm
+#     starts across team sizes (1v1 -> 2v1, and teams that shrink) and the 2v1
+#     stage; the goto_target warm-up (no-gate stages, and the critic starting
+#     fresh when the reward changes); the shipped curriculum without possession,
+#     plus the slow_two_v_one stage; restarting from a later stage (--start-at,
+#     --init-from); rl.new_player_init = "random" in warm starts that grow a
+#     team; a warm start adds the rl.passer_obs flag columns, and the call head
+#     and its flags. The passing_3v1 curriculum loads, and its test follows the
+#     current stages: the catch stages, then the reworked ones (catch_moving,
+#     then 1, 2 and 3 m minimum passes), kicker_clearance and
+#     go_to_target_again, keepaway_from_catch (catch_start_mix levels), ent_coef
+#     0.01 in the catch stages with free_ball and go_to_target_again commented
+#     out, calls in every stage with call_accuracy paid in the catch stages, the
+#     claim_ball stage (3 blues claim a loose ball; call_accuracy and
+#     call_yield) after go_to_target, and the catch stages' dead_ball and
+#     call_yield terms. Pylint cleanup: wrapped lines over 100 characters and
+#     fixed the new warnings; no behaviour change.
+#   - 2026-11-25: Citation cleanup (backlog task 9): one Usage entry per PR,
+#     oldest first; added the module docstring; no behaviour change.
+#     (JC Stinson III)
 # ==============================================================================
+"""Tests for curriculum training (curriculum/runner.py and train()'s hooks).
+
+The confidence gate, stage levels, curriculum loading, warm starts across team sizes (grown and
+shrunk teams, new observation flags), restarts from a later stage (--start-at, --init-from), the
+shipped curricula's stages, and a whole two-stage curriculum on the mock env.
+"""
+
 import csv
 import math
 import subprocess

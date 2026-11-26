@@ -9,10 +9,16 @@
 #     the CLI).
 #   - 2026-11-01: Pinned run.env = "mock" (PyBullet is the default now) and
 #     added a test of the default table name, which carries the env (task 3).
-# Prompt summary: Implement Phase 3 step 10 of the issue #7 plan (baselines,
-#   evaluation, calibration).
-# Human review:   Pending review
+#   - 2026-11-25: Citation cleanup (backlog task 9): dropped the Prompt summary
+#     and Human review lines; folded the function-level citations into this
+#     header; added the module docstring; no behaviour change.
 # ==============================================================================
+"""Tests for red-speed calibration (marl/calibrate.py, scripts/calibrate.py).
+
+The speed-selection rule, speed parsing, a small real sweep on the mock env, the dedicated
+calibration seeds, and the CLI, whose default table name always carries the env.
+"""
+
 import csv
 from pathlib import Path
 
@@ -84,8 +90,6 @@ def test_cli_writes_the_table_and_recommends(tmp_path, capsys):
     assert "recommended red_max_speed" in capsys.readouterr().out
 
 
-# AI CITATION: Claude Code (Claude Opus 5.5) | 2026-11-01 | JC Stinson III (LifeHackerIII)
-# Usage: Wrote this test (backlog task 3: the default table name always names its env).
 def test_cli_default_table_name_carries_the_env(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)  # run.out_dir is "runs", relative to the working directory
     assert main(["--config", str(ROOT / "configs" / "keepaway_1v1.toml"), "--env", "mock",

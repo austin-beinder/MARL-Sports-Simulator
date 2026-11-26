@@ -9,25 +9,20 @@
 #     policy callable (reused by the baselines), and per-start-type summaries
 #     (design #17, #23; walk-through steps 0 and 5).
 #   - 2026-10-14: An episode's mean_reward now counts the base (task) reward
-#     only, so shaping terms never change the evaluation (PBRS ablation).
-#   - 2026-10-14: Added an optional per-step observer to run_episodes and
-#     evaluate_actor, plus the race metrics for the loose ball in free-ball
-#     starts (RaceTracker, summarize_races: pickup rate, closing speed,
-#     alignment), moved from Claude's pilot-analysis scripts at the student's
-#     request.
-#   - 2026-11-07: actor_policy sends the kick heads' actions too. (Austin Beinder)
-#   - 2026-11-08: Each episode gets its own reward memory (the passing
-#     drill's pass bookkeeping). (Austin Beinder)
-#   - 2026-11-09: Records passes per episode; summarize adds passes_mean and
-#     frac_passed (episodes with at least one pass). (Austin Beinder)
-#   - 2026-11-11: Records kicks per episode; summarize adds pass_rate (passes
-#     per kick, over all the episodes). (Austin Beinder)
-#   - 2026-11-13: Records return passes per episode; summarize adds
-#     return_share (returns per pass). (Austin Beinder)
-#   - 2026-11-13: Records pickups and calls; summarize adds called_share and
-#     miscalled_per_pickup. (Austin Beinder)
-#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters; no
-#     behaviour change. (Austin Beinder)
+#     only, so shaping terms never change the evaluation (PBRS ablation). Added
+#     an optional per-step observer to run_episodes and evaluate_actor, plus the
+#     race metrics for the loose ball in free-ball starts (RaceTracker,
+#     summarize_races: pickup rate, closing speed, alignment), moved from
+#     Claude's pilot-analysis scripts at the student's request.
+#   - 2026-11-07: actor_policy sends the kick heads' actions too. Each episode
+#     gets its own reward memory (the passing drill's pass bookkeeping). Records
+#     passes, kicks, return passes, pickups and calls per episode; summarize
+#     adds passes_mean, frac_passed (episodes with at least one pass), pass_rate
+#     (passes per kick, over all the episodes), return_share (returns per pass),
+#     called_share and miscalled_per_pickup. Pylint cleanup: wrapped lines over
+#     100 characters; no behaviour change. (Austin Beinder)
+#   - 2026-11-25: Citation cleanup (backlog task 9): one Usage entry per PR,
+#     oldest first; no behaviour change.
 # ==============================================================================
 """Policy evaluation on fixed seeds (design #17, #23; walk-through steps 0 and 5).
 

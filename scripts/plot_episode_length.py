@@ -4,10 +4,12 @@
 # Date:    2026-11-07
 # Author:  Austin Beinder
 # Usage:
-#   - 2026-11-07: Generated this entire file: plots episode length over
-#     training from the text a training or curriculum run prints.
-#   - 2026-11-15: Pylint cleanup: wrapped lines over 100 characters and
-#     removed the unused math import; no behaviour change. (Austin Beinder)
+#   - 2026-11-07: Generated this entire file: plots episode length over training
+#     from the text a training or curriculum run prints. Pylint cleanup: wrapped
+#     lines over 100 characters and removed the unused math import; no behaviour
+#     change.
+#   - 2026-11-25: Citation cleanup (backlog task 9): one Usage entry per PR,
+#     oldest first; no behaviour change. (JC Stinson III)
 # ==============================================================================
 # pylint: disable=line-too-long
 # (the docstring quotes a printed training line verbatim)

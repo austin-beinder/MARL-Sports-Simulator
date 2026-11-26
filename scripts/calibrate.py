@@ -6,9 +6,8 @@
 # Usage:
 #   - 2026-10-11: Created this file: a thin command-line wrapper around
 #     marl.calibrate.main.
-# Prompt summary: Implement Phase 3 step 10 of the issue #7 plan (baselines,
-#   evaluation, calibration).
-# Human review:   Pending review
+#   - 2026-11-25: Citation cleanup (backlog task 9): dropped the Prompt summary
+#     and Human review lines; no behaviour change.
 # ==============================================================================
 """Calibrate red_max_speed against the scripted flee policy (design #22). Run from the repo root with the venv active:
 

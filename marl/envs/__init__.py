@@ -10,8 +10,8 @@
 #     (Austin Beinder)
 #   - 2026-10-31: Removed SHARED_SIM_ENVS: every PyBulletEnv now has its own
 #     simulation. (Austin Beinder)
-# Prompt summary: Implement Phase 3 of the issue #7 plan (RL layer + mock env).
-# Human review:   Pending review
+#   - 2026-11-25: Citation cleanup (backlog task 9): dropped the Prompt summary
+#     and Human review lines; no behaviour change.
 # ==============================================================================
 """Environments: the ICD mock env and the PyBullet adapter, picked by ``run.env``."""
 
