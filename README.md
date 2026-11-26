@@ -21,6 +21,7 @@ python example.py
 AI CITATION: Claude Code (Claude Opus 5.5) | 2026-11-01 | JC Stinson III (LifeHackerIII)
 Usage: Wrote the "Results & plots" section (backlog task 2: results records and ad-hoc plots).
 Modified: 2026-11-01 - Run names now carry the env (`_pybullet_`/`_mock_`); PyBullet is the default (backlog task 3).
+Modified: 2026-11-26 - Golden v1 (midterm, mock) archived to `results/archive/golden_v1/`; `results/golden/` now holds golden v2, its PyBullet replacement (backlog task 15).
 -->
 # Results & plots
 Training writes each run to `runs/<config>_<env>_seed<N>/` (gitignored): `config.json`, `train.csv`,
@@ -31,7 +32,7 @@ Training writes each run to `runs/<config>_<env>_seed<N>/` (gitignored): `config
 ```shell
 python scripts/evaluate.py "runs/new_reward_pybullet_seed*"     # evaluation table (needed for final bars + baseline lines)
 python scripts/plot.py --name new_reward --arm "new reward=runs/new_reward_pybullet_seed*" --baselines "new reward"
-python scripts/plot.py --name vs_golden --arm "golden=results/golden/data/Old_mock_env/keepaway_1v1_seed*" --arm "new reward=runs/new_reward_pybullet_seed*"
+python scripts/plot.py --name vs_golden_v1 --arm "golden v1 (mock)=results/archive/golden_v1/data/Old_mock_env/keepaway_1v1_seed*" --arm "new reward=runs/new_reward_pybullet_seed*"
 ```
 
 Each `--arm` is `LABEL=GLOB` (one arm = the seeds of one config; up to 9 arms per figure). Writing into a
@@ -39,8 +40,9 @@ folder that already has figures needs `--overwrite`.
 
 **Results records** live in `results/<record>/` (git-tracked): a `manifest.toml` that lists the figures,
 their arms and the table sections; `data/` (frozen CSV + config copies, no checkpoints); and `figures/`.
-`results/golden/` holds the for-score results, and plain `python scripts/plot.py` renders it to
-`runs/plots/golden/`.
+`results/golden/` holds the for-score results (PyBullet), and plain `python scripts/plot.py` renders it to
+`runs/plots/golden/`. The midterm's mock-env record (golden v1) is archived in `results/archive/golden_v1/`
+(`python scripts/plot.py --manifest results/archive/golden_v1/manifest.toml`).
 
 To add an experiment to a record, add an arm to its manifest pointing at the runs
 (`runs = "../../runs/new_reward_pybullet_seed*"`), then freeze. That copies those files into the record, rewrites
@@ -50,7 +52,7 @@ the path, notes the date and commit, and renders the figures:
 python scripts/freeze.py golden     # then commit results/golden/
 ```
 
-`tests/test_golden.py` checks that the golden record still re-renders exactly from its own data.
+`tests/test_golden.py` checks that the archived golden v1 record still re-renders exactly from its own data.
 
 <!--
 AI CITATION: Claude Code (Claude Opus 5.5) | 2026-11-02 | JC Stinson III (LifeHackerIII)

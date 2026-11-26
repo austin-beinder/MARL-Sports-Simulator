@@ -1,142 +1,120 @@
 # ==============================================================================
 # AI CITATION
 # Tool:    Claude Code (Claude Opus 5.5)
-# Date:    2026-11-01
+# Date:    2026-11-26
 # Author:  JC Stinson III (LifeHackerIII)
 # Usage:
-#   - 2026-11-01: Wrote this manifest: the golden record v1, the midterm
-#     mock-env results (runs/Old_mock_env), declaring the 7 report figures
-#     and 4 table sections of the original marl/plots.py (backlog task 2,
-#     step 8). The data was frozen into data/ by scripts/freeze.py from runs
-#     that already existed; no new data was generated.
-#   - 2026-11-25: Citation cleanup (backlog task 9): dropped the Prompt summary
-#     and Human review lines; no behaviour change.
+#   - 2026-11-26: Wrote this manifest: the golden record v2, the PyBullet
+#     replication of golden v1's keep-away 1v1 experiments (backlog task 15).
+#     Per arm: learning curves, final results and training diagnostics; all
+#     arms together: learning curves and final results; one table section per
+#     arm. goto_target and the red-speed calibration were run but are not part
+#     of the record (a sanity check and a process step).
 # ==============================================================================
-# Render:  python scripts/plot.py                 (-> runs/plots/golden/)
-# Freeze:  python scripts/freeze.py golden        (copies any ../../runs/... inputs into data/)
+# The for-score record: PyBullet env, kicking off, red 1.8 m/s, seeds 0-4 x 1M steps.
+# The legacy mock-env record it replaces is results/archive/golden_v1/.
+# Render:  python scripts/plot.py                      (-> runs/plots/golden/)
+# Freeze:  python scripts/freeze.py golden             (copies runs/ inputs into data/, renders figures/)
 
 name        = "golden"
-description = "Midterm mock-env results (keep-away 1v1 survival + PBRS ablation, goto_target, calibration)"
+description = "PyBullet keep-away 1v1: survival-only vs + PBRS acquisition shaping (coef 4), seeds 0-4, 1M steps"
 
-# --- Keep-away 1v1: survival-only reward, seeds 0-4, 1M steps ---------------------------
+# --- Arm: survival-only reward ----------------------------------------------------------
 [[figure]]
 kind      = "curves"
-name      = "keepaway_learning_curves"
-title     = "Keep-away 1v1: survival on the fixed evaluation episodes during training"
+name      = "keepaway_survival_learning_curves"
+title     = "Keep-away 1v1 (PyBullet), survival only: survival on the fixed evaluation episodes during training"
 baselines = "survival only"
 ylim      = [50, 175]
   [[figure.arm]]
   label = "survival only"
-  runs  = "data/Old_mock_env/keepaway_1v1_seed*"
+  runs  = "data/keepaway_1v1_pybullet_seed*"
 
 [[figure]]
 kind      = "final"
-name      = "keepaway_final_results"
-title     = "Keep-away 1v1: final evaluation (same fixed episodes for every policy)"
+name      = "keepaway_survival_final_results"
+title     = "Keep-away 1v1 (PyBullet), survival only: final evaluation (same fixed episodes for every policy)"
 baselines = "survival only"
   [[figure.arm]]
   label = "survival only"
-  runs  = "data/Old_mock_env/keepaway_1v1_seed*"
+  runs  = "data/keepaway_1v1_pybullet_seed*"
 
 [[figure]]
 kind  = "diagnostics"
-name  = "keepaway_training_diagnostics"
-title = "Keep-away PPO training diagnostics"
+name  = "keepaway_survival_training_diagnostics"
+title = "Keep-away 1v1 (PyBullet), survival only: PPO training diagnostics"
   [[figure.arm]]
   label = "survival only"
-  runs  = "data/Old_mock_env/keepaway_1v1_seed*"
+  runs  = "data/keepaway_1v1_pybullet_seed*"
 
-# --- PBRS ablation: + potential-based acquisition shaping (coef 4), seeds 0-4 -----------
+# --- Arm: + PBRS acquisition shaping (coef 4) -------------------------------------------
 [[figure]]
 kind      = "curves"
-name      = "pbrs_learning_curves"
-title     = "Keep-away 1v1: survival-only vs + PBRS acquisition shaping (coef 4), fixed evaluation episodes"
+name      = "keepaway_pbrs_learning_curves"
+title     = "Keep-away 1v1 (PyBullet), + PBRS (coef 4): survival on the fixed evaluation episodes during training"
+baselines = "+ PBRS (coef 4)"
+ylim      = [50, 175]
+  [[figure.arm]]
+  label = "+ PBRS (coef 4)"
+  runs  = "data/keepaway_1v1_pbrs_pybullet_seed*"
+
+[[figure]]
+kind      = "final"
+name      = "keepaway_pbrs_final_results"
+title     = "Keep-away 1v1 (PyBullet), + PBRS (coef 4): final evaluation (same fixed episodes for every policy)"
+baselines = "+ PBRS (coef 4)"
+  [[figure.arm]]
+  label = "+ PBRS (coef 4)"
+  runs  = "data/keepaway_1v1_pbrs_pybullet_seed*"
+
+[[figure]]
+kind  = "diagnostics"
+name  = "keepaway_pbrs_training_diagnostics"
+title = "Keep-away 1v1 (PyBullet), + PBRS (coef 4): PPO training diagnostics"
+  [[figure.arm]]
+  label = "+ PBRS (coef 4)"
+  runs  = "data/keepaway_1v1_pbrs_pybullet_seed*"
+
+# --- All keep-away 1v1 arms together (no combined diagnostics) --------------------------
+# Every arm here plays the same game (red 1.8 m/s), so one arm's scripted baselines fit all.
+[[figure]]
+kind      = "curves"
+name      = "keepaway_1v1_all_learning_curves"
+title     = "Keep-away 1v1 (PyBullet): survival on the fixed evaluation episodes during training, all arms"
 baselines = "survival only"
 ylim      = [50, 175]
   [[figure.arm]]
   label = "survival only"
-  runs  = "data/Old_mock_env/keepaway_1v1_seed*"
+  runs  = "data/keepaway_1v1_pybullet_seed*"
   [[figure.arm]]
   label = "+ PBRS (coef 4)"
-  runs  = "data/Old_mock_env/keepaway_1v1_pbrs_seed*"
+  runs  = "data/keepaway_1v1_pbrs_pybullet_seed*"
 
-# --- PBRS coefficient pilot (~200k steps; coef 0 = the survival runs at iter 100) -------
 [[figure]]
-kind      = "sweep"
-name      = "pbrs_coef_sweep"
-title     = "PBRS coefficient pilot (~200k steps each): stronger shaping speeds the approach but doesn't win races"
-x_label   = "PBRS coefficient"
-highlight = 4
-  [[figure.point]]
-  x     = 0
-  label = "0 (survival only)"
-  table = "data/Old_mock_env/eval_keepaway_1v1_seed0_iter_00100_per_run.csv"
-  [[figure.point]]
-  x     = 1
-  table = "data/Old_mock_env/eval_pilot_pbrs_coef1_seed10_per_run.csv"
-  [[figure.point]]
-  x     = 2
-  table = "data/Old_mock_env/eval_pilot_pbrs_coef2_seed10_per_run.csv"
-  [[figure.point]]
-  x     = 4
-  table = "data/Old_mock_env/eval_pilot_pbrs_coef4_seed10_per_run.csv"
-  [[figure.point]]
-  x     = 8
-  table = "data/Old_mock_env/eval_pilot_pbrs_coef8_seed10_per_run.csv"
-  [[figure.point]]
-  x     = 16
-  table = "data/Old_mock_env/eval_pilot_pbrs_coef16_seed10_per_run.csv"
-
-# --- goto_target sanity check, seeds 0-2 -------------------------------------------------
-[[figure]]
-kind      = "goto"
-name      = "goto_target_curve"
-baselines = "goto_target PPO"
+kind      = "final"
+name      = "keepaway_1v1_all_final_results"
+title     = "Keep-away 1v1 (PyBullet): final evaluation, all arms (same fixed episodes for every policy)"
+baselines = "survival only"
   [[figure.arm]]
-  label = "goto_target PPO"
-  runs  = "data/Old_mock_env/goto_target_seed*"
+  label = "survival only"
+  runs  = "data/keepaway_1v1_pybullet_seed*"
+  [[figure.arm]]
+  label = "+ PBRS (coef 4)"
+  runs  = "data/keepaway_1v1_pbrs_pybullet_seed*"
 
-# --- Red-speed calibration (scripted policies only) --------------------------------------
-[[figure]]
-kind   = "calibration"
-name   = "calibration_red_speed"
-csv    = "data/Old_mock_env/calibration_keepaway_1v1.csv"
-config = "data/Old_mock_env/keepaway_1v1_seed0/config.json"
-
-# --- Table view (results_tables.md): the original four sections, in order ---------------
+# --- Table view (results_tables.md): one section per arm --------------------------------
 [[table]]
-title   = "Keep-away ({n_runs} runs; mean episode length, control steps)"
-source  = "data/Old_mock_env/eval_keepaway_1v1_seed0.csv"
+title   = "Keep-away 1v1, PyBullet, survival only ({n_runs} runs; mean episode length, control steps)"
+source  = "data/eval_keepaway_1v1_pybullet_seed0.csv"
 columns = "keepaway"
 
 [[table]]
-title   = "Keep-away + PBRS acquisition shaping, coef 4 ({n_runs} runs; mean episode length, control steps)"
-source  = "data/Old_mock_env/eval_keepaway_1v1_pbrs_seed0.csv"
+title   = "Keep-away 1v1, PyBullet, + PBRS acquisition shaping, coef 4 ({n_runs} runs; mean episode length, control steps)"
+source  = "data/eval_keepaway_1v1_pbrs_pybullet_seed0.csv"
 columns = "keepaway"
 
-[[table]]
-title   = "PBRS coefficient pilot (PPO, stochastic eval; lengths in control steps)"
-sweep   = "pbrs_coef_sweep"
-columns = "sweep"
-first   = "PBRS coef"
-
-[[table]]
-title   = "goto_target ({n_runs} runs; mean reward = minus mean distance, m)"
-source  = "data/Old_mock_env/eval_goto_target_seed0.csv"
-columns = "goto"
-
-# --- frozen 2026-11-01 by scripts/freeze.py at commit 20bdbf1 ---
-#   ../../runs/Old_mock_env/keepaway_1v1_seed* -> data/Old_mock_env/keepaway_1v1_seed*
-#   ../../runs/Old_mock_env/keepaway_1v1_pbrs_seed* -> data/Old_mock_env/keepaway_1v1_pbrs_seed*
-#   ../../runs/Old_mock_env/eval_keepaway_1v1_seed0_iter_00100_per_run.csv -> data/Old_mock_env/eval_keepaway_1v1_seed0_iter_00100_per_run.csv
-#   ../../runs/Old_mock_env/eval_pilot_pbrs_coef1_seed10_per_run.csv -> data/Old_mock_env/eval_pilot_pbrs_coef1_seed10_per_run.csv
-#   ../../runs/Old_mock_env/eval_pilot_pbrs_coef2_seed10_per_run.csv -> data/Old_mock_env/eval_pilot_pbrs_coef2_seed10_per_run.csv
-#   ../../runs/Old_mock_env/eval_pilot_pbrs_coef4_seed10_per_run.csv -> data/Old_mock_env/eval_pilot_pbrs_coef4_seed10_per_run.csv
-#   ../../runs/Old_mock_env/eval_pilot_pbrs_coef8_seed10_per_run.csv -> data/Old_mock_env/eval_pilot_pbrs_coef8_seed10_per_run.csv
-#   ../../runs/Old_mock_env/eval_pilot_pbrs_coef16_seed10_per_run.csv -> data/Old_mock_env/eval_pilot_pbrs_coef16_seed10_per_run.csv
-#   ../../runs/Old_mock_env/goto_target_seed* -> data/Old_mock_env/goto_target_seed*
-#   ../../runs/Old_mock_env/calibration_keepaway_1v1.csv -> data/Old_mock_env/calibration_keepaway_1v1.csv
-#   ../../runs/Old_mock_env/keepaway_1v1_seed0/config.json -> data/Old_mock_env/keepaway_1v1_seed0/config.json
-#   ../../runs/Old_mock_env/eval_keepaway_1v1_seed0.csv -> data/Old_mock_env/eval_keepaway_1v1_seed0.csv
-#   ../../runs/Old_mock_env/eval_keepaway_1v1_pbrs_seed0.csv -> data/Old_mock_env/eval_keepaway_1v1_pbrs_seed0.csv
-#   ../../runs/Old_mock_env/eval_goto_target_seed0.csv -> data/Old_mock_env/eval_goto_target_seed0.csv
+# --- frozen 2026-11-26 by scripts/freeze.py at commit 5713e3c + uncommitted changes ---
+#   ../../runs/keepaway_1v1_pybullet_seed* -> data/keepaway_1v1_pybullet_seed*
+#   ../../runs/keepaway_1v1_pbrs_pybullet_seed* -> data/keepaway_1v1_pbrs_pybullet_seed*
+#   ../../runs/eval_keepaway_1v1_pybullet_seed0.csv -> data/eval_keepaway_1v1_pybullet_seed0.csv
+#   ../../runs/eval_keepaway_1v1_pbrs_pybullet_seed0.csv -> data/eval_keepaway_1v1_pbrs_pybullet_seed0.csv
