@@ -1,0 +1,623 @@
+# ==============================================================================
+# AI CITATION
+# Tool:    Claude Code (Claude Opus 5.5)
+# Date:    2026-11-27
+# Author:  JC Stinson III (LifeHackerIII)
+# Usage:
+#   - 2026-11-27: Wrote this manifest: Task 16's Series 1, keep-away at five
+#     team sizes with kicking, from scratch vs warm-started from a goto_target
+#     actor, plus a no-kick 2v1 arm (backlog task 16). Per arm: learning
+#     curves, final results, training diagnostics; per team size: the arms
+#     together (curves + final); per start condition: the five team sizes'
+#     learning curves together (no baselines); one table section per arm; the
+#     goto_target warm-up's own curve and diagnostics.
+# ==============================================================================
+# PyBullet keep-away, red 1.8 m/s, start_mix 0.5, seeds 0-4 x 1M steps, eval 50 fixed episodes every 10 iterations.
+# Arms (runs/task16/, made by scripts/queue_runs.py from runs/task16/queue.txt):
+#   scratch          keepaway_kick_<NvM>       rl.kick_enabled = true
+#   goto warm start  keepaway_kick_warm_<NvM>  same, --init-from goto_target_kick_pybullet_seed<s>/checkpoints/final.pt
+#                                              (200k steps of goto_target 1v0, kick on; new players' columns start at
+#                                              zero, rl.new_player_init = "zero": curriculum stage 1's recipe)
+#   no kick          keepaway_nokick_2v1       2v1, kicking off, from scratch
+# Team sizes play different games, each with its own scripted baselines (gray), so only the two "all team sizes"
+# figures mix sizes, and they draw no baselines.
+# Caveat for the warm arms: the "untrained" baseline is a FRESH network, not the warm start; the warm start's
+# own "before" is step 0 of its learning curve.
+# Render:  python scripts/plot.py --manifest results/golden_teams_and_goto_ball_warm_starts/manifest.toml
+# Freeze:  python scripts/freeze.py golden_teams_and_goto_ball_warm_starts
+
+name        = "golden_teams_and_goto_ball_warm_starts"
+description = "PyBullet keep-away 1v1-3v3 with kicking: from scratch vs goto_target warm start (+ no-kick 2v1), seeds 0-4, 1M steps"
+
+# --- Arm: Keep-away 1v1 (PyBullet, kicking), from scratch -------------------------------------
+[[figure]]
+kind      = "curves"
+name      = "keepaway_kick_1v1_learning_curves"
+title     = "Keep-away 1v1 (PyBullet, kicking), from scratch: survival on the fixed evaluation episodes during training"
+baselines = "scratch"
+  [[figure.arm]]
+  label = "scratch"
+  runs  = "data/task16/keepaway_kick_1v1_pybullet_seed*"
+
+[[figure]]
+kind      = "final"
+name      = "keepaway_kick_1v1_final_results"
+title     = "Keep-away 1v1 (PyBullet, kicking), from scratch: final evaluation (same fixed episodes for every policy)"
+baselines = "scratch"
+  [[figure.arm]]
+  label = "scratch"
+  runs  = "data/task16/keepaway_kick_1v1_pybullet_seed*"
+
+[[figure]]
+kind      = "diagnostics"
+name      = "keepaway_kick_1v1_training_diagnostics"
+title     = "Keep-away 1v1 (PyBullet, kicking), from scratch: PPO training diagnostics"
+  [[figure.arm]]
+  label = "scratch"
+  runs  = "data/task16/keepaway_kick_1v1_pybullet_seed*"
+
+
+# --- Arm: Keep-away 1v1 (PyBullet, kicking), warm-started from goto_target --------------------
+[[figure]]
+kind      = "curves"
+name      = "keepaway_kick_warm_1v1_learning_curves"
+title     = "Keep-away 1v1 (PyBullet, kicking), warm-started from goto_target: survival on the fixed evaluation episodes during training"
+baselines = "goto warm start"
+  [[figure.arm]]
+  label = "goto warm start"
+  runs  = "data/task16/keepaway_kick_warm_1v1_pybullet_seed*"
+
+[[figure]]
+kind      = "final"
+name      = "keepaway_kick_warm_1v1_final_results"
+title     = "Keep-away 1v1 (PyBullet, kicking), warm-started from goto_target: final evaluation (same fixed episodes for every policy)"
+baselines = "goto warm start"
+  [[figure.arm]]
+  label = "goto warm start"
+  runs  = "data/task16/keepaway_kick_warm_1v1_pybullet_seed*"
+
+[[figure]]
+kind      = "diagnostics"
+name      = "keepaway_kick_warm_1v1_training_diagnostics"
+title     = "Keep-away 1v1 (PyBullet, kicking), warm-started from goto_target: PPO training diagnostics"
+  [[figure.arm]]
+  label = "goto warm start"
+  runs  = "data/task16/keepaway_kick_warm_1v1_pybullet_seed*"
+
+
+# --- Keep-away 1v1: all its arms together (baselines from the scratch arm) --------------------
+[[figure]]
+kind      = "curves"
+name      = "keepaway_1v1_all_learning_curves"
+title     = "Keep-away 1v1 (PyBullet): scratch vs goto warm start: survival on the fixed evaluation episodes during training"
+baselines = "scratch"
+  [[figure.arm]]
+  label = "scratch"
+  runs  = "data/task16/keepaway_kick_1v1_pybullet_seed*"
+  [[figure.arm]]
+  label = "goto warm start"
+  runs  = "data/task16/keepaway_kick_warm_1v1_pybullet_seed*"
+
+[[figure]]
+kind      = "final"
+name      = "keepaway_1v1_all_final_results"
+title     = "Keep-away 1v1 (PyBullet): scratch vs goto warm start: final evaluation (same fixed episodes for every policy)"
+baselines = "scratch"
+  [[figure.arm]]
+  label = "scratch"
+  runs  = "data/task16/keepaway_kick_1v1_pybullet_seed*"
+  [[figure.arm]]
+  label = "goto warm start"
+  runs  = "data/task16/keepaway_kick_warm_1v1_pybullet_seed*"
+
+
+# --- Arm: Keep-away 2v1 (PyBullet, kicking), from scratch -------------------------------------
+[[figure]]
+kind      = "curves"
+name      = "keepaway_kick_2v1_learning_curves"
+title     = "Keep-away 2v1 (PyBullet, kicking), from scratch: survival on the fixed evaluation episodes during training"
+baselines = "scratch"
+  [[figure.arm]]
+  label = "scratch"
+  runs  = "data/task16/keepaway_kick_2v1_pybullet_seed*"
+
+[[figure]]
+kind      = "final"
+name      = "keepaway_kick_2v1_final_results"
+title     = "Keep-away 2v1 (PyBullet, kicking), from scratch: final evaluation (same fixed episodes for every policy)"
+baselines = "scratch"
+  [[figure.arm]]
+  label = "scratch"
+  runs  = "data/task16/keepaway_kick_2v1_pybullet_seed*"
+
+[[figure]]
+kind      = "diagnostics"
+name      = "keepaway_kick_2v1_training_diagnostics"
+title     = "Keep-away 2v1 (PyBullet, kicking), from scratch: PPO training diagnostics"
+  [[figure.arm]]
+  label = "scratch"
+  runs  = "data/task16/keepaway_kick_2v1_pybullet_seed*"
+
+
+# --- Arm: Keep-away 2v1 (PyBullet, kicking), warm-started from goto_target --------------------
+[[figure]]
+kind      = "curves"
+name      = "keepaway_kick_warm_2v1_learning_curves"
+title     = "Keep-away 2v1 (PyBullet, kicking), warm-started from goto_target: survival on the fixed evaluation episodes during training"
+baselines = "goto warm start"
+  [[figure.arm]]
+  label = "goto warm start"
+  runs  = "data/task16/keepaway_kick_warm_2v1_pybullet_seed*"
+
+[[figure]]
+kind      = "final"
+name      = "keepaway_kick_warm_2v1_final_results"
+title     = "Keep-away 2v1 (PyBullet, kicking), warm-started from goto_target: final evaluation (same fixed episodes for every policy)"
+baselines = "goto warm start"
+  [[figure.arm]]
+  label = "goto warm start"
+  runs  = "data/task16/keepaway_kick_warm_2v1_pybullet_seed*"
+
+[[figure]]
+kind      = "diagnostics"
+name      = "keepaway_kick_warm_2v1_training_diagnostics"
+title     = "Keep-away 2v1 (PyBullet, kicking), warm-started from goto_target: PPO training diagnostics"
+  [[figure.arm]]
+  label = "goto warm start"
+  runs  = "data/task16/keepaway_kick_warm_2v1_pybullet_seed*"
+
+
+# --- Arm: Keep-away 2v1 (PyBullet, no kicking), from scratch ----------------------------------
+[[figure]]
+kind      = "curves"
+name      = "keepaway_nokick_2v1_learning_curves"
+title     = "Keep-away 2v1 (PyBullet, no kicking), from scratch: survival on the fixed evaluation episodes during training"
+baselines = "no kick (scratch)"
+  [[figure.arm]]
+  label = "no kick (scratch)"
+  runs  = "data/task16/keepaway_nokick_2v1_pybullet_seed*"
+
+[[figure]]
+kind      = "final"
+name      = "keepaway_nokick_2v1_final_results"
+title     = "Keep-away 2v1 (PyBullet, no kicking), from scratch: final evaluation (same fixed episodes for every policy)"
+baselines = "no kick (scratch)"
+  [[figure.arm]]
+  label = "no kick (scratch)"
+  runs  = "data/task16/keepaway_nokick_2v1_pybullet_seed*"
+
+[[figure]]
+kind      = "diagnostics"
+name      = "keepaway_nokick_2v1_training_diagnostics"
+title     = "Keep-away 2v1 (PyBullet, no kicking), from scratch: PPO training diagnostics"
+  [[figure.arm]]
+  label = "no kick (scratch)"
+  runs  = "data/task16/keepaway_nokick_2v1_pybullet_seed*"
+
+
+# --- Keep-away 2v1: all its arms together (baselines from the scratch arm) --------------------
+[[figure]]
+kind      = "curves"
+name      = "keepaway_2v1_all_learning_curves"
+title     = "Keep-away 2v1 (PyBullet): scratch vs goto warm start vs no kick (scratch): survival on the fixed evaluation episodes during training"
+baselines = "scratch"
+  [[figure.arm]]
+  label = "scratch"
+  runs  = "data/task16/keepaway_kick_2v1_pybullet_seed*"
+  [[figure.arm]]
+  label = "goto warm start"
+  runs  = "data/task16/keepaway_kick_warm_2v1_pybullet_seed*"
+  [[figure.arm]]
+  label = "no kick (scratch)"
+  runs  = "data/task16/keepaway_nokick_2v1_pybullet_seed*"
+
+[[figure]]
+kind      = "final"
+name      = "keepaway_2v1_all_final_results"
+title     = "Keep-away 2v1 (PyBullet): scratch vs goto warm start vs no kick (scratch): final evaluation (same fixed episodes for every policy)"
+baselines = "scratch"
+  [[figure.arm]]
+  label = "scratch"
+  runs  = "data/task16/keepaway_kick_2v1_pybullet_seed*"
+  [[figure.arm]]
+  label = "goto warm start"
+  runs  = "data/task16/keepaway_kick_warm_2v1_pybullet_seed*"
+  [[figure.arm]]
+  label = "no kick (scratch)"
+  runs  = "data/task16/keepaway_nokick_2v1_pybullet_seed*"
+
+
+# --- Arm: Keep-away 2v2 (PyBullet, kicking), from scratch -------------------------------------
+[[figure]]
+kind      = "curves"
+name      = "keepaway_kick_2v2_learning_curves"
+title     = "Keep-away 2v2 (PyBullet, kicking), from scratch: survival on the fixed evaluation episodes during training"
+baselines = "scratch"
+  [[figure.arm]]
+  label = "scratch"
+  runs  = "data/task16/keepaway_kick_2v2_pybullet_seed*"
+
+[[figure]]
+kind      = "final"
+name      = "keepaway_kick_2v2_final_results"
+title     = "Keep-away 2v2 (PyBullet, kicking), from scratch: final evaluation (same fixed episodes for every policy)"
+baselines = "scratch"
+  [[figure.arm]]
+  label = "scratch"
+  runs  = "data/task16/keepaway_kick_2v2_pybullet_seed*"
+
+[[figure]]
+kind      = "diagnostics"
+name      = "keepaway_kick_2v2_training_diagnostics"
+title     = "Keep-away 2v2 (PyBullet, kicking), from scratch: PPO training diagnostics"
+  [[figure.arm]]
+  label = "scratch"
+  runs  = "data/task16/keepaway_kick_2v2_pybullet_seed*"
+
+
+# --- Arm: Keep-away 2v2 (PyBullet, kicking), warm-started from goto_target --------------------
+[[figure]]
+kind      = "curves"
+name      = "keepaway_kick_warm_2v2_learning_curves"
+title     = "Keep-away 2v2 (PyBullet, kicking), warm-started from goto_target: survival on the fixed evaluation episodes during training"
+baselines = "goto warm start"
+  [[figure.arm]]
+  label = "goto warm start"
+  runs  = "data/task16/keepaway_kick_warm_2v2_pybullet_seed*"
+
+[[figure]]
+kind      = "final"
+name      = "keepaway_kick_warm_2v2_final_results"
+title     = "Keep-away 2v2 (PyBullet, kicking), warm-started from goto_target: final evaluation (same fixed episodes for every policy)"
+baselines = "goto warm start"
+  [[figure.arm]]
+  label = "goto warm start"
+  runs  = "data/task16/keepaway_kick_warm_2v2_pybullet_seed*"
+
+[[figure]]
+kind      = "diagnostics"
+name      = "keepaway_kick_warm_2v2_training_diagnostics"
+title     = "Keep-away 2v2 (PyBullet, kicking), warm-started from goto_target: PPO training diagnostics"
+  [[figure.arm]]
+  label = "goto warm start"
+  runs  = "data/task16/keepaway_kick_warm_2v2_pybullet_seed*"
+
+
+# --- Keep-away 2v2: all its arms together (baselines from the scratch arm) --------------------
+[[figure]]
+kind      = "curves"
+name      = "keepaway_2v2_all_learning_curves"
+title     = "Keep-away 2v2 (PyBullet): scratch vs goto warm start: survival on the fixed evaluation episodes during training"
+baselines = "scratch"
+  [[figure.arm]]
+  label = "scratch"
+  runs  = "data/task16/keepaway_kick_2v2_pybullet_seed*"
+  [[figure.arm]]
+  label = "goto warm start"
+  runs  = "data/task16/keepaway_kick_warm_2v2_pybullet_seed*"
+
+[[figure]]
+kind      = "final"
+name      = "keepaway_2v2_all_final_results"
+title     = "Keep-away 2v2 (PyBullet): scratch vs goto warm start: final evaluation (same fixed episodes for every policy)"
+baselines = "scratch"
+  [[figure.arm]]
+  label = "scratch"
+  runs  = "data/task16/keepaway_kick_2v2_pybullet_seed*"
+  [[figure.arm]]
+  label = "goto warm start"
+  runs  = "data/task16/keepaway_kick_warm_2v2_pybullet_seed*"
+
+
+# --- Arm: Keep-away 3v2 (PyBullet, kicking), from scratch -------------------------------------
+[[figure]]
+kind      = "curves"
+name      = "keepaway_kick_3v2_learning_curves"
+title     = "Keep-away 3v2 (PyBullet, kicking), from scratch: survival on the fixed evaluation episodes during training"
+baselines = "scratch"
+  [[figure.arm]]
+  label = "scratch"
+  runs  = "data/task16/keepaway_kick_3v2_pybullet_seed*"
+
+[[figure]]
+kind      = "final"
+name      = "keepaway_kick_3v2_final_results"
+title     = "Keep-away 3v2 (PyBullet, kicking), from scratch: final evaluation (same fixed episodes for every policy)"
+baselines = "scratch"
+  [[figure.arm]]
+  label = "scratch"
+  runs  = "data/task16/keepaway_kick_3v2_pybullet_seed*"
+
+[[figure]]
+kind      = "diagnostics"
+name      = "keepaway_kick_3v2_training_diagnostics"
+title     = "Keep-away 3v2 (PyBullet, kicking), from scratch: PPO training diagnostics"
+  [[figure.arm]]
+  label = "scratch"
+  runs  = "data/task16/keepaway_kick_3v2_pybullet_seed*"
+
+
+# --- Arm: Keep-away 3v2 (PyBullet, kicking), warm-started from goto_target --------------------
+[[figure]]
+kind      = "curves"
+name      = "keepaway_kick_warm_3v2_learning_curves"
+title     = "Keep-away 3v2 (PyBullet, kicking), warm-started from goto_target: survival on the fixed evaluation episodes during training"
+baselines = "goto warm start"
+  [[figure.arm]]
+  label = "goto warm start"
+  runs  = "data/task16/keepaway_kick_warm_3v2_pybullet_seed*"
+
+[[figure]]
+kind      = "final"
+name      = "keepaway_kick_warm_3v2_final_results"
+title     = "Keep-away 3v2 (PyBullet, kicking), warm-started from goto_target: final evaluation (same fixed episodes for every policy)"
+baselines = "goto warm start"
+  [[figure.arm]]
+  label = "goto warm start"
+  runs  = "data/task16/keepaway_kick_warm_3v2_pybullet_seed*"
+
+[[figure]]
+kind      = "diagnostics"
+name      = "keepaway_kick_warm_3v2_training_diagnostics"
+title     = "Keep-away 3v2 (PyBullet, kicking), warm-started from goto_target: PPO training diagnostics"
+  [[figure.arm]]
+  label = "goto warm start"
+  runs  = "data/task16/keepaway_kick_warm_3v2_pybullet_seed*"
+
+
+# --- Keep-away 3v2: all its arms together (baselines from the scratch arm) --------------------
+[[figure]]
+kind      = "curves"
+name      = "keepaway_3v2_all_learning_curves"
+title     = "Keep-away 3v2 (PyBullet): scratch vs goto warm start: survival on the fixed evaluation episodes during training"
+baselines = "scratch"
+  [[figure.arm]]
+  label = "scratch"
+  runs  = "data/task16/keepaway_kick_3v2_pybullet_seed*"
+  [[figure.arm]]
+  label = "goto warm start"
+  runs  = "data/task16/keepaway_kick_warm_3v2_pybullet_seed*"
+
+[[figure]]
+kind      = "final"
+name      = "keepaway_3v2_all_final_results"
+title     = "Keep-away 3v2 (PyBullet): scratch vs goto warm start: final evaluation (same fixed episodes for every policy)"
+baselines = "scratch"
+  [[figure.arm]]
+  label = "scratch"
+  runs  = "data/task16/keepaway_kick_3v2_pybullet_seed*"
+  [[figure.arm]]
+  label = "goto warm start"
+  runs  = "data/task16/keepaway_kick_warm_3v2_pybullet_seed*"
+
+
+# --- Arm: Keep-away 3v3 (PyBullet, kicking), from scratch -------------------------------------
+[[figure]]
+kind      = "curves"
+name      = "keepaway_kick_3v3_learning_curves"
+title     = "Keep-away 3v3 (PyBullet, kicking), from scratch: survival on the fixed evaluation episodes during training"
+baselines = "scratch"
+  [[figure.arm]]
+  label = "scratch"
+  runs  = "data/task16/keepaway_kick_3v3_pybullet_seed*"
+
+[[figure]]
+kind      = "final"
+name      = "keepaway_kick_3v3_final_results"
+title     = "Keep-away 3v3 (PyBullet, kicking), from scratch: final evaluation (same fixed episodes for every policy)"
+baselines = "scratch"
+  [[figure.arm]]
+  label = "scratch"
+  runs  = "data/task16/keepaway_kick_3v3_pybullet_seed*"
+
+[[figure]]
+kind      = "diagnostics"
+name      = "keepaway_kick_3v3_training_diagnostics"
+title     = "Keep-away 3v3 (PyBullet, kicking), from scratch: PPO training diagnostics"
+  [[figure.arm]]
+  label = "scratch"
+  runs  = "data/task16/keepaway_kick_3v3_pybullet_seed*"
+
+
+# --- Arm: Keep-away 3v3 (PyBullet, kicking), warm-started from goto_target --------------------
+[[figure]]
+kind      = "curves"
+name      = "keepaway_kick_warm_3v3_learning_curves"
+title     = "Keep-away 3v3 (PyBullet, kicking), warm-started from goto_target: survival on the fixed evaluation episodes during training"
+baselines = "goto warm start"
+  [[figure.arm]]
+  label = "goto warm start"
+  runs  = "data/task16/keepaway_kick_warm_3v3_pybullet_seed*"
+
+[[figure]]
+kind      = "final"
+name      = "keepaway_kick_warm_3v3_final_results"
+title     = "Keep-away 3v3 (PyBullet, kicking), warm-started from goto_target: final evaluation (same fixed episodes for every policy)"
+baselines = "goto warm start"
+  [[figure.arm]]
+  label = "goto warm start"
+  runs  = "data/task16/keepaway_kick_warm_3v3_pybullet_seed*"
+
+[[figure]]
+kind      = "diagnostics"
+name      = "keepaway_kick_warm_3v3_training_diagnostics"
+title     = "Keep-away 3v3 (PyBullet, kicking), warm-started from goto_target: PPO training diagnostics"
+  [[figure.arm]]
+  label = "goto warm start"
+  runs  = "data/task16/keepaway_kick_warm_3v3_pybullet_seed*"
+
+
+# --- Keep-away 3v3: all its arms together (baselines from the scratch arm) --------------------
+[[figure]]
+kind      = "curves"
+name      = "keepaway_3v3_all_learning_curves"
+title     = "Keep-away 3v3 (PyBullet): scratch vs goto warm start: survival on the fixed evaluation episodes during training"
+baselines = "scratch"
+  [[figure.arm]]
+  label = "scratch"
+  runs  = "data/task16/keepaway_kick_3v3_pybullet_seed*"
+  [[figure.arm]]
+  label = "goto warm start"
+  runs  = "data/task16/keepaway_kick_warm_3v3_pybullet_seed*"
+
+[[figure]]
+kind      = "final"
+name      = "keepaway_3v3_all_final_results"
+title     = "Keep-away 3v3 (PyBullet): scratch vs goto warm start: final evaluation (same fixed episodes for every policy)"
+baselines = "scratch"
+  [[figure.arm]]
+  label = "scratch"
+  runs  = "data/task16/keepaway_kick_3v3_pybullet_seed*"
+  [[figure.arm]]
+  label = "goto warm start"
+  runs  = "data/task16/keepaway_kick_warm_3v3_pybullet_seed*"
+
+# --- Per start condition: all five team sizes together (no baselines: each size has its own) ---
+# Labels are the team sizes, so a size keeps its color in both figures; same ylim for a direct comparison.
+[[figure]]
+kind  = "curves"
+name  = "keepaway_scratch_all_sizes_learning_curves"
+title = "Keep-away with kicking (PyBullet), from scratch: survival during training, all team sizes"
+ylim  = [40, 240]
+  [[figure.arm]]
+  label = "1v1"
+  runs  = "data/task16/keepaway_kick_1v1_pybullet_seed*"
+  [[figure.arm]]
+  label = "2v1"
+  runs  = "data/task16/keepaway_kick_2v1_pybullet_seed*"
+  [[figure.arm]]
+  label = "2v2"
+  runs  = "data/task16/keepaway_kick_2v2_pybullet_seed*"
+  [[figure.arm]]
+  label = "3v2"
+  runs  = "data/task16/keepaway_kick_3v2_pybullet_seed*"
+  [[figure.arm]]
+  label = "3v3"
+  runs  = "data/task16/keepaway_kick_3v3_pybullet_seed*"
+
+[[figure]]
+kind  = "curves"
+name  = "keepaway_warm_all_sizes_learning_curves"
+title = "Keep-away with kicking (PyBullet), goto_target warm start: survival during training, all team sizes"
+ylim  = [40, 240]
+  [[figure.arm]]
+  label = "1v1"
+  runs  = "data/task16/keepaway_kick_warm_1v1_pybullet_seed*"
+  [[figure.arm]]
+  label = "2v1"
+  runs  = "data/task16/keepaway_kick_warm_2v1_pybullet_seed*"
+  [[figure.arm]]
+  label = "2v2"
+  runs  = "data/task16/keepaway_kick_warm_2v2_pybullet_seed*"
+  [[figure.arm]]
+  label = "3v2"
+  runs  = "data/task16/keepaway_kick_warm_3v2_pybullet_seed*"
+  [[figure.arm]]
+  label = "3v3"
+  runs  = "data/task16/keepaway_kick_warm_3v3_pybullet_seed*"
+
+
+# --- The goto_target warm-up (the warm arms' starting actor) --------------------------
+[[figure]]
+kind      = "goto"
+name      = "goto_target_kick_warm_up_curve"
+title     = "goto_target warm-up (PyBullet, 1v0, kicking), 200k steps: the warm arms' starting actor"
+baselines = "goto_target PPO"
+  [[figure.arm]]
+  label = "goto_target PPO"
+  runs  = "data/task16/goto_target_kick_pybullet_seed*"
+
+[[figure]]
+kind  = "diagnostics"
+name  = "goto_target_kick_warm_up_training_diagnostics"
+title = "goto_target warm-up (PyBullet, 1v0, kicking): PPO training diagnostics"
+  [[figure.arm]]
+  label = "goto_target PPO"
+  runs  = "data/task16/goto_target_kick_pybullet_seed*"
+
+# --- Table view (results_tables.md): one section per arm --------------------------------
+[[table]]
+title   = "Keep-away 1v1 (PyBullet, kicking), from scratch ({n_runs} runs; mean episode length, control steps)"
+source  = "data/task16/eval_keepaway_kick_1v1_pybullet_seed0.csv"
+columns = "keepaway"
+
+[[table]]
+title   = "Keep-away 1v1 (PyBullet, kicking), warm-started from goto_target ({n_runs} runs; mean episode length, control steps)"
+source  = "data/task16/eval_keepaway_kick_warm_1v1_pybullet_seed0.csv"
+columns = "keepaway"
+
+[[table]]
+title   = "Keep-away 2v1 (PyBullet, kicking), from scratch ({n_runs} runs; mean episode length, control steps)"
+source  = "data/task16/eval_keepaway_kick_2v1_pybullet_seed0.csv"
+columns = "keepaway"
+
+[[table]]
+title   = "Keep-away 2v1 (PyBullet, kicking), warm-started from goto_target ({n_runs} runs; mean episode length, control steps)"
+source  = "data/task16/eval_keepaway_kick_warm_2v1_pybullet_seed0.csv"
+columns = "keepaway"
+
+[[table]]
+title   = "Keep-away 2v1 (PyBullet, no kicking), from scratch ({n_runs} runs; mean episode length, control steps)"
+source  = "data/task16/eval_keepaway_nokick_2v1_pybullet_seed0.csv"
+columns = "keepaway"
+
+[[table]]
+title   = "Keep-away 2v2 (PyBullet, kicking), from scratch ({n_runs} runs; mean episode length, control steps)"
+source  = "data/task16/eval_keepaway_kick_2v2_pybullet_seed0.csv"
+columns = "keepaway"
+
+[[table]]
+title   = "Keep-away 2v2 (PyBullet, kicking), warm-started from goto_target ({n_runs} runs; mean episode length, control steps)"
+source  = "data/task16/eval_keepaway_kick_warm_2v2_pybullet_seed0.csv"
+columns = "keepaway"
+
+[[table]]
+title   = "Keep-away 3v2 (PyBullet, kicking), from scratch ({n_runs} runs; mean episode length, control steps)"
+source  = "data/task16/eval_keepaway_kick_3v2_pybullet_seed0.csv"
+columns = "keepaway"
+
+[[table]]
+title   = "Keep-away 3v2 (PyBullet, kicking), warm-started from goto_target ({n_runs} runs; mean episode length, control steps)"
+source  = "data/task16/eval_keepaway_kick_warm_3v2_pybullet_seed0.csv"
+columns = "keepaway"
+
+[[table]]
+title   = "Keep-away 3v3 (PyBullet, kicking), from scratch ({n_runs} runs; mean episode length, control steps)"
+source  = "data/task16/eval_keepaway_kick_3v3_pybullet_seed0.csv"
+columns = "keepaway"
+
+[[table]]
+title   = "Keep-away 3v3 (PyBullet, kicking), warm-started from goto_target ({n_runs} runs; mean episode length, control steps)"
+source  = "data/task16/eval_keepaway_kick_warm_3v3_pybullet_seed0.csv"
+columns = "keepaway"
+
+[[table]]
+title   = "goto_target warm-up, PyBullet, 1v0, kicking ({n_runs} runs)"
+source  = "data/task16/eval_goto_target_kick_pybullet_seed0.csv"
+columns = "goto"
+
+# --- frozen 2026-11-27 by scripts/freeze.py at commit 041de4f ---
+#   ../../runs/task16/keepaway_kick_1v1_pybullet_seed* -> data/task16/keepaway_kick_1v1_pybullet_seed*
+#   ../../runs/task16/keepaway_kick_warm_1v1_pybullet_seed* -> data/task16/keepaway_kick_warm_1v1_pybullet_seed*
+#   ../../runs/task16/keepaway_kick_2v1_pybullet_seed* -> data/task16/keepaway_kick_2v1_pybullet_seed*
+#   ../../runs/task16/keepaway_kick_warm_2v1_pybullet_seed* -> data/task16/keepaway_kick_warm_2v1_pybullet_seed*
+#   ../../runs/task16/keepaway_nokick_2v1_pybullet_seed* -> data/task16/keepaway_nokick_2v1_pybullet_seed*
+#   ../../runs/task16/keepaway_kick_2v2_pybullet_seed* -> data/task16/keepaway_kick_2v2_pybullet_seed*
+#   ../../runs/task16/keepaway_kick_warm_2v2_pybullet_seed* -> data/task16/keepaway_kick_warm_2v2_pybullet_seed*
+#   ../../runs/task16/keepaway_kick_3v2_pybullet_seed* -> data/task16/keepaway_kick_3v2_pybullet_seed*
+#   ../../runs/task16/keepaway_kick_warm_3v2_pybullet_seed* -> data/task16/keepaway_kick_warm_3v2_pybullet_seed*
+#   ../../runs/task16/keepaway_kick_3v3_pybullet_seed* -> data/task16/keepaway_kick_3v3_pybullet_seed*
+#   ../../runs/task16/keepaway_kick_warm_3v3_pybullet_seed* -> data/task16/keepaway_kick_warm_3v3_pybullet_seed*
+#   ../../runs/task16/goto_target_kick_pybullet_seed* -> data/task16/goto_target_kick_pybullet_seed*
+#   ../../runs/task16/eval_keepaway_kick_1v1_pybullet_seed0.csv -> data/task16/eval_keepaway_kick_1v1_pybullet_seed0.csv
+#   ../../runs/task16/eval_keepaway_kick_warm_1v1_pybullet_seed0.csv -> data/task16/eval_keepaway_kick_warm_1v1_pybullet_seed0.csv
+#   ../../runs/task16/eval_keepaway_kick_2v1_pybullet_seed0.csv -> data/task16/eval_keepaway_kick_2v1_pybullet_seed0.csv
+#   ../../runs/task16/eval_keepaway_kick_warm_2v1_pybullet_seed0.csv -> data/task16/eval_keepaway_kick_warm_2v1_pybullet_seed0.csv
+#   ../../runs/task16/eval_keepaway_nokick_2v1_pybullet_seed0.csv -> data/task16/eval_keepaway_nokick_2v1_pybullet_seed0.csv
+#   ../../runs/task16/eval_keepaway_kick_2v2_pybullet_seed0.csv -> data/task16/eval_keepaway_kick_2v2_pybullet_seed0.csv
+#   ../../runs/task16/eval_keepaway_kick_warm_2v2_pybullet_seed0.csv -> data/task16/eval_keepaway_kick_warm_2v2_pybullet_seed0.csv
+#   ../../runs/task16/eval_keepaway_kick_3v2_pybullet_seed0.csv -> data/task16/eval_keepaway_kick_3v2_pybullet_seed0.csv
+#   ../../runs/task16/eval_keepaway_kick_warm_3v2_pybullet_seed0.csv -> data/task16/eval_keepaway_kick_warm_3v2_pybullet_seed0.csv
+#   ../../runs/task16/eval_keepaway_kick_3v3_pybullet_seed0.csv -> data/task16/eval_keepaway_kick_3v3_pybullet_seed0.csv
+#   ../../runs/task16/eval_keepaway_kick_warm_3v3_pybullet_seed0.csv -> data/task16/eval_keepaway_kick_warm_3v3_pybullet_seed0.csv
+#   ../../runs/task16/eval_goto_target_kick_pybullet_seed0.csv -> data/task16/eval_goto_target_kick_pybullet_seed0.csv
