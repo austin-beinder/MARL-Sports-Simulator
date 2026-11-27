@@ -1,6 +1,6 @@
 ```
 Regression check: 9 cases x seeds [90, 91] vs results/silver
-Run: 2026-11-27 at commit aea21b2 + uncommitted changes
+Run: 2026-11-27 at commit 041de4f + uncommitted changes
 Comparison: exact
 
 IDENTICAL  keepaway_1v1_mock
