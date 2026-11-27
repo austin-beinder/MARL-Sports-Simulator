@@ -9,11 +9,13 @@
 #   - 2026-11-25: Citation cleanup (backlog task 9): dropped the Prompt summary
 #     and Human review lines; its docstring says why freezing is a separate
 #     script from plot.py; no behaviour change.
+#   - 2026-11-27: Docstring examples use golden_1v1_initial, the renamed golden
+#     record (backlog task 16).
 # ==============================================================================
 """Freeze a results record. Run from the repo root with the venv active:
 
-    python scripts/freeze.py golden               # results/golden/manifest.toml
-    python scripts/freeze.py golden --overwrite   # replace files already in results/golden/data/
+    python scripts/freeze.py golden_1v1_initial               # results/golden_1v1_initial/manifest.toml
+    python scripts/freeze.py golden_1v1_initial --overwrite   # replace files already in its data/
 
 Copies the inputs the record's manifest still reads from runs/ (paths like
 "../../runs/new_reward_pybullet_seed*") into results/<record>/data/, rewrites those path

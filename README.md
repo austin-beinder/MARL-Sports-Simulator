@@ -22,6 +22,7 @@ AI CITATION: Claude Code (Claude Opus 5.5) | 2026-11-01 | JC Stinson III (LifeHa
 Usage: Wrote the "Results & plots" section (backlog task 2: results records and ad-hoc plots).
 Modified: 2026-11-01 - Run names now carry the env (`_pybullet_`/`_mock_`); PyBullet is the default (backlog task 3).
 Modified: 2026-11-26 - Golden v1 (midterm, mock) archived to `results/archive/golden_v1/`; `results/golden/` now holds golden v2, its PyBullet replacement (backlog task 15).
+Modified: 2026-11-27 - One record per experiment set: `results/golden/` renamed `results/golden_1v1_initial/`; plain `plot.py` renders every `results/golden*/` record and `tests/test_golden.py` guards them all (backlog task 16).
 -->
 # Results & plots
 Training writes each run to `runs/<config>_<env>_seed<N>/` (gitignored): `config.json`, `train.csv`,
@@ -40,19 +41,23 @@ folder that already has figures needs `--overwrite`.
 
 **Results records** live in `results/<record>/` (git-tracked): a `manifest.toml` that lists the figures,
 their arms and the table sections; `data/` (frozen CSV + config copies, no checkpoints); and `figures/`.
-`results/golden/` holds the for-score results (PyBullet), and plain `python scripts/plot.py` renders it to
-`runs/plots/golden/`. The midterm's mock-env record (golden v1) is archived in `results/archive/golden_v1/`
-(`python scripts/plot.py --manifest results/archive/golden_v1/manifest.toml`).
+The for-score results (PyBullet) are the **golden records**, one folder per experiment set, each named
+`results/golden_<set>/`. `results/golden_1v1_initial/` (golden v2) is keep-away 1v1, movement only, survival vs
+PBRS. Plain `python scripts/plot.py` renders every golden record, each to `runs/plots/<record>/`;
+`--manifest results/<record>/manifest.toml` renders just one. The midterm's mock-env record (golden v1) is
+archived in `results/archive/golden_v1/` (`python scripts/plot.py --manifest results/archive/golden_v1/manifest.toml`).
 
 To add an experiment to a record, add an arm to its manifest pointing at the runs
 (`runs = "../../runs/new_reward_pybullet_seed*"`), then freeze. That copies those files into the record, rewrites
-the path, notes the date and commit, and renders the figures:
+the path, notes the date and commit, and renders the figures. A new experiment set is a new `results/golden_<set>/`
+folder with its own manifest:
 
 ```shell
-python scripts/freeze.py golden     # then commit results/golden/
+python scripts/freeze.py golden_1v1_initial     # then commit results/golden_1v1_initial/
 ```
 
-`tests/test_golden.py` checks that the archived golden v1 record still re-renders exactly from its own data.
+`tests/test_golden.py` checks that every golden record (`results/golden*/` and `results/archive/golden*/`) is
+fully frozen and still re-renders exactly from its own data.
 
 <!--
 AI CITATION: Claude Code (Claude Opus 5.5) | 2026-11-02 | JC Stinson III (LifeHackerIII)

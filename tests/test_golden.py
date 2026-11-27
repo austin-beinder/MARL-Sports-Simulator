@@ -12,10 +12,17 @@
 #   - 2026-11-26: Guards both records (backlog task 15): the golden v2 PyBullet
 #     record in results/golden/, and golden v1, archived to
 #     results/archive/golden_v1/ so the legacy mock results stay guarded.
+#   - 2026-11-27: Guards every golden record it finds (results/golden*/ and
+#     results/archive/golden*/), and fails if the search finds none (backlog
+#     task 16: results/golden/ split into experiment sets, the first renamed
+#     results/golden_1v1_initial/).
 # ==============================================================================
 """The golden records are git-tracked, so every checkout can check them.
 
-- ``results/golden/``: golden v2, the PyBullet keep-away 1v1 results (the for-score record).
+Every folder named ``golden*`` in ``results/`` or ``results/archive/`` is a record and is
+guarded here, so a new experiment set is covered as soon as it's frozen. Today:
+
+- ``results/golden_1v1_initial/``: the PyBullet keep-away 1v1 reward-design results (golden v2).
 - ``results/archive/golden_v1/``: the archived midterm mock-env record.
 
 If a change to the plotting/table code alters what a record's data renders to, these
@@ -31,7 +38,14 @@ from marl.manifest import load_manifest
 from marl.plots import render_tables
 
 RESULTS = Path(__file__).resolve().parents[1] / "results"
-RECORDS = [RESULTS / "golden", RESULTS / "archive" / "golden_v1"]
+RECORDS = sorted(p.parent for p in [*RESULTS.glob("golden*/manifest.toml"),
+                                    *(RESULTS / "archive").glob("golden*/manifest.toml")])
+
+
+def test_the_golden_records_are_found():
+    # An empty list would quietly skip every guard below (pytest skips an empty parametrize).
+    names = {p.name for p in RECORDS}
+    assert "golden_v1" in names and len(RECORDS) >= 2, names
 
 
 @pytest.fixture(params=RECORDS, ids=lambda p: p.name)

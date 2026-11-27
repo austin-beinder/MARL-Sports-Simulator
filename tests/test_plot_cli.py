@@ -13,6 +13,8 @@
 #   - 2026-11-25: Citation cleanup (backlog task 9): dropped the Prompt summary
 #     and Human review lines; one Usage entry per PR, oldest first; added the
 #     module docstring; no behaviour change.
+#   - 2026-11-27: A plain plot.py renders every results/golden*/ record, each
+#     to its own folder, and --out then needs --manifest (backlog task 16).
 # ==============================================================================
 """Tests for the plotting command line (scripts/plot.py -> marl.plots.main).
 
@@ -149,15 +151,32 @@ def test_a_record_rendered_to_an_explicit_folder_is_guarded(runs, capsys):
 
 
 def test_a_missing_manifest_is_a_clear_error(runs, capsys):
-    assert main([]) == 1  # no results/golden/ yet
+    assert main([]) == 1  # no results/golden*/ yet
     assert "no manifest" in capsys.readouterr().err
 
 
-def test_plain_plot_renders_golden(runs, capsys):
-    golden = runs / "results" / "golden"
+def make_golden(root, name):
+    golden = root / "results" / name
     for k in range(2):
         fake_run(golden / "data", f"new_seed{k}", k)
-    (golden / "manifest.toml").write_text('name = "golden"\n[[figure]]\nkind = "diagnostics"\nname = "diag"\n'
+    (golden / "manifest.toml").write_text(f'name = "{name}"\n[[figure]]\nkind = "diagnostics"\nname = "diag"\n'
                                           '[[figure.arm]]\nlabel = "PPO"\nruns = "data/new_seed*"\n', encoding="utf-8")
+
+
+def test_plain_plot_renders_every_golden_record_to_its_own_folder(runs):
+    make_golden(runs, "golden_a")
+    make_golden(runs, "golden_b")
+    make_golden(runs / "results", "archive_not_golden")  # results/results/...: not a golden record
     assert main([]) == 0
-    assert pngs(runs / "runs/plots/golden") == ["diag.png"]
+    assert pngs(runs / "runs/plots/golden_a") == ["diag.png"]
+    assert pngs(runs / "runs/plots/golden_b") == ["diag.png"]
+    assert main([]) == 0  # re-renders: each folder is its own record's render, exempt from the guard
+
+
+def test_out_needs_manifest_when_several_golden_records_match(runs):
+    make_golden(runs, "golden_a")
+    make_golden(runs, "golden_b")
+    with pytest.raises(SystemExit):
+        main(["--out", "elsewhere"])
+    make_golden(runs, "golden_c")
+    assert main(["--manifest", "results/golden_c/manifest.toml", "--out", "elsewhere"]) == 0

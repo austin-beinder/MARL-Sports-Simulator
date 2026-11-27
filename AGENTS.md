@@ -29,6 +29,9 @@ Usage:
     (JC Stinson III)
   - 2026-11-26: Golden v1 archived to results/archive/golden_v1/ (Layout and
     run-name notes). (JC Stinson III)
+  - 2026-11-27: Layout: one golden record per experiment set (results/golden/
+    renamed golden_1v1_initial/; tests/test_golden.py guards every golden*
+    folder). (JC Stinson III)
 -->
 
 # AGENTS.md
@@ -56,7 +59,7 @@ built in the PyBullet env only (`rl.kick_enabled = true`, which needs
 | `curriculum/` | Curriculum training: `runner.py` (everything) and curriculum TOMLs such as `keepaway_1v1.toml` |
 | `scripts/` | Thin CLI wrappers: `train.py`, `evaluate.py`, `watch.py`, `calibrate.py`, `plot.py`, `freeze.py` (freeze a results record), `regress.py` (regression check), `plot_episode_length.py` (see `scripts/README.md`) |
 | `configs/` | Experiment configs: `keepaway_1v1.toml` (+ `_pbrs`), `goto_target.toml`, `claim_ball.toml`, `pass_practice_moving.toml` |
-| `results/` | Frozen, committed results records: `golden/` (golden v2, the for-score PyBullet keep-away 1v1 results), `archive/golden_v1/` (the midterm mock results, legacy; `tests/test_golden.py` guards both) and `silver/` (the regression record) |
+| `results/` | Frozen, committed results records: the for-score PyBullet results, one `golden_<set>/` per experiment set (`golden_1v1_initial/` = golden v2, keep-away 1v1 survival vs PBRS); `archive/golden_v1/` (the midterm mock results, legacy); `tests/test_golden.py` guards every `golden*/` folder in both places. And `silver/` (the regression record) |
 | `docs/ICD.md` | Env ↔ RL interface control document (DRAFT v0.2) |
 | `tests/` | pytest suite for `marl/`, including ICD conformance tests run against both envs |
 | `examples/` | Early PyBullet prototypes, not used by the project code |

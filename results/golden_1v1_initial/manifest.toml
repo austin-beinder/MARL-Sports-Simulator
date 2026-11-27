@@ -10,13 +10,17 @@
 #     arms together: learning curves and final results; one table section per
 #     arm. goto_target and the red-speed calibration were run but are not part
 #     of the record (a sanity check and a process step).
+#   - 2026-11-27: Renamed results/golden/ -> results/golden_1v1_initial/
+#     (name "golden_1v1_initial"; was "golden"), one folder per experiment set
+#     (backlog task 16). The data and figures are unchanged.
 # ==============================================================================
-# The for-score record: PyBullet env, kicking off, red 1.8 m/s, seeds 0-4 x 1M steps.
+# A for-score record (golden v2): PyBullet env, kicking off, red 1.8 m/s, seeds 0-4 x 1M steps.
 # The legacy mock-env record it replaces is results/archive/golden_v1/.
-# Render:  python scripts/plot.py                      (-> runs/plots/golden/)
-# Freeze:  python scripts/freeze.py golden             (copies runs/ inputs into data/, renders figures/)
+# Render:  python scripts/plot.py --manifest results/golden_1v1_initial/manifest.toml
+#          (-> runs/plots/golden_1v1_initial/; a plain plot.py renders every golden record)
+# Freeze:  python scripts/freeze.py golden_1v1_initial (copies runs/ inputs into data/, renders figures/)
 
-name        = "golden"
+name        = "golden_1v1_initial"
 description = "PyBullet keep-away 1v1: survival-only vs + PBRS acquisition shaping (coef 4), seeds 0-4, 1M steps"
 
 # --- Arm: survival-only reward ----------------------------------------------------------

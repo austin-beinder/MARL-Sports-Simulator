@@ -8,12 +8,14 @@
 #     marl.plots.main.
 #   - 2026-11-01: Rewrote the docstring for records and ad-hoc plots (task 2).
 #   - 2026-11-13: Docstring: the --curriculum option. (Austin Beinder)
+#   - 2026-11-27: Docstring: a plain plot.py renders every golden record
+#     (backlog task 16). (JC Stinson III)
 # ==============================================================================
 """Make figures from finished runs. Run from the repo root with the venv active.
 
-    python scripts/plot.py                               # the golden record -> runs/plots/golden/
+    python scripts/plot.py                               # every results/golden*/ record -> runs/plots/<record>/
     python scripts/plot.py --manifest results/X/manifest.toml   # any record -> runs/plots/X/
-    python scripts/plot.py --arm "new reward=runs/new_reward_pybullet_seed*" [--arm "golden=results/golden/data/..."]
+    python scripts/plot.py --arm "new reward=runs/new_reward_pybullet_seed*" [--arm "golden=results/golden_1v1_initial/data/..."]
                            [--kind curves final diagnostics] [--baselines LABEL] [--name N] [--overwrite]
                                                          # ad hoc -> runs/plots/<name>/ (default: adhoc)
 
