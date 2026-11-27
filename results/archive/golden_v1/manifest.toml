@@ -11,12 +11,18 @@
 #     that already existed; no new data was generated.
 #   - 2026-11-25: Citation cleanup (backlog task 9): dropped the Prompt summary
 #     and Human review lines; no behaviour change.
+#   - 2026-11-26: Archived (backlog task 15): moved from results/golden/ to
+#     results/archive/golden_v1/, renamed the record golden -> golden_v1 so it
+#     renders to its own folder, and pointed the commands below at the new path.
+#     The data and figures are unchanged.
 # ==============================================================================
-# Render:  python scripts/plot.py                 (-> runs/plots/golden/)
-# Freeze:  python scripts/freeze.py golden        (copies any ../../runs/... inputs into data/)
+# ARCHIVED 2026-11-26: the legacy mock-env record (golden v1). The for-score env is PyBullet now;
+# results/golden/ is for its replacement. Kept for comparison, and still guarded by tests/test_golden.py.
+# Render:  python scripts/plot.py --manifest results/archive/golden_v1/manifest.toml   (-> runs/plots/golden_v1/)
+# Freeze:  python scripts/freeze.py results/archive/golden_v1   (nothing left to copy; re-renders figures/)
 
-name        = "golden"
-description = "Midterm mock-env results (keep-away 1v1 survival + PBRS ablation, goto_target, calibration)"
+name        = "golden_v1"
+description = "ARCHIVED midterm mock-env results (keep-away 1v1 survival + PBRS ablation, goto_target, calibration)"
 
 # --- Keep-away 1v1: survival-only reward, seeds 0-4, 1M steps ---------------------------
 [[figure]]

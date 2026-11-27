@@ -24,6 +24,11 @@
 #   - 2026-11-25: Unused unpacked values replaced with _ (pylint cleanup,
 #     backlog task 13). Citation cleanup (backlog task 9): one Usage entry per
 #     PR, oldest first; added the module docstring; no behaviour change.
+#   - 2026-11-27: Five spread-out line ends get ordered, non-overlapping labels
+#     inside the axes; the early-ends stacking test gets room above its ends,
+#     since labels no longer leave the axes; the close-pair test checks the
+#     split by position, since 3+ ends now center their labels first (backlog
+#     task 16).
 # ==============================================================================
 """Tests for the figures (marl/plots.py), on synthetic run directories.
 
@@ -393,10 +398,14 @@ def test_close_line_ends_get_labels_on_opposite_sides():
     fig, ax = plt.subplots()
     ax.set_ylim(0, 100)
     _end_labels(ax, [(1.0, 50.0, "low"), (1.0, 52.0, "high"), (1.0, 90.0, "alone")], refs=[88.0])
+    fig.canvas.draw()
+    ext = {t.get_text(): t.get_window_extent(fig.canvas.get_renderer()) for t in ax.texts}
     va = {t.get_text(): t.get_va() for t in ax.texts}
     plt.close(fig)
-    # the close pair splits (higher above); the lone end steps away from the reference just below it
-    assert va == {"low": "top", "high": "bottom", "alone": "bottom"}
+    # the close pair splits (higher above, no overlap); the lone end steps away from the
+    # reference just below it
+    assert ext["low"].y1 <= ext["high"].y0 + 0.5
+    assert va["alone"] == "bottom"
 
 
 ### AI GENERATED (2026-11-13)
@@ -462,10 +471,12 @@ def test_no_catch_figure_without_pass_practice_stages(tmp_path):
 
 def test_three_close_ends_stack_and_early_ends_label_to_the_right():
     # Found in the task 2 demo: arms of different budgets end at different x, and three
-    # finals near 94 overlapped; early-ending labels ran left over the y axis.
+    # finals near 94 overlapped; early-ending labels ran left over the y axis. The axes leave
+    # room above the ends: with none, the labels stay inside the axes instead (task 16), in
+    # line order, so the lower one may sit below its line (see the next-but-one test).
     fig, ax = plt.subplots()
     ax.set_xlim(0, 1.0)
-    ax.set_ylim(0, 100)
+    ax.set_ylim(0, 130)
     _end_labels(ax, [(1.0, 94.0, "long"), (0.1, 94.2, "short a"), (0.1, 93.9, "short b"), (1.0, 93.8, "long b")],
                 refs=[])
     texts = {t.get_text(): t for t in ax.texts}
@@ -476,6 +487,26 @@ def test_three_close_ends_stack_and_early_ends_label_to_the_right():
     assert offsets["long"] > 0 > offsets["long b"]
     assert offsets["short a"] > offsets["short b"] > 0
     assert texts["long"].get_ha() == "right" and texts["short a"].get_ha() == "left"
+
+
+def test_many_line_ends_get_ordered_non_overlapping_labels_inside_the_axes():
+    # Found in task 16: five team sizes' curves end spread over the axis; neighbouring groups of
+    # close ends pushed their labels into each other, one label sat above a higher line's, and
+    # the lowest ran below the axes onto the tick labels.
+    fig, ax = plt.subplots(figsize=(5, 3))
+    ax.set_xlim(0, 1.0)
+    ax.set_ylim(40, 240)
+    ys = {"a": 123.0, "b": 113.0, "c": 86.0, "d": 83.0, "e": 78.0, "f": 41.0}
+    _end_labels(ax, [(1.0, y, name) for name, y in ys.items()], refs=[])
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    box = ax.get_window_extent(renderer)
+    ext = {t.get_text(): t.get_window_extent(renderer) for t in ax.texts}
+    plt.close(fig)
+    order = sorted(ys, key=ys.get)  # low to high
+    for lower, upper in zip(order, order[1:]):
+        assert ext[lower].y1 <= ext[upper].y0 + 0.5, (lower, upper)  # stacked in line order, no overlap
+    assert all(box.y0 - 0.5 <= e.y0 and e.y1 <= box.y1 + 0.5 for e in ext.values())
 
 
 def test_single_seed_arms_show_no_spread_and_legends_count_seeds_correctly(tmp_path):

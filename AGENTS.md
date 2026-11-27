@@ -27,6 +27,12 @@ Usage:
     Layout: the reporting modules, every script, the configs and results/.
     Python 3.13+ (the team runs 3.13 and 3.14); how to run pylint.
     (JC Stinson III)
+  - 2026-11-26: Golden v1 archived to results/archive/golden_v1/ (Layout and
+    run-name notes). (JC Stinson III)
+  - 2026-11-27: Layout: one golden record per experiment set (results/golden/
+    renamed golden_1v1_initial/; tests/test_golden.py guards every golden*
+    folder); the team-size record; scripts queue_runs.py and
+    plot_team_size.py. (JC Stinson III)
 -->
 
 # AGENTS.md
@@ -52,9 +58,9 @@ built in the PyBullet env only (`rl.kick_enabled = true`, which needs
 | `marl/rl/` | PPO: networks, rollout, buffer, GAE, rewards, observations, training loop, evaluation, checkpoints, CSV logging |
 | `marl/` (top level) | `baselines.py` (random/still/flee/oracle), `calibrate.py`, `watch.py`; reporting: `results.py` (reads runs), `plots.py` (figures), `manifest.py` + `record.py` (results records), `regression.py` (the silver regression harness) |
 | `curriculum/` | Curriculum training: `runner.py` (everything) and curriculum TOMLs such as `keepaway_1v1.toml` |
-| `scripts/` | Thin CLI wrappers: `train.py`, `evaluate.py`, `watch.py`, `calibrate.py`, `plot.py`, `freeze.py` (freeze a results record), `regress.py` (regression check), `plot_episode_length.py` (see `scripts/README.md`) |
+| `scripts/` | Thin CLI wrappers: `train.py`, `evaluate.py`, `watch.py`, `calibrate.py`, `plot.py`, `freeze.py` (freeze a results record), `regress.py` (regression check), `plot_episode_length.py`, `plot_team_size.py` (ad-hoc team-size figures for a record; see `scripts/README.md`), `queue_runs.py` (a restartable queue of `train.py` jobs, a few at a time) |
 | `configs/` | Experiment configs: `keepaway_1v1.toml` (+ `_pbrs`), `goto_target.toml`, `claim_ball.toml`, `pass_practice_moving.toml` |
-| `results/` | Frozen, committed results records: `golden/` (the midterm mock results; `tests/test_golden.py`) and `silver/` (the regression record) |
+| `results/` | Frozen, committed results records: the for-score PyBullet results, one `golden_<set>/` per experiment set (`golden_1v1_initial/` = golden v2, keep-away 1v1 survival vs PBRS; `golden_teams_and_goto_ball_warm_starts/`, keep-away 1v1-3v3 with kicking, from scratch vs a goto_target warm start, plus `figures_adhoc/`); `archive/golden_v1/` (the midterm mock results, legacy); `tests/test_golden.py` guards every `golden*/` folder in both places. And `silver/` (the regression record) |
 | `docs/ICD.md` | Env ↔ RL interface control document (DRAFT v0.2) |
 | `tests/` | pytest suite for `marl/`, including ICD conformance tests run against both envs |
 | `examples/` | Early PyBullet prototypes, not used by the project code |
@@ -307,7 +313,7 @@ configs/*.toml -> marl.common.config.Config
 - Run directories always name their env: `runs/<config>_<env>_seed<N>/`
   (e.g. `keepaway_1v1_pybullet_seed0`, `keepaway_1v1_mock_seed0`), and
   calibration tables are `calibration_<config>_<env>.csv`. Runs from before
-  2026-11-01 (e.g. `runs/Old_mock_env/`, `results/golden/`) have the old names:
+  2026-11-01 (e.g. `runs/Old_mock_env/`, `results/archive/golden_v1/`) have the old names:
   no suffix for the mock.
 - A saved run whose config has no `run.env` (saved before 2026-10-18, when the
   mock was the only env) loads as the mock: `saved_config_from_dict` in

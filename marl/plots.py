@@ -47,6 +47,13 @@
 #     oldest first; folded the function-level citations into this header;
 #     _end_labels' details went into the #25 and #38 entries; no behaviour
 #     change.
+#   - 2026-11-27: A plain plot.py renders every golden record
+#     (results/golden*/, golden_manifests), each to its own folder, instead of
+#     only results/golden/; the per-record render moved into _render (backlog
+#     task 16: the golden record split into experiment sets). With 3+ line
+#     ends, _declutter separates end labels that still overlap (in line
+#     order, inside the axes); curve and goto figures label their ends last,
+#     once the layout is final. 1-2 end figures render as before.
 # ==============================================================================
 """Report figures. Reads only CSVs that training, ``scripts/evaluate.py`` and
 ``scripts/calibrate.py`` already wrote, so making figures never re-runs anything.
@@ -92,6 +99,7 @@ import numpy as np  # noqa: E402
 from matplotlib.figure import Figure  # noqa: E402
 from matplotlib.lines import Line2D  # noqa: E402
 from matplotlib.patches import Patch  # noqa: E402
+from matplotlib.patheffects import withStroke  # noqa: E402
 
 from marl.common.config import config_from_dict, load_config  # noqa: E402
 from marl.manifest import ARM_KINDS, FigureSpec, Manifest, PointSpec, ad_hoc_manifest, load_manifest  # noqa: E402
@@ -262,10 +270,15 @@ def _end_labels(ax, ends: Sequence[tuple[float, float, str]], refs: Sequence[flo
     above its line, the others stack in rows below. Left half (labels to the right of the
     end): the group stacks upward from its lowest end, clear of the reference-line labels
     drawn below their lines at the left. A lone end avoids a nearby reference line (else
-    goes above). Call after the x- and y-limits are final."""
+    goes above). With 3+ ends (task 16), a right-half group's labels start centered on their
+    own ends instead of in rows, and _declutter then spreads whatever still overlaps. Call
+    after the x- and y-limits are final (and with 3+ ends, after the figure's title and
+    legend, so the layout is final too)."""
     lo, hi = ax.get_ylim()
     x0, x1 = ax.get_xlim()
     near = 0.08 * (hi - lo)
+    many = len(ends) >= 3  # 1-2 ends: the rules below never collide, and their figures stay as they were
+    placed = []  # (right half?, line-end y, annotation)
     for right in (True, False):
         side = [k for k, e in enumerate(ends) if (e[0] > x0 + 0.5 * (x1 - x0)) == right]
         # high to low on the right (row 0 = the highest); low to high on the left (row 0 = the lowest)
@@ -276,17 +289,81 @@ def _end_labels(ax, ends: Sequence[tuple[float, float, str]], refs: Sequence[flo
             while i - row - 1 >= 0 and abs(ends[order[i - row - 1]][1] - ends[order[i - row]][1]) < near:
                 row += 1
             grouped = row > 0 or (i + 1 < len(order) and abs(y - ends[order[i + 1]][1]) < near)
+            va = None
             if not grouped:
                 close = [r for r in refs if abs(r - y) < near]
                 above = not close or min(close, key=lambda r: abs(r - y)) < y
                 dy = 9 if above else -9
+            elif right and many:
+                va, dy = "center", 0
             elif right:
                 above, dy = row == 0, 9 if row == 0 else -9 - 12 * (row - 1)
             else:
                 above, dy = True, 9 + 12 * row
-            ax.annotate(text, xy=(x, y), xytext=(-8 if right else 8, dy), textcoords="offset points",
-                        ha="right" if right else "left", va="bottom" if above else "top", fontsize=9.5,
-                        fontweight="semibold", color=INK)
+            ann = ax.annotate(text, xy=(x, y), xytext=(-8 if right else 8, dy), textcoords="offset points",
+                              ha="right" if right else "left", va=va or ("bottom" if above else "top"),
+                              fontsize=9.5, fontweight="semibold", color=INK)
+            if many:  # a surface-colored halo: centered or spread labels can sit on a curve
+                ann.set_path_effects([withStroke(linewidth=3, foreground=SURFACE)])
+            placed.append((right, y, ann))
+
+    if many:
+        _declutter(ax, placed)
+
+
+def _cluster_span(members: Sequence[int], heights: Sequence[float], wanted: Sequence[float],
+                  pad: float) -> tuple[float, float]:
+    """(bottom, top) of a cluster of labels stacked ``pad`` apart, centered on the mean of
+    their wanted centers."""
+    total = sum(heights[i] for i in members) + pad * (len(members) - 1)
+    mid = float(np.mean([wanted[i] for i in members]))
+    return mid - total / 2, mid + total / 2
+
+
+def _declutter(ax, placed: Sequence[tuple[bool, float, Any]], pad: float = 2.0) -> None:
+    """Shift end labels vertically so none overlap, each as little as possible (task 16: five
+    curves ending spread over the axis, where neighbouring groups' labels met). Per half of the
+    axes, in the order of their line ends: overlapping labels merge into a cluster, stacked
+    ``pad`` pixels apart and centered on where its labels wanted to be, until no clusters
+    overlap; then the labels are pushed back inside the axes. Measures the drawn labels, so it
+    draws the figure once."""
+    fig = ax.figure
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    box = ax.get_window_extent(renderer)
+    for right in (True, False):
+        side = sorted((p for p in placed if p[0] == right), key=lambda p: p[1])
+        ext = [ann.get_window_extent(renderer) for _, _, ann in side]
+        heights = [e.height for e in ext]
+        wanted = [e.y0 + e.height / 2 for e in ext]  # centers
+        clusters = [[i] for i in range(len(ext))]  # consecutive runs, low to high
+        while True:
+            spans = [_cluster_span(c, heights, wanted, pad) for c in clusters]
+            clash = next((j for j in range(1, len(clusters)) if spans[j][0] < spans[j - 1][1] + pad), None)
+            if clash is None:
+                break
+            clusters[clash - 1:clash + 1] = [clusters[clash - 1] + clusters[clash]]
+
+        bottoms = []
+        for c in clusters:
+            b = _cluster_span(c, heights, wanted, pad)[0]
+            for i in c:
+                bottoms.append(b)
+                b += heights[i] + pad
+
+        floor = box.y0 + pad  # bottom-up: inside the axes' bottom, keeping the gaps
+        for i, h in enumerate(heights):
+            bottoms[i] = max(bottoms[i], floor)
+            floor = bottoms[i] + h + pad
+
+        ceiling = box.y1 - pad  # top-down: inside the axes' top, keeping the gaps
+        for i in reversed(range(len(heights))):
+            bottoms[i] = min(bottoms[i], ceiling - heights[i])
+            ceiling = bottoms[i] - pad
+
+        for (_, _, ann), e, bottom in zip(side, ext, bottoms):
+            if abs(bottom - e.y0) > 1e-6:  # pixels -> the annotation's offset unit (points)
+                ann.xyann = (ann.xyann[0], ann.xyann[1] + (bottom - e.y0) * 72.0 / fig.dpi)
 
 
 def _label_ends(ax, ends: Sequence[tuple[float, float, str, np.ndarray]], refs: Sequence[float]) -> None:
@@ -360,10 +437,10 @@ def fig_curves(series: Sequence[Series], baselines: dict[str, dict[str, float]] 
         ax.set_xlabel("Environment steps (millions)")
         ax.set_xlim(0, max(e[0] for e in ends) * 1.02)
     axes[0].set_ylabel("Mean episode length (control steps)")
-    for ax, ends, refs in pending:  # after both panels: the shared y-limits are final
-        _label_ends(ax, ends, refs)
     _suptitle(fig, title or "Keep-away: survival on the fixed evaluation episodes during training")
     _series_legend(fig, series, "scripted baselines (values labeled)" if baselines else None)
+    for ax, ends, refs in pending:  # last: the shared y-limits and the layout are final
+        _label_ends(ax, ends, refs)
     return fig
 
 
@@ -481,11 +558,11 @@ def fig_goto(series: Sequence[Series], baselines: dict[str, dict[str, float]] | 
         _end_dot(ax, x[-1], m[-1], s.color)
         ends.append((x[-1], m[-1], f"{s.label} {m[-1]:.2f}" + (f" ± {sd[-1]:.2f}" if s.n > 1 else "") + " m", m))
     ax.set_xlim(0, max(e[0] for e in ends) * 1.02)
-    _label_ends(ax, ends, refs)
     ax.set_xlabel("Environment steps (thousands)")
     ax.set_ylabel("Mean distance to target (m), lower is better")
     ax.set_title(title or "goto_target sanity check")
     _series_legend(fig, series, "references (values labeled)" if baselines else None)
+    _label_ends(ax, ends, refs)  # last: the layout is final
     return fig
 
 
@@ -945,7 +1022,8 @@ def fig_catch_stages(run_dir: str | Path, out_dir: Path) -> Path | None:
 
 
 # --- Command line ---------------------------------------------------------------------
-GOLDEN = Path("results/golden/manifest.toml")
+RESULTS = Path("results")
+GOLDEN = "golden*/manifest.toml"  # under RESULTS: a plain plot.py renders every golden record
 PLOTS = Path("runs/plots")
 CURRICULUM_OUT = Path("runs/figures")  # AI GENERATED (2026-11-23): --curriculum's default output folder
 RENDER_MARKER = ".rendered_from"  # in a record's render folder: the manifest it was rendered from
@@ -973,12 +1051,49 @@ def clear_outputs(out: Path) -> None:
         path.unlink(missing_ok=True)
 
 
+def golden_manifests(results: Path = RESULTS) -> list[Path]:
+    """Every golden record's manifest (``results/golden*/``, sorted); ``results/archive/`` is left out."""
+    return sorted(results.glob(GOLDEN))
+
+
+def _render(manifest: Manifest, args: argparse.Namespace) -> int:
+    """Render one manifest (a record, or the ad-hoc one) to its folder, behind the --overwrite guard."""
+    out = args.out or PLOTS / manifest.name
+    marker = out / RENDER_MARKER
+    # Exempt from the guard: a record re-rendering its own default folder (pure re-derivation
+    # from its data). The marker proves the folder holds only that record's render; ad-hoc
+    # output under the same name is guarded (found in the task 2 demo).
+    exempt = (not args.arm and args.out is None and marker.is_file()
+              and marker.read_text(encoding="utf-8") == str(manifest.path))
+
+    if out.exists() and any(out.iterdir()) and not (exempt or args.overwrite):
+        print(f"[plot] {out} already holds files; pass --overwrite to replace them", file=sys.stderr)
+        return 1
+    if out.exists():
+        clear_outputs(out)
+    made, notes = render_manifest(manifest, out)
+    if args.arm:
+        marker.unlink(missing_ok=True)  # the folder no longer holds (only) a record's render
+    else:
+        marker.write_text(str(manifest.path), encoding="utf-8")
+    if not args.arm and (unfrozen := manifest.unfrozen()):
+        n = len(unfrozen)
+        notes.append(f"warning: {n} input{'s' if n != 1 else ''} not frozen yet; "
+                     f"run `python scripts/freeze.py {manifest.root.name}` to copy them into the record")
+    for path in made:
+        print(f"[plot] {path}")
+    for note in notes:
+        print(f"[plot] {note}")
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
-        description="Render a results record (default: the golden record) or ad-hoc plots of any runs.",
+        description="Render results records (default: every golden record) or ad-hoc plots of any runs.",
         epilog='ad hoc: plot.py --arm "new reward=runs/new_reward_pybullet_seed*" [--arm ...] [--kind curves ...]',
     )
-    ap.add_argument("--manifest", type=Path, help=f"record manifest to render (default: {GOLDEN})")
+    ap.add_argument("--manifest", type=Path,
+                    help=f"record manifest to render (default: every {RESULTS / GOLDEN}, each to its own folder)")
     ap.add_argument("--arm", action="append", type=_arm_arg, metavar="LABEL=GLOB",
                     help="an ad-hoc arm: a label and a glob of its run directories (repeatable, up to 9)")
     ap.add_argument("--kind", nargs="+", choices=ARM_KINDS,
@@ -1016,41 +1131,19 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.arm:
         kinds = args.kind or _default_kinds(args.arm[0][1])
-        manifest = ad_hoc_manifest(args.name, args.arm, list(kinds), args.baselines, args.title)
-        exempt = False
+        manifests = [ad_hoc_manifest(args.name, args.arm, list(kinds), args.baselines, args.title)]
     else:
-        path = args.manifest or GOLDEN
-        if not path.is_file():
-            print(f"[plot] no manifest at {path}; pass --manifest PATH, or --arm for ad-hoc plots", file=sys.stderr)
+        paths = [args.manifest] if args.manifest else golden_manifests()
+        if not paths or not paths[0].is_file():
+            where = args.manifest or RESULTS / GOLDEN
+            print(f"[plot] no manifest at {where}; pass --manifest PATH, or --arm for ad-hoc plots", file=sys.stderr)
             return 1
-        manifest = load_manifest(path)
-    out = args.out or PLOTS / manifest.name
-    marker = out / RENDER_MARKER
-    # Exempt from the guard: a record re-rendering its own default folder (pure re-derivation
-    # from its data). The marker proves the folder holds only that record's render; ad-hoc
-    # output under the same name is guarded (found in the task 2 demo).
-    exempt = (not args.arm and args.out is None and marker.is_file()
-              and marker.read_text(encoding="utf-8") == str(manifest.path))
+        if len(paths) > 1 and args.out is not None:
+            ap.error(f"--out takes one record, and {len(paths)} match {RESULTS / GOLDEN}: add --manifest PATH")
+        manifests = [load_manifest(path) for path in paths]
 
-    if out.exists() and any(out.iterdir()) and not (exempt or args.overwrite):
-        print(f"[plot] {out} already holds files; pass --overwrite to replace them", file=sys.stderr)
-        return 1
-    if out.exists():
-        clear_outputs(out)
-    made, notes = render_manifest(manifest, out)
-    if args.arm:
-        marker.unlink(missing_ok=True)  # the folder no longer holds (only) a record's render
-    else:
-        marker.write_text(str(manifest.path), encoding="utf-8")
-    if not args.arm and (unfrozen := manifest.unfrozen()):
-        n = len(unfrozen)
-        notes.append(f"warning: {n} input{'s' if n != 1 else ''} not frozen yet; "
-                     f"run `python scripts/freeze.py {manifest.root.name}` to copy them into the record")
-    for path in made:
-        print(f"[plot] {path}")
-    for note in notes:
-        print(f"[plot] {note}")
-    return 0
+    # Each record renders on its own, so one guarded folder doesn't stop the others.
+    return max(_render(manifest, args) for manifest in manifests)
 
 
 if __name__ == "__main__":  # pragma: no cover

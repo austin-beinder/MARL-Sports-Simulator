@@ -1,0 +1,124 @@
+# ==============================================================================
+# AI CITATION
+# Tool:    Claude Code (Claude Opus 5.5)
+# Date:    2026-11-26
+# Author:  JC Stinson III (LifeHackerIII)
+# Usage:
+#   - 2026-11-26: Wrote this manifest: the golden record v2, the PyBullet
+#     replication of golden v1's keep-away 1v1 experiments (backlog task 15).
+#     Per arm: learning curves, final results and training diagnostics; all
+#     arms together: learning curves and final results; one table section per
+#     arm. goto_target and the red-speed calibration were run but are not part
+#     of the record (a sanity check and a process step).
+#   - 2026-11-27: Renamed results/golden/ -> results/golden_1v1_initial/
+#     (name "golden_1v1_initial"; was "golden"), one folder per experiment set
+#     (backlog task 16). The data and figures are unchanged.
+# ==============================================================================
+# A for-score record (golden v2): PyBullet env, kicking off, red 1.8 m/s, seeds 0-4 x 1M steps.
+# The legacy mock-env record it replaces is results/archive/golden_v1/.
+# Render:  python scripts/plot.py --manifest results/golden_1v1_initial/manifest.toml
+#          (-> runs/plots/golden_1v1_initial/; a plain plot.py renders every golden record)
+# Freeze:  python scripts/freeze.py golden_1v1_initial (copies runs/ inputs into data/, renders figures/)
+
+name        = "golden_1v1_initial"
+description = "PyBullet keep-away 1v1: survival-only vs + PBRS acquisition shaping (coef 4), seeds 0-4, 1M steps"
+
+# --- Arm: survival-only reward ----------------------------------------------------------
+[[figure]]
+kind      = "curves"
+name      = "keepaway_survival_learning_curves"
+title     = "Keep-away 1v1 (PyBullet), survival only: survival on the fixed evaluation episodes during training"
+baselines = "survival only"
+ylim      = [50, 175]
+  [[figure.arm]]
+  label = "survival only"
+  runs  = "data/keepaway_1v1_pybullet_seed*"
+
+[[figure]]
+kind      = "final"
+name      = "keepaway_survival_final_results"
+title     = "Keep-away 1v1 (PyBullet), survival only: final evaluation (same fixed episodes for every policy)"
+baselines = "survival only"
+  [[figure.arm]]
+  label = "survival only"
+  runs  = "data/keepaway_1v1_pybullet_seed*"
+
+[[figure]]
+kind  = "diagnostics"
+name  = "keepaway_survival_training_diagnostics"
+title = "Keep-away 1v1 (PyBullet), survival only: PPO training diagnostics"
+  [[figure.arm]]
+  label = "survival only"
+  runs  = "data/keepaway_1v1_pybullet_seed*"
+
+# --- Arm: + PBRS acquisition shaping (coef 4) -------------------------------------------
+[[figure]]
+kind      = "curves"
+name      = "keepaway_pbrs_learning_curves"
+title     = "Keep-away 1v1 (PyBullet), + PBRS (coef 4): survival on the fixed evaluation episodes during training"
+baselines = "+ PBRS (coef 4)"
+ylim      = [50, 175]
+  [[figure.arm]]
+  label = "+ PBRS (coef 4)"
+  runs  = "data/keepaway_1v1_pbrs_pybullet_seed*"
+
+[[figure]]
+kind      = "final"
+name      = "keepaway_pbrs_final_results"
+title     = "Keep-away 1v1 (PyBullet), + PBRS (coef 4): final evaluation (same fixed episodes for every policy)"
+baselines = "+ PBRS (coef 4)"
+  [[figure.arm]]
+  label = "+ PBRS (coef 4)"
+  runs  = "data/keepaway_1v1_pbrs_pybullet_seed*"
+
+[[figure]]
+kind  = "diagnostics"
+name  = "keepaway_pbrs_training_diagnostics"
+title = "Keep-away 1v1 (PyBullet), + PBRS (coef 4): PPO training diagnostics"
+  [[figure.arm]]
+  label = "+ PBRS (coef 4)"
+  runs  = "data/keepaway_1v1_pbrs_pybullet_seed*"
+
+# --- All keep-away 1v1 arms together (no combined diagnostics) --------------------------
+# Every arm here plays the same game (red 1.8 m/s), so one arm's scripted baselines fit all.
+[[figure]]
+kind      = "curves"
+name      = "keepaway_1v1_all_learning_curves"
+title     = "Keep-away 1v1 (PyBullet): survival on the fixed evaluation episodes during training, all arms"
+baselines = "survival only"
+ylim      = [50, 175]
+  [[figure.arm]]
+  label = "survival only"
+  runs  = "data/keepaway_1v1_pybullet_seed*"
+  [[figure.arm]]
+  label = "+ PBRS (coef 4)"
+  runs  = "data/keepaway_1v1_pbrs_pybullet_seed*"
+
+[[figure]]
+kind      = "final"
+name      = "keepaway_1v1_all_final_results"
+title     = "Keep-away 1v1 (PyBullet): final evaluation, all arms (same fixed episodes for every policy)"
+baselines = "survival only"
+  [[figure.arm]]
+  label = "survival only"
+  runs  = "data/keepaway_1v1_pybullet_seed*"
+  [[figure.arm]]
+  label = "+ PBRS (coef 4)"
+  runs  = "data/keepaway_1v1_pbrs_pybullet_seed*"
+
+# --- Table view (results_tables.md): one section per arm --------------------------------
+[[table]]
+title   = "Keep-away 1v1, PyBullet, survival only ({n_runs} runs; mean episode length, control steps)"
+source  = "data/eval_keepaway_1v1_pybullet_seed0.csv"
+columns = "keepaway"
+
+[[table]]
+title   = "Keep-away 1v1, PyBullet, + PBRS acquisition shaping, coef 4 ({n_runs} runs; mean episode length, control steps)"
+source  = "data/eval_keepaway_1v1_pbrs_pybullet_seed0.csv"
+columns = "keepaway"
+
+# --- frozen 2026-11-26 by scripts/freeze.py at commit 5713e3c + uncommitted changes ---
+#   ../../runs/keepaway_1v1_pybullet_seed* -> data/keepaway_1v1_pybullet_seed*
+#   ../../runs/keepaway_1v1_pbrs_pybullet_seed* -> data/keepaway_1v1_pbrs_pybullet_seed*
+#   ../../runs/eval_keepaway_1v1_pybullet_seed0.csv -> data/eval_keepaway_1v1_pybullet_seed0.csv
+#   ../../runs/eval_keepaway_1v1_pbrs_pybullet_seed0.csv -> data/eval_keepaway_1v1_pbrs_pybullet_seed0.csv
